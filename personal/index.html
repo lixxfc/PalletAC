@@ -1,0 +1,2283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#05060F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Pallet OS — 托盘业务管家</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2300E5FF'/%3E%3Cstop offset='0.6' stop-color='%238B5CF6'/%3E%3Cstop offset='1' stop-color='%23F472B6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='url(%23g)'/%3E%3Ctext x='50' y='68' font-size='60' font-weight='900' fill='%230A0E27' text-anchor='middle' font-family='sans-serif'%3EP%3C/text%3E%3C/svg%3E">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  color-scheme: dark;
+  --bg-0: #05060F;
+  --bg-1: #0A0E27;
+  --bg-2: #0F1535;
+  --bg-3: #141A3D;
+  --glass: rgba(20, 25, 60, 0.55);
+  --glass-hi: rgba(30, 38, 80, 0.65);
+  --stroke: rgba(139, 150, 255, 0.12);
+  --stroke-hi: rgba(139, 150, 255, 0.28);
+  --text: #F1F5FB;
+  --text-dim: #94A3C4;
+  --text-mute: #5C6A92;
+  --cyan: #00E5FF;
+  --violet: #8B5CF6;
+  --pink: #F472B6;
+  --green: #22D3A5;
+  --amber: #FBBF24;
+  --rose: #FB7185;
+  --grad-primary: linear-gradient(135deg, #00E5FF 0%, #8B5CF6 60%, #F472B6 100%);
+  --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.25);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: var(--text);
+  background: var(--bg-0);
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(139, 92, 246, 0.25), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 90% 100%, rgba(0, 229, 255, 0.18), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(244, 114, 182, 0.1), transparent 60%),
+    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 50%, var(--bg-0) 100%);
+  background-attachment: fixed;
+  position: relative;
+}
+
+body::before, body::after {
+  content: "";
+  position: fixed;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.35;
+  z-index: 0;
+  pointer-events: none;
+  animation: float 20s ease-in-out infinite;
+}
+body::before { background: radial-gradient(circle, #8B5CF6, transparent 70%); top: -200px; left: -200px; }
+body::after { background: radial-gradient(circle, #00E5FF, transparent 70%); bottom: -200px; right: -200px; animation-delay: -10s; }
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(50px, -80px) scale(1.1); }
+  66% { transform: translate(-40px, 60px) scale(0.95); }
+}
+
+.grid-overlay {
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(139, 150, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 150, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 1;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+
+/* ===== Auth Screen ===== */
+.auth-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(139, 92, 246, 0.3), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 90% 100%, rgba(0, 229, 255, 0.22), transparent 60%),
+    linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 50%, var(--bg-0) 100%);
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 32px;
+  border-radius: 24px;
+  background: var(--glass-hi);
+  border: 1px solid var(--stroke-hi);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), var(--shadow-glow);
+  position: relative;
+  z-index: 1;
+}
+.auth-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--grad-primary);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 26px;
+  color: #0A0E27;
+  margin: 0 auto 20px;
+  box-shadow: 0 0 32px rgba(139, 92, 246, 0.5);
+}
+.auth-title {
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 6px;
+  letter-spacing: -0.5px;
+}
+.auth-title .gradient {
+  background: var(--grad-primary);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.auth-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 28px;
+}
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-tabs {
+  display: flex;
+  background: rgba(5, 6, 15, 0.6);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 18px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: all 0.2s ease;
+}
+.auth-tab.active {
+  background: var(--grad-primary);
+  color: #0A0E27;
+  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.3);
+}
+.auth-msg {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(251, 113, 133, 0.12);
+  color: #FCA5A5;
+  border: 1px solid rgba(251, 113, 133, 0.25);
+}
+.auth-msg.success {
+  background: rgba(34, 211, 165, 0.12);
+  color: #6EE7B7;
+  border-color: rgba(34, 211, 165, 0.25);
+}
+.auth-footer {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-align: center;
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+/* ===== App ===== */
+.app {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-right: 1px solid var(--stroke);
+  background: linear-gradient(180deg, rgba(10, 14, 39, 0.9) 0%, rgba(10, 14, 39, 0.6) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 20px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--stroke);
+}
+.brand-logo {
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  background: var(--grad-primary);
+  display: grid; place-items: center;
+  font-weight: 900; font-size: 18px;
+  color: #0A0E27;
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.5);
+}
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: 0.3px; }
+.brand-sub { font-size: 11px; color: var(--text-mute); letter-spacing: 0.5px; text-transform: uppercase; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  position: relative;
+}
+.nav-item:hover { background: rgba(139, 92, 246, 0.08); color: var(--text); }
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.18), rgba(0, 229, 255, 0.08));
+  border-color: var(--stroke-hi);
+  color: var(--text);
+  box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.1);
+}
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: -16px; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 20px;
+  background: var(--grad-primary);
+  border-radius: 2px;
+  box-shadow: 0 0 12px var(--violet);
+}
+.nav-item .icon { width: 20px; height: 20px; display: grid; place-items: center; font-size: 16px; }
+.nav-section-title {
+  padding: 16px 14px 8px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px 12px 8px;
+  border-top: 1px solid var(--stroke);
+}
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.08);
+  margin-bottom: 8px;
+}
+.user-chip .avatar {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--grad-primary);
+  display: grid; place-items: center;
+  font-weight: 800; color: #0A0E27;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.user-chip .info { font-size: 11px; color: var(--text-dim); overflow: hidden; }
+.user-chip .email { color: var(--text); font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-chip .status { display: flex; align-items: center; gap: 4px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+.main { flex: 1; padding: 28px 36px 100px; min-width: 0; }
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.page-title { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.page-title .gradient {
+  background: var(--grad-primary);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.page-sub { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--stroke-hi);
+  background: var(--glass);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font-family: inherit;
+}
+.btn:hover { background: var(--glass-hi); border-color: rgba(139, 92, 246, 0.5); transform: translateY(-1px); box-shadow: 0 4px 20px rgba(139, 92, 246, 0.2); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+.btn.primary {
+  background: var(--grad-primary);
+  color: #0A0E27;
+  border: none;
+  font-weight: 700;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+}
+.btn.primary:hover { box-shadow: 0 6px 28px rgba(139, 92, 246, 0.6); transform: translateY(-2px); }
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 7px 12px; font-size: 12px; }
+.btn.wide { width: 100%; justify-content: center; padding: 13px; }
+.btn.danger { color: var(--rose); border-color: rgba(251, 113, 133, 0.3); }
+.btn.danger:hover { background: rgba(251, 113, 133, 0.1); border-color: var(--rose); }
+
+.card {
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  border-radius: 18px;
+  padding: 22px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(139, 150, 255, 0.3), transparent);
+}
+
+.card-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  letter-spacing: 0.2px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.card-title .badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(34, 211, 165, 0.12);
+  color: var(--green);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+.kpi {
+  position: relative;
+  padding: 22px;
+  border-radius: 18px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+.kpi:hover { transform: translateY(-3px); border-color: var(--stroke-hi); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), var(--shadow-glow); }
+.kpi::before { content: ""; position: absolute; inset: 0; opacity: 0.08; pointer-events: none; }
+.kpi.v1::before { background: radial-gradient(circle at 100% 0%, #00E5FF, transparent 60%); }
+.kpi.v2::before { background: radial-gradient(circle at 100% 0%, #8B5CF6, transparent 60%); }
+.kpi.v3::before { background: radial-gradient(circle at 100% 0%, #F472B6, transparent 60%); }
+.kpi.v4::before { background: radial-gradient(circle at 100% 0%, #22D3A5, transparent 60%); }
+.kpi.v5::before { background: radial-gradient(circle at 100% 0%, #FBBF24, transparent 60%); }
+.kpi.v6::before { background: radial-gradient(circle at 100% 0%, #FB7185, transparent 60%); }
+
+.kpi-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.kpi-label { font-size: 12px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+.kpi-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  font-size: 16px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--stroke);
+}
+.kpi.v1 .kpi-icon { background: rgba(0, 229, 255, 0.12); color: var(--cyan); }
+.kpi.v2 .kpi-icon { background: rgba(139, 92, 246, 0.15); color: var(--violet); }
+.kpi.v3 .kpi-icon { background: rgba(244, 114, 182, 0.12); color: var(--pink); }
+.kpi.v4 .kpi-icon { background: rgba(34, 211, 165, 0.12); color: var(--green); }
+.kpi.v5 .kpi-icon { background: rgba(251, 191, 36, 0.12); color: var(--amber); }
+.kpi.v6 .kpi-icon { background: rgba(251, 113, 133, 0.12); color: var(--rose); }
+
+.kpi-value {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi.v1 .kpi-value { background: linear-gradient(135deg, #00E5FF, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.v2 .kpi-value { background: linear-gradient(135deg, #A78BFA, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.v3 .kpi-value { background: linear-gradient(135deg, #F472B6, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.v4 .kpi-value { background: linear-gradient(135deg, #22D3A5, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.v5 .kpi-value { background: linear-gradient(135deg, #FBBF24, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kpi.v6 .kpi-value { background: linear-gradient(135deg, #FB7185, #FFFFFF); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.kpi-sub { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.kpi-trend { font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 6px; }
+.kpi-trend.up { background: rgba(34, 211, 165, 0.15); color: var(--green); }
+.kpi-trend.down { background: rgba(251, 113, 133, 0.15); color: var(--rose); }
+.kpi-trend.flat { background: rgba(148, 163, 196, 0.15); color: var(--text-dim); }
+
+.chart-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 18px; }
+.chart-grid.equal { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) { .chart-grid, .chart-grid.equal { grid-template-columns: 1fr; } }
+
+.chart-card { padding: 22px; height: 320px; display: flex; flex-direction: column; }
+.chart-box { flex: 1; position: relative; margin-top: 12px; }
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: rgba(10, 14, 39, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--stroke);
+  background: rgba(139, 92, 246, 0.04);
+  white-space: nowrap;
+}
+tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(139, 150, 255, 0.06);
+  font-variant-numeric: tabular-nums;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr { transition: background 0.15s ease; }
+tbody tr:hover { background: rgba(139, 92, 246, 0.06); }
+
+.pos { color: var(--green); font-weight: 600; }
+.neg { color: var(--rose); font-weight: 600; }
+.dim { color: var(--text-dim); }
+
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-row label { font-size: 11px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+input, select, textarea {
+  background: rgba(10, 14, 39, 0.6);
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  background: rgba(10, 14, 39, 0.8);
+}
+input::placeholder { color: var(--text-mute); }
+select option { background: var(--bg-2); color: var(--text); }
+
+.customer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.customer-card {
+  padding: 20px;
+  border-radius: 16px;
+  border: 1px solid var(--stroke);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.customer-card:hover { transform: translateY(-2px); border-color: var(--stroke-hi); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(139, 92, 246, 0.2); }
+.customer-avatar {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: var(--grad-primary);
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 18px;
+  color: #0A0E27;
+  margin-bottom: 12px;
+}
+.customer-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.customer-meta { font-size: 11px; color: var(--text-mute); margin-bottom: 14px; }
+.customer-balance { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.customer-balance-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+
+.badge-type { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; letter-spacing: 0.4px; text-transform: uppercase; }
+.badge-deposit { background: rgba(34, 211, 165, 0.15); color: var(--green); }
+.badge-pickup { background: rgba(0, 229, 255, 0.12); color: var(--cyan); }
+.badge-refund { background: rgba(251, 113, 133, 0.12); color: var(--rose); }
+.badge-adjust { background: rgba(251, 191, 36, 0.12); color: var(--amber); }
+
+.ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .ai-grid { grid-template-columns: 1fr; } }
+
+.ai-card {
+  padding: 24px;
+  border-radius: 18px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  position: relative;
+  overflow: hidden;
+}
+.ai-card.hero {
+  background:
+    radial-gradient(ellipse at top left, rgba(139, 92, 246, 0.25), transparent 60%),
+    radial-gradient(ellipse at bottom right, rgba(0, 229, 255, 0.2), transparent 60%),
+    var(--glass);
+  border: 1px solid var(--stroke-hi);
+}
+.ai-hero-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+.ai-hero-title .gradient { background: var(--grad-primary); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ai-hero-desc { font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px; }
+
+.insight {
+  display: flex; gap: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(10, 14, 39, 0.5);
+  border: 1px solid var(--stroke);
+  margin-bottom: 10px;
+}
+.insight-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.insight.good .insight-dot { background: var(--green); box-shadow: 0 0 12px var(--green); }
+.insight.warn .insight-dot { background: var(--amber); box-shadow: 0 0 12px var(--amber); }
+.insight.bad .insight-dot { background: var(--rose); box-shadow: 0 0 12px var(--rose); }
+.insight.info .insight-dot { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.insight-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.insight-text { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+
+/* preview-box — live calc preview for pickup form */
+.preview-box {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(5, 6, 15, 0.5);
+  border: 1px solid var(--stroke);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-dim);
+  display: none;
+}
+.preview-box.show { display: block; }
+.preview-box .pv-row { display: flex; justify-content: space-between; gap: 12px; }
+.preview-box .pv-row + .pv-row { margin-top: 4px; }
+.preview-box .pv-k { color: var(--text-dim); font-size: 12px; }
+.preview-box .pv-v { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.preview-box .pv-v.pos { color: var(--green); }
+.preview-box .pv-v.neg { color: var(--rose); }
+.preview-box .pv-v.warn { color: var(--amber); }
+.preview-box.danger {
+  background: rgba(251, 113, 133, 0.08);
+  border-color: rgba(251, 113, 133, 0.45);
+  box-shadow: 0 0 24px rgba(251, 113, 133, 0.15);
+}
+.preview-box.danger .pv-warning {
+  margin-top: 8px; padding: 8px 12px;
+  background: rgba(251, 113, 133, 0.15);
+  border: 1px solid rgba(251, 113, 133, 0.4);
+  border-radius: 8px;
+  color: var(--rose);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+.preview-box .pv-warning { display: none; }
+.preview-box.danger .pv-warning { display: block; }
+
+/* Hide utility for dynamic ledger form rows */
+.row-hidden { display: none !important; }
+
+.ai-output {
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(5, 6, 15, 0.6);
+  border: 1px solid var(--stroke);
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-wrap;
+  min-height: 200px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+.ai-output.empty { color: var(--text-mute); font-style: italic; }
+
+.calc-fab {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  width: 60px; height: 60px;
+  border-radius: 20px;
+  background: var(--grad-primary);
+  color: #0A0E27;
+  display: grid; place-items: center;
+  font-size: 26px; font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
+  z-index: 50;
+  transition: all 0.25s ease;
+  border: none;
+}
+.calc-fab:hover { transform: scale(1.08) rotate(-5deg); box-shadow: 0 12px 40px rgba(139, 92, 246, 0.7); }
+
+.calc-panel {
+  position: fixed;
+  right: 28px; bottom: 100px;
+  width: 320px;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--glass-hi);
+  border: 1px solid var(--stroke-hi);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(139, 92, 246, 0.2);
+  z-index: 49;
+  display: none;
+}
+.calc-panel.open { display: block; animation: slideUp 0.25s ease; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.calc-display {
+  background: rgba(5, 6, 15, 0.7);
+  border: 1px solid var(--stroke);
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  margin-bottom: 12px;
+  min-height: 52px;
+  color: var(--cyan);
+}
+.calc-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.calc-preset {
+  padding: 8px 10px;
+  font-size: 11px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid var(--stroke);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.calc-preset:hover { background: rgba(139, 92, 246, 0.25); }
+
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(5, 6, 15, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.modal-backdrop.open { display: flex; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--bg-2);
+  border: 1px solid var(--stroke-hi);
+  border-radius: 20px;
+  padding: 28px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), var(--shadow-glow);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.modal-title { font-size: 18px; font-weight: 700; }
+.modal-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 20px; padding: 4px 8px; border-radius: 8px; }
+.modal-close:hover { background: var(--stroke); color: var(--text); }
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.grow { flex: 1; }
+.hide { display: none !important; }
+.view { display: none; }
+.view.active { display: block; animation: fadeUp 0.3s ease; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.mt-4 { margin-top: 16px; }
+.mt-6 { margin-top: 24px; }
+.mb-4 { margin-bottom: 16px; }
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: rgba(34, 211, 165, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(34, 211, 165, 0.2);
+}
+.sync-badge.syncing { background: rgba(251, 191, 36, 0.1); color: var(--amber); border-color: rgba(251, 191, 36, 0.2); }
+.sync-badge.error { background: rgba(251, 113, 133, 0.1); color: var(--rose); border-color: rgba(251, 113, 133, 0.2); }
+.sync-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sync-badge.syncing .dot { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.loading-screen {
+  position: fixed; inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-0);
+  flex-direction: column;
+  gap: 20px;
+}
+.spinner {
+  width: 48px; height: 48px;
+  border: 3px solid rgba(139, 150, 255, 0.2);
+  border-top-color: var(--violet);
+  border-right-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(10, 14, 39, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--stroke);
+  z-index: 40;
+  padding: 8px 4px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  grid-template-columns: repeat(6, 1fr);
+  gap: 2px;
+}
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 8px;
+  gap: 2px;
+}
+.mobile-nav-item.active { color: var(--cyan); }
+.mobile-nav-item .icon { font-size: 18px; }
+
+@media (max-width: 860px) {
+  .sidebar { display: none; }
+  .mobile-nav { display: grid; }
+  .main { padding: 16px 14px 110px; }
+  .page-title { font-size: 22px; }
+  .kpi-value { font-size: 26px; }
+  .kpi { padding: 18px; }
+  .chart-card { height: 280px; padding: 18px; }
+  .calc-fab { right: 16px; bottom: 80px; width: 54px; height: 54px; font-size: 22px; }
+  .calc-panel { right: 12px; left: 12px; width: auto; bottom: 150px; }
+}
+
+@media print {
+  body { background: white !important; color: black !important; }
+  body::before, body::after, .grid-overlay { display: none !important; }
+  .sidebar, .mobile-nav, .calc-fab, .calc-panel, .no-print, .auth-screen, .loading-screen { display: none !important; }
+  .main { padding: 20px !important; }
+  .view { display: block !important; page-break-inside: avoid; }
+  .card, .kpi, .table-wrap, .chart-card, .customer-card, .ai-card, .insight {
+    background: white !important;
+    color: black !important;
+    border: 1px solid #ccc !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+  }
+  .kpi-value, .page-title .gradient, .ai-hero-title .gradient {
+    color: black !important; background: none !important; -webkit-text-fill-color: black !important;
+  }
+  thead th, tbody td { color: black !important; border-color: #ddd !important; }
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(139, 150, 255, 0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(139, 150, 255, 0.4); }
+</style>
+</head>
+<body>
+<div class="grid-overlay"></div>
+
+<!-- Loading Screen -->
+<div class="loading-screen" id="loading-screen">
+  <div class="spinner"></div>
+  <div style="color: var(--text-dim); font-size: 13px;">加载中…</div>
+</div>
+
+<!-- Auth Screen -->
+<div class="auth-screen hide" id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">P</div>
+    <div class="auth-title"><span class="gradient">Pallet OS</span></div>
+    <div class="auth-sub">托盘业务管家 · 云端同步</div>
+
+    <div class="auth-tabs">
+      <div class="auth-tab active" id="tab-signin" onclick="switchAuthTab('signin')">登录</div>
+      <div class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">注册</div>
+    </div>
+
+    <form class="auth-form" id="auth-form" onsubmit="handleAuth(event)">
+      <div class="form-row">
+        <label>邮箱</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
+      </div>
+      <div class="form-row">
+        <label>密码</label>
+        <input type="password" id="auth-password" placeholder="至少 6 位" required minlength="6" autocomplete="current-password">
+      </div>
+      <div class="auth-msg hide" id="auth-msg"></div>
+      <button type="submit" class="btn primary wide" id="auth-btn">登录</button>
+    </form>
+
+    <div class="auth-footer">
+      首次使用请点"注册"创建账号。<br>
+      你的数据加密保存在云端，多设备同步。
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div class="app hide" id="app">
+  <aside class="sidebar no-print">
+    <div class="brand">
+      <div class="brand-logo">P</div>
+      <div>
+        <div class="brand-name">Pallet OS</div>
+        <div class="brand-sub">托盘业务管家</div>
+      </div>
+    </div>
+
+    <div class="nav-section-title">主要</div>
+    <div class="nav-item active" data-view="dashboard"><span class="icon">◉</span><span>仪表盘</span></div>
+    <div class="nav-item" data-view="daily"><span class="icon">▦</span><span>出货交易</span></div>
+    <div class="nav-item" data-view="customers"><span class="icon">◈</span><span>客户账本</span></div>
+    <div class="nav-item" data-view="monthly"><span class="icon">▩</span><span>月度汇总</span></div>
+
+    <div class="nav-section-title">智能</div>
+    <div class="nav-item" data-view="ai"><span class="icon">✦</span><span>AI 经营建议</span></div>
+
+    <div class="nav-section-title">系统</div>
+    <div class="nav-item" data-view="settings"><span class="icon">⚙</span><span>参数设置</span></div>
+
+    <div class="nav-section-title">其他</div>
+    <a class="nav-item nav-external" href="../" style="text-decoration:none;"><span class="icon">⇆</span><span>合伙账 (Emma · Hugo)</span></a>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="avatar" id="user-avatar">?</div>
+        <div class="info">
+          <div class="email" id="user-email">loading...</div>
+          <div class="status"><span class="status-dot"></span><span id="sync-status">云端同步</span></div>
+        </div>
+      </div>
+      <button class="btn sm ghost wide" onclick="signOut()">退出登录</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- Dashboard -->
+    <section class="view active" data-view="dashboard">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title"><span class="gradient">Dashboard</span></h1>
+          <div class="page-sub">今日：<span id="today-date"></span> · 所有核心指标实时更新</div>
+        </div>
+        <div class="row">
+          <span class="sync-badge" id="sync-badge"><span class="dot"></span><span id="sync-text">已同步</span></span>
+          <button class="btn sm ghost" onclick="exportJson()">⇣ 导出</button>
+          <button class="btn sm ghost" onclick="document.getElementById('import-file').click()">⇡ 导入</button>
+          <button class="btn sm ghost" onclick="window.print()">🖨 PDF</button>
+          <input type="file" id="import-file" class="hide" accept="application/json" onchange="importJson(event)">
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="chart-grid">
+        <div class="card chart-card">
+          <div class="card-title">营收 / 成本 / 利润 走势 <span class="badge">近 6 月</span></div>
+          <div class="chart-box"><canvas id="chart-pnl"></canvas></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-title">客户余额分布</div>
+          <div class="chart-box"><canvas id="chart-balance"></canvas></div>
+        </div>
+      </div>
+
+      <div class="chart-grid equal">
+        <div class="card chart-card">
+          <div class="card-title">每日托盘出货量 <span class="badge">近 30 天</span></div>
+          <div class="chart-box"><canvas id="chart-pallets"></canvas></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-title">利润累计趋势</div>
+          <div class="chart-box"><canvas id="chart-cumprofit"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Daily (出货交易记录) -->
+    <section class="view" data-view="daily">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">出货交易记录</h1>
+          <div class="page-sub">选客户 → 输托盘数 → 系统自动按 £<span id="d-sell">265</span> × 托盘 扣除客户余额</div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-title">新增出货</div>
+        <div class="form-grid">
+          <div class="form-row"><label>日期</label><input type="date" id="d-date"></div>
+          <div class="form-row"><label>客户</label>
+            <select id="d-customer" onchange="updatePickupPreview()">
+              <option value="">请选择客户…</option>
+            </select>
+          </div>
+          <div class="form-row"><label>托盘数</label><input type="number" id="d-pallets" placeholder="24" min="1" oninput="updatePickupPreview()"></div>
+          <div class="form-row"><label>车次（可选）</label><input type="text" id="d-truck" placeholder="T-001"></div>
+          <div class="form-row" style="grid-column: 1/-1;"><label>备注（可选）</label><input type="text" id="d-notes" placeholder="备注"></div>
+        </div>
+        <div id="d-preview" class="preview-box"></div>
+        <div class="row mt-4">
+          <button class="btn primary" onclick="addPickup()">＋ 添加出货</button>
+          <a class="btn ghost sm" onclick="switchView('customers')" style="cursor:pointer;">没有客户？去新建 →</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">全部记录 <span class="badge" id="daily-count">0 条</span></div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead><tr>
+              <th>日期</th><th>客户</th><th>托盘</th><th>车次</th><th>扣款</th><th>成本</th><th>中介费</th><th>净利润</th><th>备注</th><th></th>
+            </tr></thead>
+            <tbody id="daily-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Customers -->
+    <section class="view" data-view="customers">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">客户账本</h1>
+          <div class="page-sub">每个客户独立流水账，预付 / 取货 / 退款自动算余额</div>
+        </div>
+        <button class="btn primary" onclick="openCustomerModal()">＋ 新建客户</button>
+      </div>
+
+      <div class="customer-grid" id="customer-grid"></div>
+
+      <div id="customer-detail" class="hide mt-6">
+        <div class="card">
+          <div class="row mb-4">
+            <div class="grow">
+              <div class="page-title" id="cd-name"></div>
+              <div class="page-sub" id="cd-meta"></div>
+            </div>
+            <button class="btn sm ghost" onclick="closeCustomerDetail()">← 返回列表</button>
+            <button class="btn sm danger" onclick="deleteCustomer()">删除客户</button>
+          </div>
+
+          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
+            <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div></div>
+            <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub">托盘</div></div>
+            <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub">该客户贡献</div></div>
+          </div>
+
+          <div class="card-title mt-6">新增流水</div>
+          <div class="form-grid mt-4">
+            <div class="form-row"><label>日期</label><input type="date" id="lg-date" oninput="updateLedgerPreview()"></div>
+            <div class="form-row"><label>类型</label>
+              <select id="lg-type" onchange="updateLedgerForm()">
+                <option value="deposit">预付 (+)</option>
+                <option value="pickup">取货 (-)</option>
+                <option value="refund">退款 (-)</option>
+                <option value="adjust">调整 (±)</option>
+              </select>
+            </div>
+            <div class="form-row" id="lg-amount-row"><label id="lg-amount-label">金额 £</label><input type="number" id="lg-amount" placeholder="0" oninput="updateLedgerPreview()"></div>
+            <div class="form-row row-hidden" id="lg-pallets-row"><label>托盘数</label><input type="number" id="lg-pallets" placeholder="24" min="1" oninput="updateLedgerPreview()"></div>
+            <div class="form-row row-hidden" id="lg-truck-row"><label>车次（可选）</label><input type="text" id="lg-truck" placeholder="T-001"></div>
+            <div class="form-row" style="grid-column: 1/-1;"><label>备注（可选）</label><input type="text" id="lg-note" placeholder="备注"></div>
+          </div>
+          <div id="lg-preview" class="preview-box"></div>
+          <div class="row mt-4"><button class="btn primary" onclick="addLedger()">＋ 添加流水</button></div>
+
+          <div class="card-title mt-6">流水明细 <span class="badge" id="cd-count">0 条</span></div>
+          <div class="table-wrap mt-4">
+            <table>
+              <thead><tr><th>日期</th><th>类型</th><th>托盘</th><th>车次</th><th>金额</th><th>余额</th><th>备注</th><th></th></tr></thead>
+              <tbody id="ledger-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Monthly -->
+    <section class="view" data-view="monthly">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">月度汇总</h1>
+          <div class="page-sub">按月统计托盘、营收、成本、净利润与环比</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>月份</th><th>托盘</th><th>营收</th><th>成本</th><th>中介费</th><th>净利润</th><th>环比</th></tr></thead>
+            <tbody id="monthly-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI -->
+    <section class="view" data-view="ai">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title"><span class="gradient">AI</span> 经营建议</h1>
+          <div class="page-sub">自动扫描 + 深度分析，帮你找到利润最大化的路径</div>
+        </div>
+      </div>
+
+      <div class="ai-grid">
+        <div class="ai-card hero">
+          <div class="ai-hero-title"><span class="gradient">深度分析</span></div>
+          <div class="ai-hero-desc">基于你全部业务数据，给出定制化的利润提升策略、风险提示和下一步行动。</div>
+          <button class="btn primary" onclick="runAI()" id="ai-run-btn">✦ 让 AI 深度分析</button>
+          <div class="ai-output empty mt-4" id="ai-output">点上方按钮开始分析…</div>
+          <div class="page-sub mt-4" style="font-size: 11px;">注：GitHub Pages 版本使用规则算法分析。想接入真正的 AI 可以后续配置。</div>
+        </div>
+
+        <div class="ai-card">
+          <div class="card-title">规则自动扫描</div>
+          <div class="page-sub mb-4">余额、利润率、客户集中度、装载效率、环比增长</div>
+          <div id="insights-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view" data-view="settings">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">参数设置</h1>
+          <div class="page-sub">所有计算都基于这些参数，改一次，全局生效</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="form-grid">
+          <div class="form-row"><label>SSS 买价 £/托盘</label><input type="number" id="s-buy"></div>
+          <div class="form-row"><label>卖给客户 £/托盘</label><input type="number" id="s-sell"></div>
+          <div class="form-row"><label>我的中介费 £/托盘</label><input type="number" id="s-myfee"></div>
+          <div class="form-row"><label>Hugo 费用 £/托盘</label><input type="number" id="s-hugo"></div>
+          <div class="form-row"><label>V 费用 £/托盘</label><input type="number" id="s-v"></div>
+        </div>
+        <div class="row mt-4">
+          <button class="btn primary" onclick="saveSettings()">保存参数</button>
+          <button class="btn ghost danger" onclick="resetAll()">清空全部数据</button>
+        </div>
+        <div class="mt-6" style="font-size: 12px; color: var(--text-dim); line-height: 1.8;">
+          <div>◆ 每托盘毛利（我的）= 卖价 + 我的中介费 − 买价 = <span id="calc-profit"></span></div>
+          <div>◆ Hugo / V 费用是客户直接付给他们，不进你的 P&amp;L</div>
+          <div>◆ 客户取货扣款按卖价 £<span id="calc-sell"></span> × 托盘数</div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Calculator -->
+<button class="calc-fab no-print hide" id="calc-fab" onclick="toggleCalc()" title="计算器 (C)">＝</button>
+<div class="calc-panel no-print" id="calc-panel">
+  <div class="calc-display" id="calc-display">0</div>
+  <div class="calc-presets">
+    <button class="calc-preset" onclick="calcPreset('profit-24')">24 托盘利润</button>
+    <button class="calc-preset" onclick="calcPreset('profit-26')">26 托盘利润</button>
+    <button class="calc-preset" onclick="calcPreset('deduct-24')">24 托盘扣款</button>
+    <button class="calc-preset" onclick="calcPreset('deduct-26')">26 托盘扣款</button>
+  </div>
+  <input type="text" id="calc-input" placeholder="输入算式，如 24*51" oninput="calcEval()" onkeydown="if(event.key==='Enter')calcEval()">
+  <div class="row mt-4">
+    <button class="btn sm ghost" onclick="calcClear()">清空</button>
+    <button class="btn sm" onclick="calcCopy()">复制结果</button>
+  </div>
+</div>
+
+<!-- Customer Modal -->
+<div class="modal-backdrop" id="customer-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">新建客户</div>
+      <button class="modal-close" onclick="closeCustomerModal()">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-row" style="grid-column: 1/-1;"><label>客户名称</label><input type="text" id="new-cust-name" placeholder="如：老王"></div>
+    </div>
+    <div class="row mt-4"><button class="btn primary" onclick="createCustomer()">创建</button></div>
+  </div>
+</div>
+
+<!-- Mobile Nav -->
+<nav class="mobile-nav no-print" id="mobile-nav">
+  <div class="mobile-nav-item active" data-view="dashboard"><span class="icon">◉</span><span>仪表盘</span></div>
+  <div class="mobile-nav-item" data-view="daily"><span class="icon">▦</span><span>出货</span></div>
+  <div class="mobile-nav-item" data-view="customers"><span class="icon">◈</span><span>客户</span></div>
+  <div class="mobile-nav-item" data-view="monthly"><span class="icon">▩</span><span>月度</span></div>
+  <div class="mobile-nav-item" data-view="ai"><span class="icon">✦</span><span>AI</span></div>
+  <div class="mobile-nav-item" data-view="settings"><span class="icon">⚙</span><span>设置</span></div>
+  <a class="mobile-nav-item nav-external" href="../" style="text-decoration:none;"><span class="icon">⇆</span><span>合伙</span></a>
+</nav>
+
+<script>
+// ============ SUPABASE SETUP ============
+// Same project as PalletAC partnership app — personal data is in a separate table (personal_data)
+// with RLS that ONLY allows harreds.ceo@gmail.com to read/write
+const SUPABASE_URL = 'https://vnuyvrgtraougqspgpmz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_-IsFFVQijDLJjzm2z537AA_SEQM46MJ';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Owner email — only this account can load the personal ledger
+const OWNER_EMAIL = 'harreds.ceo@gmail.com';
+
+let currentUser = null;
+let state = null;
+let currentCustomer = null;
+let charts = {};
+let authMode = 'signin';
+
+// ============ AUTH ============
+function switchAuthTab(mode) {
+  authMode = mode;
+  document.getElementById('tab-signin').classList.toggle('active', mode === 'signin');
+  document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
+  document.getElementById('auth-btn').textContent = mode === 'signin' ? '登录' : '创建账号';
+  document.getElementById('auth-password').setAttribute('autocomplete', mode === 'signin' ? 'current-password' : 'new-password');
+  clearAuthMsg();
+}
+
+function showAuthMsg(text, isSuccess) {
+  const el = document.getElementById('auth-msg');
+  el.textContent = text;
+  el.classList.remove('hide');
+  el.classList.toggle('success', !!isSuccess);
+}
+function clearAuthMsg() {
+  document.getElementById('auth-msg').classList.add('hide');
+}
+
+async function handleAuth(e) {
+  e.preventDefault();
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const btn = document.getElementById('auth-btn');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '处理中…';
+  clearAuthMsg();
+
+  try {
+    if (authMode === 'signin') {
+      const { data, error } = await db.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      // onAuthStateChange will take over
+    } else {
+      const { data, error } = await db.auth.signUp({ email, password });
+      if (error) throw error;
+      if (data.user && !data.session) {
+        showAuthMsg('账号已创建！请到邮箱 ' + email + ' 点确认链接，然后回来登录。', true);
+        switchAuthTab('signin');
+      }
+      // else: auto-logged in
+    }
+  } catch (err) {
+    showAuthMsg(translateAuthError(err.message || '登录失败'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+function translateAuthError(msg) {
+  const m = msg.toLowerCase();
+  if (m.includes('invalid') && m.includes('credentials')) return '邮箱或密码错误';
+  if (m.includes('email not confirmed')) return '邮箱未确认，请先点邮箱里的确认链接';
+  if (m.includes('already registered') || m.includes('already exists')) return '这个邮箱已注册，请直接登录';
+  if (m.includes('password') && m.includes('6')) return '密码至少 6 位';
+  if (m.includes('rate limit')) return '请求太频繁，稍后再试';
+  if (m.includes('network') || m.includes('failed to fetch')) return '网络错误，请检查连接';
+  return msg;
+}
+
+async function signOut() {
+  if (!confirm('确定退出登录？')) return;
+  await db.auth.signOut();
+  state = null;
+  currentUser = null;
+  showAuth();
+}
+
+function showAuth() {
+  document.getElementById('loading-screen').classList.add('hide');
+  document.getElementById('auth-screen').classList.remove('hide');
+  document.getElementById('app').classList.add('hide');
+  document.getElementById('calc-fab').classList.add('hide');
+  document.getElementById('mobile-nav').classList.add('hide');
+}
+
+function showLoading() {
+  document.getElementById('loading-screen').classList.remove('hide');
+  document.getElementById('auth-screen').classList.add('hide');
+  document.getElementById('app').classList.add('hide');
+}
+
+function showApp() {
+  document.getElementById('loading-screen').classList.add('hide');
+  document.getElementById('auth-screen').classList.add('hide');
+  document.getElementById('app').classList.remove('hide');
+  document.getElementById('calc-fab').classList.remove('hide');
+  document.getElementById('mobile-nav').classList.remove('hide');
+  // Update user chip
+  if (currentUser) {
+    document.getElementById('user-email').textContent = currentUser.email;
+    document.getElementById('user-avatar').textContent = (currentUser.email || '?').slice(0, 1).toUpperCase();
+  }
+}
+
+// ============ DATA SYNC ============
+function emptyState() {
+  return {
+    params: { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2 },
+    customers: []
+  };
+}
+
+function setSyncStatus(status) {
+  const badge = document.getElementById('sync-badge');
+  const text = document.getElementById('sync-text');
+  badge.classList.remove('syncing', 'error');
+  if (status === 'syncing') { badge.classList.add('syncing'); text.textContent = '同步中…'; }
+  else if (status === 'error') { badge.classList.add('error'); text.textContent = '同步失败'; }
+  else { text.textContent = '已同步'; }
+}
+
+async function loadUserData() {
+  if (!currentUser) return;
+  try {
+    const { data, error } = await db
+      .from('personal_data')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data && data.data && Object.keys(data.data).length > 0) {
+      state = data.data;
+      // Make sure schema fields exist
+      if (!state.params) state.params = { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2 };
+      if (!state.customers) state.customers = [];
+      migrateDailyToLedger();
+    } else {
+      // First-time user: start with empty state (no test data)
+      state = emptyState();
+      await saveUserDataNow();
+    }
+  } catch (err) {
+    console.error('Load failed:', err);
+    // Fallback to empty state
+    state = emptyState();
+    setSyncStatus('error');
+  }
+}
+
+// One-time migration: move legacy state.daily[] into a "未分类" customer's ledger
+function migrateDailyToLedger() {
+  if (!Array.isArray(state.daily) || state.daily.length === 0) {
+    if ('daily' in state) delete state.daily;
+    return;
+  }
+  let fallback = state.customers.find(c => c.name === '未分类');
+  if (!fallback) {
+    fallback = { id: crypto.randomUUID(), name: '未分类', createdAt: new Date().toISOString(), ledger: [] };
+    state.customers.push(fallback);
+  }
+  const sell = state.params.sellPrice || 265;
+  for (const r of state.daily) {
+    fallback.ledger.push({
+      id: r.id || crypto.randomUUID(),
+      date: r.date,
+      type: 'pickup',
+      amount: (r.pallets || 0) * sell,
+      pallets: r.pallets || 0,
+      truck: r.truck || '',
+      note: r.notes || r.note || ''
+    });
+  }
+  delete state.daily;
+  // Persist the migration
+  save();
+}
+
+let saveTimer = null;
+function save() {
+  if (saveTimer) clearTimeout(saveTimer);
+  setSyncStatus('syncing');
+  saveTimer = setTimeout(saveUserDataNow, 600);
+}
+
+async function saveUserDataNow() {
+  if (!currentUser || !state) return;
+  try {
+    const { error } = await db
+      .from('personal_data')
+      .upsert({ user_id: currentUser.id, data: state }, { onConflict: 'user_id' });
+    if (error) throw error;
+    setSyncStatus('ok');
+  } catch (err) {
+    console.error('Save failed:', err);
+    setSyncStatus('error');
+  }
+}
+
+// ============ COMPUTE ============
+const perPalletProfit = () => (state.params.sellPrice + state.params.myFee - state.params.buyPrice);
+const fmt = v => '£' + Math.round(v).toLocaleString('en-GB');
+
+// SINGLE SOURCE OF TRUTH — every pickup lives in a customer's ledger.
+// allPickups() flattens pickup-type ledger entries across all customers,
+// tagging each with customerId + customerName so the Daily view / charts /
+// monthly aggregates can treat them like the old state.daily[] array.
+function allPickups() {
+  const out = [];
+  for (const c of state.customers) {
+    for (const e of c.ledger) {
+      if (e.type !== 'pickup') continue;
+      out.push({
+        id: e.id,
+        date: e.date,
+        pallets: e.pallets || 0,
+        truck: e.truck || '',
+        note: e.note || '',
+        amount: e.amount || 0,
+        customerId: c.id,
+        customerName: c.name
+      });
+    }
+  }
+  return out;
+}
+
+function pickupMetrics(row) {
+  const revenue = row.pallets * state.params.sellPrice;
+  const cost = row.pallets * state.params.buyPrice;
+  const fee = row.pallets * state.params.myFee;
+  const profit = revenue + fee - cost;
+  return { revenue, cost, fee, profit };
+}
+
+function customerBalance(c) {
+  let bal = 0;
+  for (const e of c.ledger) {
+    if (e.type === 'deposit') bal += e.amount;
+    else bal -= e.amount;
+  }
+  return bal;
+}
+function customerTotalDeposit(c) { return c.ledger.filter(e => e.type === 'deposit').reduce((s, e) => s + e.amount, 0); }
+function customerTotalPallets(c) { return c.ledger.filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0); }
+function customerProfit(c) { return customerTotalPallets(c) * perPalletProfit(); }
+function allBalance() { return state.customers.reduce((s, c) => s + customerBalance(c), 0); }
+
+function monthlyAgg() {
+  const map = {};
+  for (const r of allPickups()) {
+    const key = r.date.slice(0, 7);
+    if (!map[key]) map[key] = { month: key, pallets: 0, revenue: 0, cost: 0, fee: 0, profit: 0 };
+    const m = pickupMetrics(r);
+    map[key].pallets += r.pallets;
+    map[key].revenue += m.revenue;
+    map[key].cost += m.cost;
+    map[key].fee += m.fee;
+    map[key].profit += m.profit;
+  }
+  return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function totals() {
+  const pickups = allPickups();
+  let pallets = 0, revenue = 0, cost = 0, fee = 0, profit = 0;
+  for (const r of pickups) {
+    const m = pickupMetrics(r);
+    pallets += r.pallets; revenue += m.revenue; cost += m.cost; fee += m.fee; profit += m.profit;
+  }
+  const now = new Date(); const ym = now.toISOString().slice(0, 7);
+  const thisMonth = pickups.filter(r => r.date.startsWith(ym));
+  let mPallets = 0, mProfit = 0;
+  for (const r of thisMonth) { const m = pickupMetrics(r); mPallets += r.pallets; mProfit += m.profit; }
+  return { pallets, revenue, cost, fee, profit, mPallets, mProfit };
+}
+
+// ============ RENDER ============
+function renderKpis() {
+  const t = totals();
+  const bal = allBalance();
+  const agg = monthlyAgg();
+  const last = agg[agg.length - 1]; const prev = agg[agg.length - 2];
+  let trend = 'flat', trendTxt = '—';
+  if (last && prev) {
+    const pct = (last.profit - prev.profit) / (prev.profit || 1) * 100;
+    trend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+    trendTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+  }
+  const perP = perPalletProfit();
+  const html = `
+    <div class="kpi v2">
+      <div class="kpi-head"><div class="kpi-label">累计净利润</div><div class="kpi-icon">✦</div></div>
+      <div class="kpi-value">${fmt(t.profit)}</div>
+      <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
+    </div>
+    <div class="kpi v4">
+      <div class="kpi-head"><div class="kpi-label">本月利润</div><div class="kpi-icon">$</div></div>
+      <div class="kpi-value">${fmt(t.mProfit)}</div>
+      <div class="kpi-sub">${t.mPallets} 托盘 <span class="kpi-trend ${trend}">${trendTxt}</span></div>
+    </div>
+    <div class="kpi v1">
+      <div class="kpi-head"><div class="kpi-label">本月托盘</div><div class="kpi-icon">▦</div></div>
+      <div class="kpi-value">${t.mPallets}</div>
+      <div class="kpi-sub">约 ${Math.round(t.mPallets / 30 * 7)} 托盘/周</div>
+    </div>
+    <div class="kpi v3">
+      <div class="kpi-head"><div class="kpi-label">每托盘毛利</div><div class="kpi-icon">★</div></div>
+      <div class="kpi-value">${fmt(perP)}</div>
+      <div class="kpi-sub">${(perP / (state.params.sellPrice + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
+    </div>
+    <div class="kpi v5">
+      <div class="kpi-head"><div class="kpi-label">客户预付余额</div><div class="kpi-icon">◈</div></div>
+      <div class="kpi-value">${fmt(bal)}</div>
+      <div class="kpi-sub">${state.customers.length} 位客户</div>
+    </div>
+    <div class="kpi v6">
+      <div class="kpi-head"><div class="kpi-label">累计营收</div><div class="kpi-icon">↗</div></div>
+      <div class="kpi-value">${fmt(t.revenue + t.fee)}</div>
+      <div class="kpi-sub">成本 ${fmt(t.cost)}</div>
+    </div>
+  `;
+  document.getElementById('kpi-grid').innerHTML = html;
+}
+
+function renderDaily() {
+  // Update sell price display in page header hint
+  const sellEl = document.getElementById('d-sell');
+  if (sellEl) sellEl.textContent = state.params.sellPrice;
+
+  // Populate customer <select>
+  const sel = document.getElementById('d-customer');
+  if (sel) {
+    const prev = sel.value;
+    const opts = ['<option value="">请选择客户…</option>'];
+    for (const c of state.customers) {
+      const bal = customerBalance(c);
+      opts.push(`<option value="${c.id}">${escapeHtml(c.name)} · 余额 ${fmt(bal)}</option>`);
+    }
+    sel.innerHTML = opts.join('');
+    if (prev && state.customers.find(c => c.id === prev)) sel.value = prev;
+  }
+
+  const rows = allPickups().sort((a, b) => b.date.localeCompare(a.date));
+  document.getElementById('daily-count').textContent = rows.length + ' 条';
+  const body = rows.map(r => {
+    const m = pickupMetrics(r);
+    return `<tr>
+      <td>${r.date}</td>
+      <td><b>${escapeHtml(r.customerName)}</b></td>
+      <td><b>${r.pallets}</b></td>
+      <td class="dim">${escapeHtml(r.truck || '-')}</td>
+      <td class="neg">-${fmt(r.amount)}</td>
+      <td class="dim">${fmt(m.cost)}</td>
+      <td>${fmt(m.fee)}</td>
+      <td class="pos">${fmt(m.profit)}</td>
+      <td class="dim">${escapeHtml(r.note || '')}</td>
+      <td><button class="btn sm danger" onclick="delPickup('${r.customerId}','${r.id}')">删</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('daily-body').innerHTML = body || `<tr><td colspan="10" class="dim" style="text-align:center;padding:40px;">暂无记录</td></tr>`;
+
+  // Refresh live preview in case customer/sell changed
+  updatePickupPreview();
+}
+
+function renderCustomers() {
+  const grid = document.getElementById('customer-grid');
+  grid.innerHTML = state.customers.map(c => {
+    const bal = customerBalance(c);
+    const cls = bal < 0 ? 'neg' : bal < 2000 ? '' : 'pos';
+    const init = c.name.slice(0, 1);
+    return `<div class="customer-card" onclick="openCustomer('${c.id}')">
+      <div class="customer-avatar">${escapeHtml(init)}</div>
+      <div class="customer-name">${escapeHtml(c.name)}</div>
+      <div class="customer-meta">${c.ledger.length} 条流水 · ${customerTotalPallets(c)} 托盘</div>
+      <div class="customer-balance-label">当前余额</div>
+      <div class="customer-balance ${cls}">${fmt(bal)}</div>
+    </div>`;
+  }).join('') || `<div class="dim" style="padding:40px;text-align:center;grid-column:1/-1;">还没有客户，点右上角"新建客户"</div>`;
+}
+
+function renderCustomerDetail() {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) { closeCustomerDetail(); return; }
+  document.getElementById('cd-name').textContent = c.name;
+  document.getElementById('cd-meta').textContent = `创建于 ${(c.createdAt || '').slice(0, 10)} · ${c.ledger.length} 条流水`;
+  const bal = customerBalance(c);
+  document.getElementById('cd-balance').textContent = fmt(bal);
+  document.getElementById('cd-deposit').textContent = fmt(customerTotalDeposit(c));
+  document.getElementById('cd-pallets').textContent = customerTotalPallets(c);
+  document.getElementById('cd-profit').textContent = fmt(customerProfit(c));
+  document.getElementById('cd-count').textContent = c.ledger.length + ' 条';
+
+  const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
+  let running = 0;
+  const rowsHtml = sorted.map(e => {
+    if (e.type === 'deposit') running += e.amount; else running -= e.amount;
+    const typeMap = { deposit: ['预付', 'badge-deposit'], pickup: ['取货', 'badge-pickup'], refund: ['退款', 'badge-refund'], adjust: ['调整', 'badge-adjust'] };
+    const [label, cls] = typeMap[e.type] || ['?', 'badge-adjust'];
+    const sign = e.type === 'deposit' ? '+' : '-';
+    const amtCls = e.type === 'deposit' ? 'pos' : 'neg';
+    const runCls = running < 0 ? 'neg' : '';
+    return { html: `<tr>
+      <td>${e.date}</td>
+      <td><span class="badge-type ${cls}">${label}</span></td>
+      <td>${e.pallets || '-'}</td>
+      <td class="dim">${escapeHtml(e.truck || '-')}</td>
+      <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
+      <td class="${runCls}"><b>${fmt(running)}</b></td>
+      <td class="dim">${escapeHtml(e.note || '')}</td>
+      <td><button class="btn sm danger" onclick="delLedger('${e.id}')">删</button></td>
+    </tr>`, id: e.id };
+  });
+  const reversed = [...rowsHtml].reverse();
+  document.getElementById('ledger-body').innerHTML = reversed.map(x => x.html).join('') || `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">暂无流水</td></tr>`;
+  updateLedgerPreview();
+}
+
+function renderMonthly() {
+  const agg = monthlyAgg();
+  const body = document.getElementById('monthly-body');
+  const rows = [...agg].reverse().map(m => {
+    const origIdx = agg.indexOf(m);
+    const prev = origIdx > 0 ? agg[origIdx - 1] : null;
+    let growth = '-';
+    if (prev) {
+      const pct = (m.profit - prev.profit) / (prev.profit || 1) * 100;
+      const cls = pct >= 0 ? 'pos' : 'neg';
+      growth = `<span class="${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>`;
+    }
+    return `<tr>
+      <td><b>${m.month}</b></td>
+      <td>${m.pallets}</td>
+      <td>${fmt(m.revenue)}</td>
+      <td class="dim">${fmt(m.cost)}</td>
+      <td>${fmt(m.fee)}</td>
+      <td class="pos"><b>${fmt(m.profit)}</b></td>
+      <td>${growth}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = rows || `<tr><td colspan="7" class="dim" style="text-align:center;padding:40px;">暂无数据</td></tr>`;
+}
+
+function renderSettings() {
+  document.getElementById('s-buy').value = state.params.buyPrice;
+  document.getElementById('s-sell').value = state.params.sellPrice;
+  document.getElementById('s-myfee').value = state.params.myFee;
+  document.getElementById('s-hugo').value = state.params.hugoFee;
+  document.getElementById('s-v').value = state.params.vFee;
+  document.getElementById('calc-profit').textContent = fmt(perPalletProfit());
+  document.getElementById('calc-sell').textContent = state.params.sellPrice;
+}
+
+const chartOpts = {
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { color: '#94A3C4', font: { size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
+    y: { ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+  }
+};
+
+function renderCharts() {
+  const agg = monthlyAgg().slice(-6);
+  const months = agg.map(m => m.month);
+
+  const ctx1 = document.getElementById('chart-pnl');
+  if (charts.pnl) charts.pnl.destroy();
+  charts.pnl = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: months,
+      datasets: [
+        { label: '营收', data: agg.map(m => m.revenue + m.fee), backgroundColor: 'rgba(0, 229, 255, 0.6)', borderRadius: 6 },
+        { label: '成本', data: agg.map(m => m.cost), backgroundColor: 'rgba(251, 113, 133, 0.5)', borderRadius: 6 },
+        { label: '净利润', data: agg.map(m => m.profit), backgroundColor: 'rgba(139, 92, 246, 0.7)', borderRadius: 6 }
+      ]
+    },
+    options: chartOpts
+  });
+
+  const ctx2 = document.getElementById('chart-balance');
+  if (charts.bal) charts.bal.destroy();
+  const custData = state.customers.map(c => ({ name: c.name, bal: customerBalance(c) }));
+  charts.bal = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: custData.map(c => c.name),
+      datasets: [{
+        data: custData.map(c => Math.max(0, c.bal)),
+        backgroundColor: ['#00E5FF', '#8B5CF6', '#F472B6', '#22D3A5', '#FBBF24', '#FB7185'],
+        borderColor: 'rgba(10, 14, 39, 0.8)',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: '#94A3C4', font: { size: 11 }, padding: 10 } } }
+    }
+  });
+
+  // Aggregate pickups by date for the last 30 active days
+  const byDate = {};
+  for (const r of allPickups()) {
+    byDate[r.date] = (byDate[r.date] || 0) + r.pallets;
+  }
+  const last30 = Object.entries(byDate)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-30)
+    .map(([date, pallets]) => ({ date, pallets }));
+  const ctx3 = document.getElementById('chart-pallets');
+  if (charts.pal) charts.pal.destroy();
+  charts.pal = new Chart(ctx3, {
+    type: 'line',
+    data: {
+      labels: last30.map(r => r.date.slice(5)),
+      datasets: [{
+        label: '托盘数',
+        data: last30.map(r => r.pallets),
+        borderColor: '#00E5FF',
+        backgroundColor: 'rgba(0, 229, 255, 0.15)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2,
+        pointBackgroundColor: '#00E5FF',
+        borderWidth: 2
+      }]
+    },
+    options: chartOpts
+  });
+
+  const sorted = allPickups().sort((a,b) => a.date.localeCompare(b.date));
+  let cum = 0;
+  const cumData = sorted.map(r => { cum += pickupMetrics(r).profit; return cum; });
+  const ctx4 = document.getElementById('chart-cumprofit');
+  if (charts.cum) charts.cum.destroy();
+  charts.cum = new Chart(ctx4, {
+    type: 'line',
+    data: {
+      labels: sorted.map(r => r.date.slice(5)),
+      datasets: [{
+        label: '累计利润 £',
+        data: cumData,
+        borderColor: '#A78BFA',
+        backgroundColor: 'rgba(139, 92, 246, 0.2)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2.5
+      }]
+    },
+    options: chartOpts
+  });
+}
+
+// ============ ACTIONS ============
+function updatePickupPreview() {
+  const box = document.getElementById('d-preview');
+  if (!box) return;
+  const cid = document.getElementById('d-customer').value;
+  const pallets = parseInt(document.getElementById('d-pallets').value) || 0;
+  if (!cid || !pallets) {
+    box.classList.remove('show', 'danger');
+    box.innerHTML = '';
+    return;
+  }
+  const c = state.customers.find(x => x.id === cid);
+  if (!c) return;
+  const sell = state.params.sellPrice;
+  const deduction = pallets * sell;
+  const bal = customerBalance(c);
+  const after = bal - deduction;
+  const profit = pallets * perPalletProfit();
+  const overdraft = after < 0;
+  box.classList.add('show');
+  box.classList.toggle('danger', overdraft);
+  const afterCls = overdraft ? 'neg' : (after < sell * 3 ? 'warn' : 'pos');
+  box.innerHTML = `
+    <div class="pv-row"><span class="pv-k">出货金额 (${pallets} × £${sell})</span><span class="pv-v neg">-${fmt(deduction)}</span></div>
+    <div class="pv-row"><span class="pv-k">${escapeHtml(c.name)} 当前余额</span><span class="pv-v">${fmt(bal)}</span></div>
+    <div class="pv-row"><span class="pv-k">出货后余额</span><span class="pv-v ${afterCls}">${fmt(after)}</span></div>
+    <div class="pv-row"><span class="pv-k">本次毛利</span><span class="pv-v pos">+${fmt(profit)}</span></div>
+    <div class="pv-warning">⚠ 余额将为负（${fmt(after)}）— 客户透支！可以保存，但建议先催款或预付。</div>
+  `;
+}
+
+function addPickup() {
+  const date = document.getElementById('d-date').value;
+  const cid = document.getElementById('d-customer').value;
+  const pallets = parseInt(document.getElementById('d-pallets').value);
+  const truck = document.getElementById('d-truck').value.trim();
+  const note = document.getElementById('d-notes').value.trim();
+  if (!date) { alert('请选择日期'); return; }
+  if (!cid) { alert('请选择客户（没有客户请先到"客户账本"新建）'); return; }
+  if (!pallets || pallets <= 0) { alert('请填写托盘数（>0）'); return; }
+  const c = state.customers.find(x => x.id === cid);
+  if (!c) { alert('客户不存在'); return; }
+  const amount = pallets * state.params.sellPrice;
+  c.ledger.push({
+    id: crypto.randomUUID(),
+    date, type: 'pickup', amount, pallets, truck, note
+  });
+  // Reset form (keep customer selected for rapid entry)
+  document.getElementById('d-pallets').value = '';
+  document.getElementById('d-truck').value = '';
+  document.getElementById('d-notes').value = '';
+  save(); renderAll();
+  flash('已记录：' + c.name + ' × ' + pallets + ' 托盘');
+}
+
+function delPickup(customerId, id) {
+  if (!confirm('确定删除这条出货记录？（客户账本也会同步删除）')) return;
+  const c = state.customers.find(x => x.id === customerId);
+  if (!c) return;
+  c.ledger = c.ledger.filter(e => e.id !== id);
+  save(); renderAll();
+}
+
+function openCustomerModal() { document.getElementById('customer-modal').classList.add('open'); }
+function closeCustomerModal() {
+  document.getElementById('customer-modal').classList.remove('open');
+  document.getElementById('new-cust-name').value = '';
+}
+function createCustomer() {
+  const name = document.getElementById('new-cust-name').value.trim();
+  if (!name) return;
+  state.customers.push({ id: crypto.randomUUID(), name, createdAt: new Date().toISOString(), ledger: [] });
+  closeCustomerModal(); save(); renderAll();
+}
+function openCustomer(id) {
+  currentCustomer = id;
+  document.getElementById('customer-grid').classList.add('hide');
+  document.querySelector('[data-view="customers"] .page-head button').classList.add('hide');
+  document.getElementById('customer-detail').classList.remove('hide');
+  document.getElementById('lg-date').value = new Date().toISOString().slice(0, 10);
+  // Reset ledger form to default (deposit mode)
+  document.getElementById('lg-type').value = 'deposit';
+  document.getElementById('lg-amount').value = '';
+  document.getElementById('lg-pallets').value = '';
+  if (document.getElementById('lg-truck')) document.getElementById('lg-truck').value = '';
+  document.getElementById('lg-note').value = '';
+  updateLedgerForm();
+  renderCustomerDetail();
+}
+function closeCustomerDetail() {
+  currentCustomer = null;
+  document.getElementById('customer-grid').classList.remove('hide');
+  const btn = document.querySelector('[data-view="customers"] .page-head button');
+  if (btn) btn.classList.remove('hide');
+  document.getElementById('customer-detail').classList.add('hide');
+}
+function deleteCustomer() {
+  if (!currentCustomer) return;
+  if (!confirm('删除客户及其全部流水？')) return;
+  state.customers = state.customers.filter(c => c.id !== currentCustomer);
+  closeCustomerDetail(); save(); renderAll();
+}
+// Show/hide fields based on selected ledger type
+function updateLedgerForm() {
+  const t = document.getElementById('lg-type').value;
+  const amountRow = document.getElementById('lg-amount-row');
+  const palletsRow = document.getElementById('lg-pallets-row');
+  const truckRow = document.getElementById('lg-truck-row');
+  const amountLbl = document.getElementById('lg-amount-label');
+  const amountInp = document.getElementById('lg-amount');
+
+  if (t === 'pickup') {
+    // Pickup: pallets + truck shown, amount auto-computed and read-only
+    amountRow.classList.add('row-hidden');
+    palletsRow.classList.remove('row-hidden');
+    truckRow.classList.remove('row-hidden');
+  } else if (t === 'deposit') {
+    amountLbl.textContent = '金额 £ (预付入账)';
+    amountInp.placeholder = '例如 10000';
+    amountRow.classList.remove('row-hidden');
+    palletsRow.classList.add('row-hidden');
+    truckRow.classList.add('row-hidden');
+  } else if (t === 'refund') {
+    amountLbl.textContent = '金额 £ (退款)';
+    amountInp.placeholder = '例如 500';
+    amountRow.classList.remove('row-hidden');
+    palletsRow.classList.add('row-hidden');
+    truckRow.classList.add('row-hidden');
+  } else if (t === 'adjust') {
+    amountLbl.textContent = '金额 £ (+ 为加 / - 为减)';
+    amountInp.placeholder = '例如 -50 或 120';
+    amountRow.classList.remove('row-hidden');
+    palletsRow.classList.add('row-hidden');
+    truckRow.classList.add('row-hidden');
+  }
+  updateLedgerPreview();
+}
+
+function updateLedgerPreview() {
+  const box = document.getElementById('lg-preview');
+  if (!box || !currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+  const t = document.getElementById('lg-type').value;
+  const amt = parseFloat(document.getElementById('lg-amount').value) || 0;
+  const pallets = parseInt(document.getElementById('lg-pallets').value) || 0;
+  const bal = customerBalance(c);
+  let delta = 0, label = '';
+  if (t === 'pickup') {
+    if (!pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+    delta = -pallets * state.params.sellPrice;
+    label = `取货 ${pallets} × £${state.params.sellPrice}`;
+  } else if (t === 'deposit') {
+    if (!amt) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+    delta = Math.abs(amt);
+    label = '预付入账';
+  } else if (t === 'refund') {
+    if (!amt) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+    delta = -Math.abs(amt);
+    label = '退款';
+  } else if (t === 'adjust') {
+    if (!amt) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+    delta = amt; // signed
+    label = '调整';
+  }
+  const after = bal + delta;
+  const overdraft = after < 0;
+  box.classList.add('show');
+  box.classList.toggle('danger', overdraft);
+  const afterCls = overdraft ? 'neg' : (after < state.params.sellPrice * 3 ? 'warn' : 'pos');
+  const deltaCls = delta < 0 ? 'neg' : 'pos';
+  box.innerHTML = `
+    <div class="pv-row"><span class="pv-k">${label}</span><span class="pv-v ${deltaCls}">${delta >= 0 ? '+' : ''}${fmt(delta)}</span></div>
+    <div class="pv-row"><span class="pv-k">变动前余额</span><span class="pv-v">${fmt(bal)}</span></div>
+    <div class="pv-row"><span class="pv-k">变动后余额</span><span class="pv-v ${afterCls}">${fmt(after)}</span></div>
+    <div class="pv-warning">⚠ 余额将为负（${fmt(after)}）— 客户透支！可以保存，但建议先催款或预付。</div>
+  `;
+}
+
+function addLedger() {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const date = document.getElementById('lg-date').value;
+  const type = document.getElementById('lg-type').value;
+  const rawAmt = parseFloat(document.getElementById('lg-amount').value);
+  const pallets = parseInt(document.getElementById('lg-pallets').value) || 0;
+  const truck = (document.getElementById('lg-truck').value || '').trim();
+  const note = document.getElementById('lg-note').value.trim();
+  if (!date) { alert('请填写日期'); return; }
+
+  let entry = null;
+  if (type === 'pickup') {
+    if (!pallets || pallets <= 0) { alert('取货请填托盘数 (>0)'); return; }
+    entry = {
+      id: crypto.randomUUID(), date, type: 'pickup',
+      amount: pallets * state.params.sellPrice,
+      pallets, truck, note
+    };
+  } else if (type === 'deposit') {
+    if (!rawAmt || rawAmt <= 0) { alert('预付金额必须 > 0'); return; }
+    entry = { id: crypto.randomUUID(), date, type: 'deposit', amount: Math.abs(rawAmt), pallets: 0, note };
+  } else if (type === 'refund') {
+    if (!rawAmt || rawAmt <= 0) { alert('退款金额必须 > 0'); return; }
+    entry = { id: crypto.randomUUID(), date, type: 'refund', amount: Math.abs(rawAmt), pallets: 0, note };
+  } else if (type === 'adjust') {
+    if (!rawAmt || rawAmt === 0) { alert('调整金额不能为 0（+ 为加 / - 为减）'); return; }
+    // Signed: store as positive amount; direction conveyed via a second "sub-type"
+    // Simpler: keep same storage shape — use deposit for positive, refund for negative
+    if (rawAmt > 0) entry = { id: crypto.randomUUID(), date, type: 'deposit', amount: rawAmt, pallets: 0, note: '调整：' + note };
+    else entry = { id: crypto.randomUUID(), date, type: 'refund', amount: Math.abs(rawAmt), pallets: 0, note: '调整：' + note };
+  }
+  if (!entry) return;
+  c.ledger.push(entry);
+  document.getElementById('lg-amount').value = '';
+  document.getElementById('lg-pallets').value = '';
+  document.getElementById('lg-truck').value = '';
+  document.getElementById('lg-note').value = '';
+  save(); renderAll();
+  flash('已添加流水');
+}
+function delLedger(id) {
+  if (!confirm('删除这条流水？（如果是出货，交易记录会同步删除）')) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  c.ledger = c.ledger.filter(e => e.id !== id);
+  save(); renderAll();
+}
+
+function saveSettings() {
+  state.params.buyPrice = parseFloat(document.getElementById('s-buy').value) || 245;
+  state.params.sellPrice = parseFloat(document.getElementById('s-sell').value) || 265;
+  state.params.myFee = parseFloat(document.getElementById('s-myfee').value) || 31;
+  state.params.hugoFee = parseFloat(document.getElementById('s-hugo').value) || 7;
+  state.params.vFee = parseFloat(document.getElementById('s-v').value) || 2;
+  save(); renderAll();
+  flash('参数已保存');
+}
+
+function resetAll() {
+  if (!confirm('清空你的全部数据？此操作不可撤销')) return;
+  state = emptyState();
+  save(); renderAll();
+}
+
+function exportJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pallet-business-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+function importJson(e) {
+  const f = e.target.files[0]; if (!f) return;
+  if (!confirm('导入将覆盖当前云端数据，确定继续？')) { e.target.value = ''; return; }
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      state = JSON.parse(r.result);
+      save(); renderAll(); flash('导入成功');
+    } catch (err) { alert('导入失败：文件格式错误'); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+
+// ============ AI / INSIGHTS ============
+function analyzeRules() {
+  const t = totals();
+  const bal = allBalance();
+  const agg = monthlyAgg();
+  const insights = [];
+
+  for (const c of state.customers) {
+    const b = customerBalance(c);
+    if (b < 0) insights.push({ type: 'bad', title: `${c.name} 透支 ${fmt(-b)}`, text: '该客户取货金额已超过预付。请尽快催款或停止出货。' });
+    else if (b > 0 && b < state.params.sellPrice * 5) insights.push({ type: 'warn', title: `${c.name} 余额偏低 (${fmt(b)})`, text: '只够买 ' + Math.floor(b / state.params.sellPrice) + ' 个托盘，建议提前提醒客户续预付。' });
+  }
+
+  const last7 = allPickups().sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
+  if (last7.length) {
+    const avg = last7.reduce((s, r) => s + r.pallets, 0) / last7.length;
+    if (avg < 22) insights.push({ type: 'warn', title: `卡车装载率偏低（均 ${avg.toFixed(1)} 托盘）`, text: '每车理论上能拉 24-26 个托盘，少拉一个 = 少赚 £' + perPalletProfit() + '。核对装车流程。' });
+    else if (avg >= 25) insights.push({ type: 'good', title: `装载率很好（均 ${avg.toFixed(1)} 托盘）`, text: '保持这个节奏，一周多 £' + Math.round(avg * 7 * perPalletProfit()).toLocaleString() + ' 利润。' });
+  }
+
+  const margin = perPalletProfit() / (state.params.sellPrice + state.params.myFee) * 100;
+  if (margin < 15) insights.push({ type: 'warn', title: `利润率偏低 (${margin.toFixed(1)}%)`, text: '和 SSS 谈谈批发价，或考虑逐步提升卖价 £5-10。' });
+  else insights.push({ type: 'good', title: `利润率健康 (${margin.toFixed(1)}%)`, text: `每托盘净赚 £${perPalletProfit()}。` });
+
+  const deposits = state.customers.map(c => ({ name: c.name, d: customerTotalDeposit(c) }));
+  const totalDep = deposits.reduce((s, c) => s + c.d, 0);
+  if (totalDep > 0) {
+    const top = deposits.sort((a, b) => b.d - a.d)[0];
+    const pct = top.d / totalDep * 100;
+    if (pct > 70) insights.push({ type: 'warn', title: `客户集中度过高（${top.name} 占 ${pct.toFixed(0)}%）`, text: '建议开发 2-3 个新客户分散风险。' });
+  }
+
+  if (agg.length >= 2) {
+    const last = agg[agg.length - 1]; const prev = agg[agg.length - 2];
+    const growth = (last.profit - prev.profit) / (prev.profit || 1) * 100;
+    if (growth > 15) insights.push({ type: 'good', title: `本月利润环比增长 ${growth.toFixed(1)}%`, text: '势头很好！可以考虑增加一趟车或扩张新客户。' });
+    else if (growth < -10) insights.push({ type: 'bad', title: `本月利润环比下降 ${growth.toFixed(1)}%`, text: '检查托盘数是否减少、退货率变化或客户流失。' });
+  }
+
+  if (bal > 50000) insights.push({ type: 'info', title: `预付池 ${fmt(bal)}，资金充裕`, text: '现金流很好。可以考虑谈判大宗采购折扣。' });
+
+  if (!insights.length) insights.push({ type: 'info', title: '数据不足', text: '多录入几天记录后再来看建议。' });
+  return insights;
+}
+
+function renderInsights() {
+  const ins = analyzeRules();
+  document.getElementById('insights-box').innerHTML = ins.map(i => `
+    <div class="insight ${i.type}">
+      <div class="insight-dot"></div>
+      <div>
+        <div class="insight-title">${i.title}</div>
+        <div class="insight-text">${i.text}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function runAI() {
+  const btn = document.getElementById('ai-run-btn');
+  const out = document.getElementById('ai-output');
+  btn.disabled = true; btn.textContent = '分析中…';
+  out.classList.remove('empty');
+
+  const t = totals();
+  const agg = monthlyAgg();
+  const ins = analyzeRules();
+
+  // Build a comprehensive analysis from rules + data
+  const lines = [];
+  lines.push('【核心亮点】');
+  if (t.mProfit > 0) lines.push(`本月利润 ${fmt(t.mProfit)}，托盘 ${t.mPallets} 个。`);
+  if (agg.length >= 2) {
+    const last = agg[agg.length - 1]; const prev = agg[agg.length - 2];
+    const g = (last.profit - prev.profit) / (prev.profit || 1) * 100;
+    lines.push(`环比${g >= 0 ? '增长' : '下降'} ${Math.abs(g).toFixed(1)}%。`);
+  }
+  lines.push(`每托盘净利 £${perPalletProfit()}，利润率 ${(perPalletProfit()/(state.params.sellPrice+state.params.myFee)*100).toFixed(1)}%。`);
+
+  lines.push('\n【三个最该改进的动作】');
+  const warn = ins.filter(i => i.type === 'warn' || i.type === 'bad').slice(0, 3);
+  if (warn.length) {
+    warn.forEach((i, idx) => lines.push(`${idx + 1}. ${i.title}：${i.text}`));
+  } else {
+    const perP = perPalletProfit();
+    lines.push(`1. 提升装载率到 26：每车多 £${2 * perP}，一月多赚约 £${2 * perP * 22}。`);
+    lines.push(`2. 开发 1 个新客户：分散风险 + 增加日订单。`);
+    lines.push(`3. 和 SSS 谈批发折扣：降 £5/托盘，年化提升利润 £${5 * 24 * 26 * 12}。`);
+  }
+
+  lines.push('\n【风险提示】');
+  const bads = ins.filter(i => i.type === 'bad');
+  if (bads.length) bads.forEach(i => lines.push(`⚠ ${i.title}：${i.text}`));
+  else lines.push('⚠ 单一客户集中度：如果某个客户占比过高，失去该客户影响巨大。');
+  lines.push('⚠ 现金流管理：客户预付款是别人的钱，不要当作利润花掉。');
+
+  lines.push('\n【下周目标】');
+  const avg7 = allPickups().sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
+  const avgP = avg7.length ? avg7.reduce((s, r) => s + r.pallets, 0) / avg7.length : 24;
+  const targetP = Math.ceil(avgP) + 1;
+  lines.push(`目标每日托盘 ${targetP}，周利润目标 £${Math.round(targetP * 6 * perPalletProfit()).toLocaleString()}。`);
+  lines.push(`保持 ${state.customers.length} 位客户余额都在 £${state.params.sellPrice * 10} 以上。`);
+
+  await new Promise(r => setTimeout(r, 600));
+  out.textContent = lines.join('\n');
+  btn.disabled = false; btn.textContent = '✦ 重新分析';
+}
+
+// ============ CALC ============
+function toggleCalc() { document.getElementById('calc-panel').classList.toggle('open'); setTimeout(() => document.getElementById('calc-input').focus(), 50); }
+function calcEval() {
+  const inp = document.getElementById('calc-input').value;
+  if (!inp.trim()) { document.getElementById('calc-display').textContent = '0'; return; }
+  try {
+    const safe = inp.replace(/[^0-9+\-*/.() ]/g, '');
+    const r = Function('"use strict"; return (' + safe + ')')();
+    document.getElementById('calc-display').textContent = typeof r === 'number' ? r.toLocaleString('en-GB', { maximumFractionDigits: 2 }) : '—';
+  } catch (e) { document.getElementById('calc-display').textContent = '—'; }
+}
+function calcClear() { document.getElementById('calc-input').value = ''; document.getElementById('calc-display').textContent = '0'; }
+function calcCopy() {
+  const v = document.getElementById('calc-display').textContent;
+  navigator.clipboard.writeText(v); flash('已复制 ' + v);
+}
+function calcPreset(key) {
+  let expr = '';
+  if (key === 'profit-24') expr = '24 * ' + perPalletProfit();
+  if (key === 'profit-26') expr = '26 * ' + perPalletProfit();
+  if (key === 'deduct-24') expr = '24 * ' + state.params.sellPrice;
+  if (key === 'deduct-26') expr = '26 * ' + state.params.sellPrice;
+  document.getElementById('calc-input').value = expr; calcEval();
+}
+
+// ============ HELPERS ============
+function escapeHtml(s) { return (s + '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]); }
+function flash(msg) {
+  const el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#00E5FF,#8B5CF6,#F472B6);color:#0A0E27;padding:12px 20px;border-radius:12px;font-weight:700;z-index:999;box-shadow:0 8px 32px rgba(139,92,246,0.5);';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
+  document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  if (name === 'ai') renderInsights();
+  if (name === 'customers') closeCustomerDetail();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderAll() {
+  document.getElementById('today-date').textContent = new Date().toISOString().slice(0, 10);
+  renderKpis();
+  renderDaily();
+  renderCustomers();
+  renderMonthly();
+  renderSettings();
+  renderInsights();
+  renderCharts();
+  if (currentCustomer) renderCustomerDetail();
+}
+
+// ============ INIT ============
+document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(el => {
+  el.addEventListener('click', () => switchView(el.dataset.view));
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'c' && (e.ctrlKey || e.metaKey) === false && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+    if (currentUser) toggleCalc();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('calc-panel').classList.remove('open');
+    closeCustomerModal();
+  }
+});
+
+// --- Robust sign-in flow ---
+let appShown = false;
+let signedInHandled = false;
+
+async function enterApp(session) {
+  if (appShown) { currentUser = session.user; return; }
+  // 🔒 Owner-only gate: this personal ledger is Michael-only. Any other account is signed out immediately.
+  const email = (session.user.email || '').toLowerCase();
+  if (email !== OWNER_EMAIL) {
+    console.warn('[pallet] non-owner attempted access:', email);
+    try { await db.auth.signOut(); } catch (e) {}
+    showAuth();
+    showAuthMsg('此页面仅限 ' + OWNER_EMAIL + ' 访问。如需使用合伙账，请前往 ../ (PalletAC)。');
+    return;
+  }
+  currentUser = session.user;
+  showLoading();
+  try {
+    // load with 7s timeout, fall back to empty state so UI never gets stuck
+    await Promise.race([
+      loadUserData(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('load timeout')), 7000))
+    ]);
+  } catch (err) {
+    console.error('[pallet] data load failed:', err);
+    if (!state) state = emptyState();
+    setSyncStatus('error');
+  }
+  try {
+    document.getElementById('d-date').value = new Date().toISOString().slice(0, 10);
+    renderAll();
+  } catch (err) {
+    console.error('[pallet] render failed:', err);
+  }
+  showApp();
+  appShown = true;
+}
+
+function leaveApp() {
+  currentUser = null;
+  state = null;
+  appShown = false;
+  showAuth();
+}
+
+// Auth state listener — fires on INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED
+db.auth.onAuthStateChange((event, session) => {
+  console.log('[pallet] auth event:', event, !!session);
+  if (session && session.user) {
+    signedInHandled = true;
+    enterApp(session);
+  } else if (event === 'SIGNED_OUT') {
+    leaveApp();
+  } else if (event === 'INITIAL_SESSION') {
+    // No session on initial load
+    signedInHandled = true;
+    showAuth();
+  }
+});
+
+// Belt-and-suspenders: if onAuthStateChange never fires in 3s, check session ourselves
+setTimeout(async () => {
+  if (signedInHandled) return;
+  console.warn('[pallet] auth listener silent, fallback check');
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (session && session.user) enterApp(session);
+    else showAuth();
+  } catch (e) {
+    console.error('[pallet] getSession failed:', e);
+    showAuth();
+  }
+}, 3000);
+
+// Final safety net: force showAuth after 10s if still loading
+setTimeout(() => {
+  const ls = document.getElementById('loading-screen');
+  if (ls && !ls.classList.contains('hide')) {
+    console.warn('[pallet] stuck on loading, forcing auth screen');
+    showAuth();
+  }
+}, 10000);
+</script>
+</body>
+</html>
