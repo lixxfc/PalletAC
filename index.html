@@ -465,6 +465,95 @@ table td.dim { color: var(--text-dim); }
 table td.pos { color: var(--green); font-weight: 700; }
 table td.neg { color: var(--rose); font-weight: 700; }
 
+/* soft-delete strikethrough row */
+table tr.row-deleted td {
+  color: var(--text-mute) !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(251, 113, 133, 0.7);
+  text-decoration-thickness: 2px;
+  opacity: 0.72;
+  background: rgba(251, 113, 133, 0.04);
+}
+table tr.row-deleted td.pos, table tr.row-deleted td.neg,
+table tr.row-deleted td b { color: var(--text-mute) !important; }
+table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
+.del-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  background: rgba(251, 113, 133, 0.14);
+  color: var(--rose);
+  border: 1px solid rgba(251, 113, 133, 0.3);
+  text-decoration: none !important;
+  vertical-align: middle;
+}
+.btn.sm.warn {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.btn.sm.warn:hover { background: rgba(251, 191, 36, 0.1); }
+
+/* user chips (shows who did what) */
+.u-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  text-decoration: none !important;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.u-chip.u-michael { background: rgba(0, 229, 255, 0.12); color: var(--cyan); border-color: rgba(0, 229, 255, 0.28); }
+.u-chip.u-emma    { background: rgba(244, 114, 182, 0.12); color: var(--pink); border-color: rgba(244, 114, 182, 0.28); }
+.u-chip.u-hugo    { background: rgba(251, 191, 36, 0.12); color: var(--amber); border-color: rgba(251, 191, 36, 0.35); }
+.u-chip.u-other   { background: rgba(139, 150, 255, 0.1); color: var(--text-dim); border-color: rgba(139, 150, 255, 0.22); }
+
+/* activity log */
+.log-entry {
+  display: grid;
+  grid-template-columns: 86px 80px 72px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--stroke);
+  font-size: 13px;
+}
+.log-entry:last-child { border-bottom: none; }
+.log-entry:hover { background: rgba(139, 150, 255, 0.04); }
+.log-time { color: var(--text-mute); font-size: 11px; font-family: 'SF Mono', ui-monospace, monospace; }
+.log-action {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.4px;
+  text-align: center;
+}
+.log-action.created  { background: rgba(34, 211, 165, 0.15); color: var(--green); }
+.log-action.deleted  { background: rgba(251, 113, 133, 0.15); color: var(--rose); }
+.log-action.restored { background: rgba(251, 191, 36, 0.15); color: var(--amber); }
+.log-summary { color: var(--text); }
+.log-summary .dim { color: var(--text-dim); }
+@media (max-width: 768px) {
+  .log-entry {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 6px;
+  }
+  .log-time { grid-row: 1; grid-column: 1; }
+  .log-action { grid-row: 1; grid-column: 2; }
+  .log-entry .u-chip { grid-row: 2; grid-column: 2; }
+  .log-summary { grid-row: 2; grid-column: 1; font-size: 12px; }
+}
+
 .badge-type {
   font-size: 10px; font-weight: 700;
   padding: 3px 8px; border-radius: 6px;
@@ -641,7 +730,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
   <div class="auth-card">
     <div class="auth-logo">P</div>
     <div class="auth-title">Pallet 闷声干</div>
-    <div class="auth-sub">合伙进货 · 个人账本 · 实时同步</div>
+    <div class="auth-sub">Michael · Emma · Hugo 共享账本 · 实时同步</div>
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-signin" onclick="switchAuthTab('signin')">登录</button>
       <button class="auth-tab" id="tab-signup" onclick="switchAuthTab('signup')">注册</button>
@@ -675,6 +764,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
       <div class="nav-item" data-view="transfer"><span class="nav-icon">↗</span>转账记录</div>
       <div class="nav-item" data-view="pickup"><span class="nav-icon">▦</span>取货记录</div>
       <div class="nav-item" data-view="monthly"><span class="nav-icon">≡</span>月度汇总</div>
+      <div class="nav-item" data-view="log"><span class="nav-icon">⟲</span>操作日志</div>
       <div class="nav-item" data-view="ai"><span class="nav-icon">✦</span>AI 建议</div>
       <div class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>设置</div>
     </nav>
@@ -699,7 +789,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
       <div class="page-head">
         <div>
           <h1 class="page-title"><span class="gradient">仪表盘</span></h1>
-          <div class="page-sub">我给 Emma 转了多少 · 取货花了多少 · 还剩多少</div>
+          <div class="page-sub">共享工作区 · Michael · Emma · Hugo 都能看到同一份账</div>
         </div>
       </div>
       <div class="kpi-grid" id="kpi-grid"></div>
@@ -749,7 +839,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
         <div class="card-title">全部转账 <span class="badge" id="transfer-count">0 条</span></div>
         <div class="table-wrap mt-4">
           <table>
-            <thead><tr><th>日期</th><th>金额</th><th>备注</th><th></th></tr></thead>
+            <thead><tr><th>日期</th><th>加的人</th><th>金额</th><th>备注</th><th></th></tr></thead>
             <tbody id="transfer-body"></tbody>
           </table>
         </div>
@@ -781,7 +871,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
         <div class="card-title">全部取货 <span class="badge" id="pickup-count">0 条</span></div>
         <div class="table-wrap mt-4">
           <table>
-            <thead><tr><th>日期</th><th>托盘</th><th>车次</th><th>花费</th><th>备注</th><th></th></tr></thead>
+            <thead><tr><th>日期</th><th>加的人</th><th>托盘</th><th>车次</th><th>花费</th><th>Hugo 提成</th><th>备注</th><th></th></tr></thead>
             <tbody id="pickup-body"></tbody>
           </table>
         </div>
@@ -803,6 +893,20 @@ table td.neg { color: var(--rose); font-weight: 700; }
             <tbody id="monthly-body"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== Activity Log ===== -->
+    <section class="view" data-view="log">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">操作日志</h1>
+          <div class="page-sub">谁 · 什么时候 · 加了/删了/恢复了 哪条记录</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">最近 100 条 <span class="badge" id="log-count">0 条</span></div>
+        <div id="log-box" style="margin-top:8px;"></div>
       </div>
     </section>
 
@@ -840,6 +944,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
       <div class="card">
         <div class="form-grid">
           <div class="form-row"><label>买价 £/托盘</label><input type="number" id="s-buy"></div>
+          <div class="form-row"><label>Hugo 提成 £/托盘</label><input type="number" id="s-commission" step="0.1"></div>
         </div>
         <div class="row mt-4">
           <button class="btn primary" onclick="saveSettings()">保存参数</button>
@@ -847,8 +952,9 @@ table td.neg { color: var(--rose); font-weight: 700; }
         </div>
         <div class="mt-6" style="font-size:12px;color:var(--text-dim);line-height:1.8;">
           <div>◆ 取货花费 = 买价 £<span id="calc-buy"></span> × 托盘数</div>
-          <div>◆ 余额 = 累计转账 − 累计取货花费</div>
-          <div>◆ 只有你自己看得到你的数据；Emma 登录看她自己的。</div>
+          <div>◆ Hugo 提成 = £<span id="calc-commission"></span> × 总托盘（累计）</div>
+          <div>◆ 当前余额 = 累计转账 − 累计取货花费</div>
+          <div>◆ 数据在 Michael · Emma · Hugo 之间共享，删除/添加都有操作日志可查</div>
         </div>
       </div>
       <div class="card mt-4">
@@ -886,6 +992,7 @@ table td.neg { color: var(--rose); font-weight: 700; }
     <div class="mobile-nav-item" data-view="transfer"><div class="mni-icon">↗</div><div>转账</div></div>
     <div class="mobile-nav-item" data-view="pickup"><div class="mni-icon">▦</div><div>取货</div></div>
     <div class="mobile-nav-item" data-view="monthly"><div class="mni-icon">≡</div><div>月度</div></div>
+    <div class="mobile-nav-item" data-view="log"><div class="mni-icon">⟲</div><div>日志</div></div>
     <div class="mobile-nav-item" data-view="ai"><div class="mni-icon">✦</div><div>AI</div></div>
   </div>
 </nav>
@@ -895,6 +1002,29 @@ table td.neg { color: var(--rose); font-weight: 700; }
 const SUPA_URL = 'https://vnuyvrgtraougqspgpmz.supabase.co';
 const SUPA_KEY = 'sb_publishable_-IsFFVQijDLJjzm2z537AA_SEQM46MJ';
 const db = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// Shared workspace row — all three of us load/save the SAME row
+const WORKSPACE_ID = 'main';
+
+// Email -> display name / chip class
+const USER_NAMES = {
+  'harreds.ceo@gmail.com': { name: 'Michael', cls: 'u-michael' },
+  'emma@maomail.uk':        { name: 'Emma',    cls: 'u-emma' },
+  'ukhugo@outlook.com':     { name: 'Hugo',    cls: 'u-hugo' }
+};
+function userInfo(email) {
+  if (!email) return { name: '?', cls: 'u-other' };
+  const e = email.toLowerCase();
+  return USER_NAMES[e] || { name: email.split('@')[0], cls: 'u-other' };
+}
+function userChip(email, extraLabel) {
+  const u = userInfo(email);
+  const lbl = extraLabel ? ` ${extraLabel}` : '';
+  return `<span class="u-chip ${u.cls}">${escapeHtml(u.name)}${lbl}</span>`;
+}
+function currentEmail() {
+  return (currentUser && currentUser.email) ? currentUser.email : '?';
+}
 
 let state = null;
 let currentUser = null;
@@ -987,28 +1117,16 @@ function showApp() {
 }
 
 // ===== DATA =====
-function seedData() {
-  const today = new Date();
-  const events = [];
-  // Example transfer 20 days ago
-  const d20 = new Date(today); d20.setDate(d20.getDate() - 20);
-  events.push({ id: crypto.randomUUID(), date: d20.toISOString().slice(0,10), type: 'transfer', amount: 10000, note: '示例转账' });
-  // Example pickups scattered through past 2 weeks
-  for (let i = 14; i >= 0; i--) {
-    const d = new Date(today); d.setDate(d.getDate() - i);
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
-    const pallets = 22 + Math.floor(Math.random() * 5);
-    events.push({
-      id: crypto.randomUUID(),
-      date: d.toISOString().slice(0,10),
-      type: 'pickup',
-      pallets,
-      amount: pallets * 245,
-      truck: 'T-' + String(100 + i).padStart(3, '0'),
-      note: ''
-    });
-  }
-  return { params: { buyPrice: 245 }, events };
+function emptyState() {
+  return { params: { buyPrice: 245, hugoCommission: 7 }, events: [] };
+}
+function normalizeState(s) {
+  if (!s || typeof s !== 'object') s = {};
+  if (!s.params) s.params = {};
+  if (typeof s.params.buyPrice !== 'number') s.params.buyPrice = 245;
+  if (typeof s.params.hugoCommission !== 'number') s.params.hugoCommission = 7;
+  if (!Array.isArray(s.events)) s.events = [];
+  return s;
 }
 
 function setSyncStatus(status) {
@@ -1026,23 +1144,47 @@ async function loadUserData() {
     const { data, error } = await db
       .from('partnership_data')
       .select('data')
-      .eq('user_id', currentUser.id)
+      .eq('workspace_id', WORKSPACE_ID)
       .maybeSingle();
     if (error) throw error;
-    if (data && data.data && Object.keys(data.data).length > 0) {
-      state = data.data;
-      if (!state.params) state.params = { buyPrice: 245 };
-      if (!state.events) state.events = [];
+    if (data && data.data && (data.data.events || data.data.params)) {
+      state = normalizeState(data.data);
     } else {
-      state = seedData();
+      // Row exists but empty OR no row at all — start fresh, NO seed data
+      state = emptyState();
       await saveUserDataNow();
     }
   } catch (err) {
     console.error('[palletac] load failed:', err);
-    state = { params: { buyPrice: 245 }, events: [] };
+    state = emptyState();
     setSyncStatus('error');
   }
 }
+
+// Realtime: refresh when another user writes the shared row
+let realtimeChannel = null;
+function subscribeRealtime() {
+  if (realtimeChannel) return;
+  realtimeChannel = db
+    .channel('partnership_data_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'partnership_data', filter: `workspace_id=eq.${WORKSPACE_ID}` }, async (payload) => {
+      if (payload.new && payload.new.data) {
+        // Only apply remote changes; skip our own echo (cheap heuristic: always merge)
+        const remote = JSON.stringify(payload.new.data);
+        const local = state ? JSON.stringify(state) : '';
+        if (remote !== local) {
+          state = normalizeState(payload.new.data);
+          renderAll();
+          flash('同步：另一个人更新了数据');
+        }
+      }
+    })
+    .subscribe();
+}
+function unsubscribeRealtime() {
+  if (realtimeChannel) { db.removeChannel(realtimeChannel); realtimeChannel = null; }
+}
+
 let saveTimer = null;
 function save() {
   if (saveTimer) clearTimeout(saveTimer);
@@ -1054,7 +1196,7 @@ async function saveUserDataNow() {
   try {
     const { error } = await db
       .from('partnership_data')
-      .upsert({ user_id: currentUser.id, data: state }, { onConflict: 'user_id' });
+      .upsert({ workspace_id: WORKSPACE_ID, data: state }, { onConflict: 'workspace_id' });
     if (error) throw error;
     setSyncStatus('ok');
   } catch (err) {
@@ -1066,18 +1208,27 @@ async function saveUserDataNow() {
 // ===== COMPUTE =====
 const fmt = v => (v < 0 ? '-£' : '£') + Math.abs(Math.round(v)).toLocaleString('en-GB');
 
-function getTransfers() { return state.events.filter(e => e.type === 'transfer'); }
-function getPickups() { return state.events.filter(e => e.type === 'pickup'); }
+function getTransfers() { return state.events.filter(e => e.type === 'transfer' && !e.deleted); }
+function getPickups() { return state.events.filter(e => e.type === 'pickup' && !e.deleted); }
+function getTransfersAll() { return state.events.filter(e => e.type === 'transfer'); }
+function getPickupsAll() { return state.events.filter(e => e.type === 'pickup'); }
+function activeEvents() { return state.events.filter(e => !e.deleted); }
 
 function totalTransfer() { return getTransfers().reduce((s, e) => s + (e.amount || 0), 0); }
 function totalSpent() { return getPickups().reduce((s, e) => s + (e.amount || 0), 0); }
 function totalPallets() { return getPickups().reduce((s, e) => s + (e.pallets || 0), 0); }
 function balance() { return totalTransfer() - totalSpent(); }
+function hugoRate() { return state.params.hugoCommission || 0; }
+function hugoTotal() { return totalPallets() * hugoRate(); }
+function hugoMonth(ymStr) {
+  const pallets = getPickups().filter(e => e.date.startsWith(ymStr)).reduce((s, e) => s + (e.pallets || 0), 0);
+  return pallets * hugoRate();
+}
 
 function monthlyAgg() {
   const map = {};
   const ensure = k => (map[k] = map[k] || { month: k, transfer: 0, pallets: 0, spent: 0 });
-  for (const e of state.events) {
+  for (const e of activeEvents()) {
     const k = e.date.slice(0, 7);
     const m = ensure(k);
     if (e.type === 'transfer') m.transfer += e.amount || 0;
@@ -1087,7 +1238,7 @@ function monthlyAgg() {
 }
 
 function monthTotals(ymStr) {
-  const evs = state.events.filter(e => e.date.startsWith(ymStr));
+  const evs = activeEvents().filter(e => e.date.startsWith(ymStr));
   let t = 0, p = 0, s = 0;
   for (const e of evs) {
     if (e.type === 'transfer') t += e.amount || 0;
@@ -1115,6 +1266,10 @@ function renderKpis() {
   const maxPallets = Math.ceil(bal / state.params.buyPrice);
   const balCls = bal < 0 ? 'neg' : bal < state.params.buyPrice * 5 ? '' : 'pos';
 
+  const ht = hugoTotal();
+  const hm = hugoMonth(ym);
+  const rate = hugoRate();
+
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi v4">
       <div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div>
@@ -1131,6 +1286,11 @@ function renderKpis() {
       <div class="kpi-value">${fmt(ts)}</div>
       <div class="kpi-sub">${tp.toLocaleString()} 托盘</div>
     </div>
+    <div class="kpi v5">
+      <div class="kpi-head"><div class="kpi-label">Hugo 累计提成</div><div class="kpi-icon">H</div></div>
+      <div class="kpi-value">${fmt(ht)}</div>
+      <div class="kpi-sub">£${rate}/托盘 · 本月 ${fmt(hm)}</div>
+    </div>
     <div class="kpi v2">
       <div class="kpi-head"><div class="kpi-label">本月托盘</div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${mt.p}</div>
@@ -1141,42 +1301,102 @@ function renderKpis() {
       <div class="kpi-value">${fmt(mt.t)}</div>
       <div class="kpi-sub">共 ${getTransfers().filter(e => e.date.startsWith(ym)).length} 笔</div>
     </div>
-    <div class="kpi v5">
-      <div class="kpi-head"><div class="kpi-label">平均每车</div><div class="kpi-icon">◯</div></div>
-      <div class="kpi-value">${tp && getPickups().length ? (tp / getPickups().length).toFixed(1) : '—'}</div>
-      <div class="kpi-sub">托盘 / 趟</div>
-    </div>
   `;
 }
 
+function delInfo(r) {
+  if (!r.deleted) return '';
+  const who = userInfo(r.deletedBy).name;
+  const when = r.deletedAt ? r.deletedAt.slice(0, 10) : '';
+  return `<span class="del-tag">${escapeHtml(who)} 删 ${when}</span>`;
+}
+function creatorCell(r) {
+  if (!r.createdBy) return '<td class="dim">—</td>';
+  return `<td>${userChip(r.createdBy)}</td>`;
+}
+
 function renderTransfers() {
-  const rows = [...getTransfers()].sort((a, b) => b.date.localeCompare(a.date));
-  document.getElementById('transfer-count').textContent = rows.length + ' 笔';
-  const body = rows.map(r => `<tr>
-    <td>${r.date}</td>
-    <td class="pos"><b>+${fmt(r.amount)}</b></td>
-    <td class="dim">${escapeHtml(r.note || '')}</td>
-    <td><button class="btn sm danger" onclick="delEvent('${r.id}')">删</button></td>
-  </tr>`).join('');
-  document.getElementById('transfer-body').innerHTML = body || `<tr><td colspan="4" class="dim" style="text-align:center;padding:40px;">暂无转账</td></tr>`;
+  const all = [...getTransfersAll()].sort((a, b) => b.date.localeCompare(a.date));
+  const active = all.filter(r => !r.deleted).length;
+  const del = all.length - active;
+  document.getElementById('transfer-count').textContent = active + ' 笔' + (del ? ` · ${del} 已删除` : '');
+  const body = all.map(r => {
+    const cls = r.deleted ? ' class="row-deleted"' : '';
+    const btn = r.deleted
+      ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
+      : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+    return `<tr${cls}>
+      <td>${r.date}</td>
+      ${creatorCell(r)}
+      <td class="pos"><b>+${fmt(r.amount)}</b></td>
+      <td class="dim">${escapeHtml(r.note || '')}${delInfo(r)}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('transfer-body').innerHTML = body || `<tr><td colspan="5" class="dim" style="text-align:center;padding:40px;">暂无转账</td></tr>`;
   updateTransferPreview();
 }
 
 function renderPickups() {
-  const rows = [...getPickups()].sort((a, b) => b.date.localeCompare(a.date));
-  document.getElementById('pickup-count').textContent = rows.length + ' 条';
+  const all = [...getPickupsAll()].sort((a, b) => b.date.localeCompare(a.date));
+  const active = all.filter(r => !r.deleted).length;
+  const del = all.length - active;
+  document.getElementById('pickup-count').textContent = active + ' 条' + (del ? ` · ${del} 已删除` : '');
   document.getElementById('p-buy').textContent = state.params.buyPrice;
-  const body = rows.map(r => `<tr>
-    <td>${r.date}</td>
-    <td><b>${r.pallets}</b></td>
-    <td class="dim">${escapeHtml(r.truck || '-')}</td>
-    <td class="neg">-${fmt(r.amount)}</td>
-    <td class="dim">${escapeHtml(r.note || '')}</td>
-    <td><button class="btn sm danger" onclick="delEvent('${r.id}')">删</button></td>
-  </tr>`).join('');
-  document.getElementById('pickup-body').innerHTML = body || `<tr><td colspan="6" class="dim" style="text-align:center;padding:40px;">暂无取货</td></tr>`;
+  const rate = hugoRate();
+  const body = all.map(r => {
+    const cls = r.deleted ? ' class="row-deleted"' : '';
+    const btn = r.deleted
+      ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
+      : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+    const commission = (r.pallets || 0) * rate;
+    return `<tr${cls}>
+      <td>${r.date}</td>
+      ${creatorCell(r)}
+      <td><b>${r.pallets}</b></td>
+      <td class="dim">${escapeHtml(r.truck || '-')}</td>
+      <td class="neg">-${fmt(r.amount)}</td>
+      <td class="dim">${fmt(commission)}</td>
+      <td class="dim">${escapeHtml(r.note || '')}${delInfo(r)}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('pickup-body').innerHTML = body || `<tr><td colspan="8" class="dim" style="text-align:center;padding:40px;">暂无取货</td></tr>`;
   updatePickupPreview();
 }
+
+function renderLog() {
+  // Derive log entries from events (creation + deletion + restore markers)
+  const entries = [];
+  for (const e of state.events) {
+    const summary = e.type === 'transfer'
+      ? `转账 <b class="pos">+${fmt(e.amount || 0)}</b>${e.note ? ' <span class="dim">· ' + escapeHtml(e.note) + '</span>' : ''}`
+      : `取货 <b>${e.pallets}</b> 托盘${e.truck ? ' <span class="dim">· ' + escapeHtml(e.truck) + '</span>' : ''} <span class="dim">(-${fmt(e.amount || 0)})</span>`;
+    if (e.createdAt) {
+      entries.push({ at: e.createdAt, by: e.createdBy, action: 'created', summary });
+    }
+    if (e.deletedAt && e.deleted) {
+      entries.push({ at: e.deletedAt, by: e.deletedBy, action: 'deleted', summary });
+    }
+    // If restored after a delete, we lose that timestamp on restore (we clear it). Skip for now.
+  }
+  entries.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const top = entries.slice(0, 100);
+  document.getElementById('log-count').textContent = entries.length + ' 条';
+  const body = top.map(ent => {
+    const when = (ent.at || '').replace('T', ' ').slice(0, 16);
+    const actionLbl = ent.action === 'created' ? '新增' : ent.action === 'deleted' ? '删除' : '恢复';
+    return `<div class="log-entry">
+      <div class="log-time">${escapeHtml(when)}</div>
+      <div><span class="log-action ${ent.action}">${actionLbl}</span></div>
+      <div>${userChip(ent.by)}</div>
+      <div class="log-summary">${summary(ent.summary)}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('log-box').innerHTML = body || `<div class="dim" style="text-align:center;padding:40px;">暂无操作记录</div>`;
+}
+// safe passthrough (already-escaped summaries built above)
+function summary(s) { return s; }
 
 function renderMonthly() {
   const agg = monthlyAgg();
@@ -1206,7 +1426,9 @@ function renderMonthly() {
 
 function renderSettings() {
   document.getElementById('s-buy').value = state.params.buyPrice;
+  document.getElementById('s-commission').value = state.params.hugoCommission;
   document.getElementById('calc-buy').textContent = state.params.buyPrice;
+  document.getElementById('calc-commission').textContent = state.params.hugoCommission;
 }
 
 const chartOpts = {
@@ -1237,8 +1459,8 @@ function renderCharts() {
     options: chartOpts
   });
 
-  // 2. Running balance line (cumulative over all events by date)
-  const sorted = [...state.events].sort((a, b) => a.date.localeCompare(b.date));
+  // 2. Running balance line (cumulative over all events by date, excluding deleted)
+  const sorted = [...activeEvents()].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
   const balData = sorted.map(e => {
     if (e.type === 'transfer') running += e.amount || 0;
@@ -1341,10 +1563,13 @@ function updatePickupPreview() {
   box.classList.add('show');
   box.classList.toggle('danger', overdraft);
   const afterCls = overdraft ? 'neg' : (after < sell * 3 ? 'warn' : 'pos');
+  const rate = hugoRate();
+  const commission = pallets * rate;
   box.innerHTML = `
     <div class="pv-row"><span class="pv-k">本次花费 (${pallets} × £${sell})</span><span class="pv-v neg">-${fmt(spend)}</span></div>
     <div class="pv-row"><span class="pv-k">取货前余额</span><span class="pv-v">${fmt(bal)}</span></div>
     <div class="pv-row"><span class="pv-k">取货后余额</span><span class="pv-v ${afterCls}">${fmt(after)}</span></div>
+    <div class="pv-row"><span class="pv-k">Hugo 提成 (${pallets} × £${rate})</span><span class="pv-v">${fmt(commission)}</span></div>
     <div class="pv-warning">⚠ 余额将为负（${fmt(after)}）— 需要尽快再给 Emma 转账。可以保存，但建议先补款。</div>
   `;
 }
@@ -1359,7 +1584,9 @@ function addTransfer() {
   state.events.push({
     id: crypto.randomUUID(),
     date, type: 'transfer',
-    amount: Math.abs(amount), note
+    amount: Math.abs(amount), note,
+    createdBy: currentEmail(),
+    createdAt: new Date().toISOString()
   });
   document.getElementById('t-amount').value = '';
   document.getElementById('t-note').value = '';
@@ -1379,7 +1606,9 @@ function addPickup() {
     date, type: 'pickup',
     pallets,
     amount: pallets * state.params.buyPrice,
-    truck, note
+    truck, note,
+    createdBy: currentEmail(),
+    createdAt: new Date().toISOString()
   });
   document.getElementById('p-pallets').value = '';
   document.getElementById('p-truck').value = '';
@@ -1389,21 +1618,39 @@ function addPickup() {
 }
 
 function delEvent(id) {
-  if (!confirm('确定删除这条记录？')) return;
-  state.events = state.events.filter(e => e.id !== id);
+  const ev = state.events.find(e => e.id === id);
+  if (!ev) return;
+  if (ev.deleted) return;
+  if (!confirm('删除这条记录？（记录会保留但显示为删除线，可恢复）')) return;
+  ev.deleted = true;
+  ev.deletedAt = new Date().toISOString();
+  ev.deletedBy = (currentUser && currentUser.email) ? currentUser.email : '?';
+  save(); renderAll();
+}
+
+function restoreEvent(id) {
+  const ev = state.events.find(e => e.id === id);
+  if (!ev || !ev.deleted) return;
+  if (!confirm('恢复这条记录？')) return;
+  delete ev.deleted;
+  delete ev.deletedAt;
+  delete ev.deletedBy;
   save(); renderAll();
 }
 
 function saveSettings() {
   state.params.buyPrice = parseFloat(document.getElementById('s-buy').value) || 245;
+  const c = parseFloat(document.getElementById('s-commission').value);
+  state.params.hugoCommission = (isNaN(c) || c < 0) ? 7 : c;
   // Recompute existing pickup amounts based on new price? NO — keep historical amounts intact.
   save(); renderAll();
   flash('参数已保存');
 }
 
 function resetAll() {
-  if (!confirm('清空你的全部数据？此操作不可撤销')) return;
-  state = { params: { buyPrice: 245 }, events: [] };
+  if (!confirm('这会清空三人共享的全部数据，所有人都会受影响。此操作不可撤销！确定？')) return;
+  if (!confirm('再次确认：真的要清空全部数据吗？')) return;
+  state = emptyState();
   save(); renderAll();
 }
 
@@ -1420,9 +1667,7 @@ function importJson(e) {
   const r = new FileReader();
   r.onload = () => {
     try {
-      state = JSON.parse(r.result);
-      if (!state.params) state.params = { buyPrice: 245 };
-      if (!state.events) state.events = [];
+      state = normalizeState(JSON.parse(r.result));
       save(); renderAll(); flash('导入成功');
     } catch (err) { alert('导入失败：文件格式错误'); }
   };
@@ -1517,9 +1762,11 @@ async function runAI() {
   lines.push('【核心状况】');
   lines.push(`当前余额 ${fmt(bal)}，约够 ${Math.max(0, Math.floor(bal / buy))} 托盘。`);
   lines.push(`累计：转账 ${fmt(tt)} / 取货 ${fmt(ts)} / ${tp} 托盘。`);
+  lines.push(`Hugo 提成（£${hugoRate()}/托盘）：累计应付 ${fmt(hugoTotal())}。`);
   if (agg.length >= 1) {
     const last = agg[agg.length - 1];
-    lines.push(`本月：转账 ${fmt(last.transfer)}、取货 ${last.pallets} 托盘 (花 ${fmt(last.spent)})。`);
+    const ym = new Date().toISOString().slice(0, 7);
+    lines.push(`本月：转账 ${fmt(last.transfer)}、取货 ${last.pallets} 托盘 (花 ${fmt(last.spent)}, Hugo 提成 ${fmt(hugoMonth(ym))})。`);
   }
 
   lines.push('\n【最该注意的事】');
@@ -1595,6 +1842,7 @@ function renderAll() {
   renderTransfers();
   renderPickups();
   renderMonthly();
+  renderLog();
   renderSettings();
   renderInsights();
   renderCharts();
@@ -1627,7 +1875,7 @@ async function enterApp(session) {
     ]);
   } catch (err) {
     console.error('[palletac] data load failed:', err);
-    if (!state) state = { params: { buyPrice: 245 }, events: [] };
+    if (!state) state = emptyState();
     setSyncStatus('error');
   }
   try {
@@ -1638,9 +1886,11 @@ async function enterApp(session) {
   } catch (err) { console.error('[palletac] render failed:', err); }
   showApp();
   appShown = true;
+  subscribeRealtime();
 }
 
 function leaveApp() {
+  unsubscribeRealtime();
   currentUser = null; state = null; appShown = false;
   showAuth();
 }
