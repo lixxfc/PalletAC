@@ -767,6 +767,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <div class="nav-item" data-view="log"><span class="nav-icon">⟲</span>操作日志</div>
       <div class="nav-item" data-view="ai"><span class="nav-icon">✦</span>AI 建议</div>
       <div class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>设置</div>
+      <a class="nav-item nav-external hide" id="nav-personal" href="./personal/" style="text-decoration:none;"><span class="nav-icon">★</span>我的客户账</a>
     </nav>
     <div class="user-chip">
       <div class="user-avatar" id="user-avatar">?</div>
@@ -994,6 +995,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
     <div class="mobile-nav-item" data-view="monthly"><div class="mni-icon">≡</div><div>月度</div></div>
     <div class="mobile-nav-item" data-view="log"><div class="mni-icon">⟲</div><div>日志</div></div>
     <div class="mobile-nav-item" data-view="ai"><div class="mni-icon">✦</div><div>AI</div></div>
+    <a class="mobile-nav-item nav-external hide" id="mnav-personal" href="./personal/" style="text-decoration:none;"><div class="mni-icon">★</div><div>客户账</div></a>
   </div>
 </nav>
 
@@ -1113,6 +1115,12 @@ function showApp() {
   if (currentUser) {
     document.getElementById('user-email').textContent = currentUser.email;
     document.getElementById('user-avatar').textContent = (currentUser.email || '?').slice(0, 1).toUpperCase();
+    // Show "我的客户账" link only for Michael (the owner of the personal ledger)
+    const isOwner = (currentUser.email || '').toLowerCase() === 'harreds.ceo@gmail.com';
+    const navP = document.getElementById('nav-personal');
+    const mNavP = document.getElementById('mnav-personal');
+    if (navP) navP.classList.toggle('hide', !isOwner);
+    if (mNavP) mNavP.classList.toggle('hide', !isOwner);
   }
 }
 
@@ -1831,7 +1839,7 @@ function flash(msg) {
 
 function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
-  document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(n => n.classList.toggle('active', n.dataset.view === name));
+  document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   if (name === 'ai') renderInsights();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1849,7 +1857,7 @@ function renderAll() {
 }
 
 // ===== INIT =====
-document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(el => {
+document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(el => {
   el.addEventListener('click', () => switchView(el.dataset.view));
 });
 
