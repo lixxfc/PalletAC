@@ -1030,11 +1030,24 @@ select option { background: var(--bg-2); color: var(--text); }
               <div class="page-title" id="cd-name"></div>
               <div class="page-sub" id="cd-meta"></div>
             </div>
+            <button class="btn sm" onclick="openStatementModal()">📄 导出对账单</button>
             <button class="btn sm ghost" onclick="closeCustomerDetail()">← 返回列表</button>
             <button class="btn sm danger" onclick="deleteCustomer()">删除客户</button>
           </div>
 
-          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
+          <!-- Customer profile (editable) -->
+          <div class="card-title">客户信息 <span class="page-sub" style="font-size:11px;font-weight:400;">(自动保存)</span></div>
+          <div class="form-grid mt-4">
+            <div class="form-row"><label>客户名称</label><input type="text" id="cp-name" onchange="saveCustomerProfile()"></div>
+            <div class="form-row"><label>电话</label><input type="text" id="cp-phone" placeholder="07xxx xxxxxx" onchange="saveCustomerProfile()"></div>
+            <div class="form-row" style="grid-column: 1/-1;"><label>地址</label><input type="text" id="cp-address" placeholder="Street, City" onchange="saveCustomerProfile()"></div>
+            <div class="form-row"><label>邮编</label><input type="text" id="cp-postcode" placeholder="SW1A 1AA" onchange="saveCustomerProfile()"></div>
+            <div class="form-row"><label>公司号码 (Company No.)</label><input type="text" id="cp-companyNo" placeholder="12345678" onchange="saveCustomerProfile()"></div>
+            <div class="form-row"><label>VAT 号码</label><input type="text" id="cp-vatNo" placeholder="GB123456789" onchange="saveCustomerProfile()"></div>
+            <div class="form-row"><label>邮箱 (可选)</label><input type="text" id="cp-email" placeholder="customer@example.com" onchange="saveCustomerProfile()"></div>
+          </div>
+
+          <div class="kpi-grid mt-6" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
             <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div></div>
             <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub">托盘</div></div>
             <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub">该客户贡献</div></div>
@@ -1123,7 +1136,8 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
       <div class="card">
-        <div class="form-grid">
+        <div class="card-title">业务参数</div>
+        <div class="form-grid mt-4">
           <div class="form-row"><label>SSS 买价 £/托盘</label><input type="number" id="s-buy"></div>
           <div class="form-row"><label>卖给客户 £/托盘</label><input type="number" id="s-sell"></div>
           <div class="form-row"><label>我的中介费 £/托盘</label><input type="number" id="s-myfee"></div>
@@ -1138,6 +1152,20 @@ select option { background: var(--bg-2); color: var(--text); }
           <div>◆ 每托盘毛利（我的）= 卖价 + 我的中介费 − 买价 = <span id="calc-profit"></span></div>
           <div>◆ Hugo / V 费用是客户直接付给他们，不进你的 P&amp;L</div>
           <div>◆ 客户取货扣款按卖价 £<span id="calc-sell"></span> × 托盘数</div>
+        </div>
+      </div>
+
+      <div class="card mt-6">
+        <div class="card-title">我的公司信息 <span class="page-sub" style="font-size:11px;font-weight:400;">(出现在对账单顶部)</span></div>
+        <div class="form-grid mt-4">
+          <div class="form-row"><label>公司名称</label><input type="text" id="s-co-name" placeholder="Your Company Ltd" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>联系电话</label><input type="text" id="s-co-phone" placeholder="07xxx xxxxxx" onchange="saveCompanyInfo()"></div>
+          <div class="form-row" style="grid-column: 1/-1;"><label>公司地址</label><input type="text" id="s-co-address" placeholder="Street, City" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>邮编</label><input type="text" id="s-co-postcode" placeholder="SW1A 1AA" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>公司号码 (Company No.)</label><input type="text" id="s-co-companyNo" placeholder="12345678" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>VAT 号码</label><input type="text" id="s-co-vatNo" placeholder="GB123456789" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>邮箱</label><input type="text" id="s-co-email" placeholder="you@example.com" onchange="saveCompanyInfo()"></div>
+          <div class="form-row"><label>银行/Payment 信息 (可选)</label><input type="text" id="s-co-bank" placeholder="Bank name · Sort · Acc" onchange="saveCompanyInfo()"></div>
         </div>
       </div>
     </section>
@@ -1172,6 +1200,28 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="form-row" style="grid-column: 1/-1;"><label>客户名称</label><input type="text" id="new-cust-name" placeholder="如：老王"></div>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="createCustomer()">创建</button></div>
+  </div>
+</div>
+
+<!-- Statement Modal -->
+<div class="modal-backdrop" id="statement-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">导出客户对账单</div>
+      <button class="modal-close" onclick="closeStatementModal()">×</button>
+    </div>
+    <div class="page-sub mb-4">选择日期范围,生成可打印/存 PDF 的客户对账单(包含预付、取货、余额明细)。</div>
+    <div class="form-grid">
+      <div class="form-row"><label>开始日期</label><input type="date" id="st-from"></div>
+      <div class="form-row"><label>结束日期</label><input type="date" id="st-to"></div>
+    </div>
+    <div class="row mt-4" style="gap: 8px;">
+      <button class="btn ghost sm" onclick="setStatementRange('month')">本月</button>
+      <button class="btn ghost sm" onclick="setStatementRange('last-month')">上月</button>
+      <button class="btn ghost sm" onclick="setStatementRange('ytd')">今年至今</button>
+      <button class="btn ghost sm" onclick="setStatementRange('all')">全部</button>
+    </div>
+    <div class="row mt-4"><button class="btn primary" onclick="generateStatement()">生成对账单</button></div>
   </div>
 </div>
 
@@ -1584,6 +1634,7 @@ function renderCustomerDetail() {
   if (!c) { closeCustomerDetail(); return; }
   document.getElementById('cd-name').textContent = c.name;
   document.getElementById('cd-meta').textContent = `创建于 ${(c.createdAt || '').slice(0, 10)} · ${c.ledger.length} 条流水`;
+  fillCustomerProfile(c);
   const bal = customerBalance(c);
   document.getElementById('cd-balance').textContent = fmt(bal);
   document.getElementById('cd-deposit').textContent = fmt(customerTotalDeposit(c));
@@ -1649,6 +1700,7 @@ function renderSettings() {
   document.getElementById('s-v').value = state.params.vFee;
   document.getElementById('calc-profit').textContent = fmt(perPalletProfit());
   document.getElementById('calc-sell').textContent = state.params.sellPrice;
+  fillCompanyInfo();
 }
 
 const chartOpts = {
@@ -1995,6 +2047,566 @@ function resetAll() {
   if (!confirm('清空你的全部数据？此操作不可撤销')) return;
   state = emptyState();
   save(); renderAll();
+}
+
+// ============ CUSTOMER PROFILE ============
+function saveCustomerProfile() {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const newName = (document.getElementById('cp-name').value || '').trim();
+  if (newName) c.name = newName;
+  c.phone     = document.getElementById('cp-phone').value.trim();
+  c.address   = document.getElementById('cp-address').value.trim();
+  c.postcode  = document.getElementById('cp-postcode').value.trim();
+  c.companyNo = document.getElementById('cp-companyNo').value.trim();
+  c.vatNo     = document.getElementById('cp-vatNo').value.trim();
+  c.email     = document.getElementById('cp-email').value.trim();
+  save();
+  // Re-render name label + customer grid (if name changed)
+  document.getElementById('cd-name').textContent = c.name;
+  renderCustomers();
+  flash('客户信息已保存');
+}
+
+function fillCustomerProfile(c) {
+  document.getElementById('cp-name').value      = c.name || '';
+  document.getElementById('cp-phone').value     = c.phone || '';
+  document.getElementById('cp-address').value   = c.address || '';
+  document.getElementById('cp-postcode').value  = c.postcode || '';
+  document.getElementById('cp-companyNo').value = c.companyNo || '';
+  document.getElementById('cp-vatNo').value     = c.vatNo || '';
+  document.getElementById('cp-email').value     = c.email || '';
+}
+
+// ============ COMPANY INFO (my business, shows on statements) ============
+function saveCompanyInfo() {
+  if (!state.company) state.company = {};
+  state.company.name      = document.getElementById('s-co-name').value.trim();
+  state.company.phone     = document.getElementById('s-co-phone').value.trim();
+  state.company.address   = document.getElementById('s-co-address').value.trim();
+  state.company.postcode  = document.getElementById('s-co-postcode').value.trim();
+  state.company.companyNo = document.getElementById('s-co-companyNo').value.trim();
+  state.company.vatNo     = document.getElementById('s-co-vatNo').value.trim();
+  state.company.email     = document.getElementById('s-co-email').value.trim();
+  state.company.bank      = document.getElementById('s-co-bank').value.trim();
+  save();
+  flash('公司信息已保存');
+}
+
+function fillCompanyInfo() {
+  const co = state.company || {};
+  document.getElementById('s-co-name').value      = co.name || '';
+  document.getElementById('s-co-phone').value     = co.phone || '';
+  document.getElementById('s-co-address').value   = co.address || '';
+  document.getElementById('s-co-postcode').value  = co.postcode || '';
+  document.getElementById('s-co-companyNo').value = co.companyNo || '';
+  document.getElementById('s-co-vatNo').value     = co.vatNo || '';
+  document.getElementById('s-co-email').value     = co.email || '';
+  document.getElementById('s-co-bank').value      = co.bank || '';
+}
+
+// ============ STATEMENT GENERATOR ============
+function openStatementModal() {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  // Default: from earliest ledger entry, to today
+  const dates = c.ledger.map(e => e.date).filter(Boolean).sort();
+  const first = dates[0] || new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('st-from').value = first;
+  document.getElementById('st-to').value = today;
+  document.getElementById('statement-modal').classList.add('open');
+}
+
+function closeStatementModal() {
+  document.getElementById('statement-modal').classList.remove('open');
+}
+
+function setStatementRange(preset) {
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = today.getMonth();
+  let from, to;
+  if (preset === 'month') {
+    from = new Date(y, m, 1);
+    to = today;
+  } else if (preset === 'last-month') {
+    from = new Date(y, m - 1, 1);
+    to = new Date(y, m, 0);
+  } else if (preset === 'ytd') {
+    from = new Date(y, 0, 1);
+    to = today;
+  } else if (preset === 'all') {
+    const c = state.customers.find(x => x.id === currentCustomer);
+    const dates = (c ? c.ledger.map(e => e.date).filter(Boolean).sort() : []);
+    from = dates[0] ? new Date(dates[0]) : new Date(y, 0, 1);
+    to = today;
+  }
+  document.getElementById('st-from').value = from.toISOString().slice(0, 10);
+  document.getElementById('st-to').value = to.toISOString().slice(0, 10);
+}
+
+function generateStatement() {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const from = document.getElementById('st-from').value;
+  const to = document.getElementById('st-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  if (from > to) { alert('开始日期不能晚于结束日期'); return; }
+
+  const company = state.company || {};
+  const sellPrice = state.params.sellPrice || 265;
+
+  // Sort ledger by date
+  const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Opening balance = sum of everything BEFORE `from`
+  let opening = 0;
+  for (const e of sorted) {
+    if (e.date < from) {
+      opening += (e.type === 'deposit') ? e.amount : -e.amount;
+    }
+  }
+
+  // In-range entries + running balance
+  let running = opening;
+  let totalIn = 0, totalOut = 0, totalPallets = 0;
+  const inRange = [];
+  for (const e of sorted) {
+    if (e.date >= from && e.date <= to) {
+      const isIn = e.type === 'deposit';
+      const amt = e.amount;
+      if (isIn) { totalIn += amt; running += amt; }
+      else { totalOut += amt; running -= amt; }
+      if (e.type === 'pickup') totalPallets += (e.pallets || 0);
+      inRange.push({ ...e, balance: running });
+    }
+  }
+  const closing = running;
+
+  const typeMap = {
+    deposit: 'Payment Received',
+    pickup: 'Pallets Collected',
+    refund: 'Refund',
+    adjust: 'Adjustment'
+  };
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round(v * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+
+  // Statement number: STMT-YYYYMMDD-XXXX (first 4 chars of customer id)
+  const stmtNo = 'STMT-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + (c.id || '').slice(0, 4).toUpperCase();
+
+  const rowsHtml = inRange.map(e => {
+    const label = typeMap[e.type] || e.type;
+    let desc;
+    if (e.type === 'pickup') {
+      desc = `${label} &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(sellPrice)}`;
+      if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
+      if (e.note) desc += ` <span class="muted">&middot; ${esc(e.note)}</span>`;
+    } else {
+      desc = label;
+      if (e.note) desc += ` <span class="muted">&mdash; ${esc(e.note)}</span>`;
+    }
+    const inCol = (e.type === 'deposit') ? money(e.amount) : '';
+    const outCol = (e.type === 'deposit') ? '' : money(e.amount);
+    return `<tr>
+      <td class="date-col">${fmtDate(e.date)}</td>
+      <td>${desc}</td>
+      <td class="num pos">${inCol}</td>
+      <td class="num neg">${outCol}</td>
+      <td class="num bal">${money(e.balance)}</td>
+    </tr>`;
+  }).join('');
+
+  const balanceLabel = closing < 0 ? 'Amount Owed' : 'Credit Balance';
+  const balanceClass = closing < 0 ? 'owed' : 'credit';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Statement &mdash; ${esc(c.name)} &mdash; ${fmtDate(from)} to ${fmtDate(to)}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0a0e1a;
+    --ink-2: #1e293b;
+    --muted: #64748b;
+    --mute-2: #94a3b8;
+    --line: #e2e8f0;
+    --line-soft: #f1f5f9;
+    --bg: #fafbfc;
+    --accent: #0f4c75;
+    --accent-soft: #e8f1f8;
+    --pos: #047857;
+    --pos-soft: #ecfdf5;
+    --neg: #b91c1c;
+    --neg-soft: #fef2f2;
+    --paper: #ffffff;
+  }
+  html, body { background: var(--bg); }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.55;
+    font-feature-settings: 'tnum' on, 'ss01' on;
+    -webkit-font-smoothing: antialiased;
+    padding: 32px 16px 48px;
+  }
+  .paper {
+    max-width: 820px;
+    margin: 0 auto;
+    background: var(--paper);
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 40px rgba(10,14,26,0.08);
+    overflow: hidden;
+  }
+
+  /* === HEADER === */
+  .header {
+    padding: 40px 48px 32px;
+    background: linear-gradient(135deg, var(--accent) 0%, #1a6ca8 100%);
+    color: #fff;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    right: -60px; top: -60px;
+    width: 220px; height: 220px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    right: 80px; bottom: -40px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1; }
+  .brand { max-width: 60%; }
+  .brand .co-name {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1;
+    color: #fff;
+  }
+  .brand .co-lines {
+    margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.7;
+  }
+  .brand .co-lines .reg { opacity: 0.7; font-size: 11px; margin-top: 6px; display: block; }
+  .doc-title { text-align: right; }
+  .doc-title .label {
+    font-size: 10px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+  .doc-title h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 40px; font-weight: 900; letter-spacing: -0.5px;
+    margin-top: 2px; color: #fff;
+  }
+  .doc-title .no { margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 500; letter-spacing: 1px; }
+  .doc-title .date { margin-top: 2px; font-size: 11px; color: rgba(255,255,255,0.7); }
+
+  /* === META === */
+  .meta {
+    padding: 28px 48px 0;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 28px;
+  }
+  .meta-block .label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px;
+  }
+  .meta-block .primary { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .meta-block .lines { font-size: 12px; color: var(--ink-2); line-height: 1.65; }
+  .meta-block .muted { color: var(--muted); }
+
+  /* === SUMMARY BAND === */
+  .summary {
+    margin: 32px 48px 0;
+    padding: 22px 24px;
+    background: var(--accent-soft);
+    border-radius: 6px;
+    border-left: 4px solid var(--accent);
+    display: grid; grid-template-columns: repeat(4, 1fr) 1.3fr; gap: 0;
+  }
+  .sum-item { padding: 0 18px; border-right: 1px solid rgba(15,76,117,0.12); }
+  .sum-item:first-child { padding-left: 0; }
+  .sum-item:last-child { padding-right: 0; border-right: none; }
+  .sum-item .label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+  }
+  .sum-item .value { font-size: 18px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px; }
+  .sum-item .value.pos { color: var(--pos); }
+  .sum-item .value.neg { color: var(--neg); }
+  .sum-item .sub { font-size: 10px; color: var(--mute-2); margin-top: 2px; }
+  .sum-item.final { text-align: right; }
+  .sum-item.final .label { color: var(--accent); font-weight: 800; }
+  .sum-item.final .value { font-size: 24px; }
+  .sum-item.final .value.owed { color: var(--neg); }
+  .sum-item.final .value.credit { color: var(--pos); }
+
+  /* === TRANSACTION TABLE === */
+  .tx-wrap { padding: 32px 48px 8px; }
+  .tx-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; padding: 10px 8px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--mute-2);
+    border-bottom: 1.5px solid var(--ink);
+  }
+  thead th.num { text-align: right; }
+  tbody td {
+    padding: 12px 8px; border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px; color: var(--ink-2); vertical-align: top;
+  }
+  tbody tr:hover td { background: var(--line-soft); }
+  td.date-col { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.bal { font-weight: 600; color: var(--ink); }
+  .pos { color: var(--pos); }
+  .neg { color: var(--neg); }
+  .muted { color: var(--mute-2); font-weight: 400; }
+  tr.opening td, tr.closing td { font-weight: 700; background: var(--line-soft); }
+  tr.opening td { border-top: 1px solid var(--line); }
+  tr.closing td { border-top: 2px solid var(--ink); border-bottom: none; padding-top: 14px; padding-bottom: 14px; font-size: 13.5px; color: var(--ink); background: var(--accent-soft); }
+  tr.closing td.bal { color: var(--accent); font-size: 15px; }
+  tr.empty td { padding: 28px; text-align: center; color: var(--mute-2); font-style: italic; }
+
+  /* === PAYMENT / NOTES === */
+  .footer-grid {
+    padding: 28px 48px;
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px;
+    border-top: 1px solid var(--line-soft);
+    margin-top: 24px;
+  }
+  .note-block .label {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px;
+  }
+  .note-block p { font-size: 12px; color: var(--ink-2); line-height: 1.7; }
+  .pay-block {
+    background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 16px 18px;
+  }
+  .pay-block .unit-price {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding-bottom: 12px; border-bottom: 1px dashed var(--line);
+    margin-bottom: 12px;
+  }
+  .pay-block .unit-price .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  .pay-block .unit-price .v { font-family: 'Playfair Display', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--accent); }
+
+  /* === FOOTER === */
+  .bottom {
+    padding: 18px 48px;
+    background: var(--ink);
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    display: flex; justify-content: space-between; align-items: center;
+    letter-spacing: 0.3px;
+  }
+  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 13px; font-style: italic; font-weight: 400; }
+
+  /* === BUTTON BAR === */
+  .btn-bar {
+    position: fixed; top: 16px; right: 16px;
+    display: flex; gap: 8px; z-index: 100;
+  }
+  .btn-bar button {
+    padding: 10px 18px; background: var(--ink); color: #fff;
+    border: 0; border-radius: 999px; cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.5px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    transition: transform 0.15s ease;
+  }
+  .btn-bar button:hover { transform: translateY(-1px); }
+  .btn-bar button.alt { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+  @media print {
+    body { background: #fff !important; padding: 0 !important; }
+    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; }
+    .btn-bar { display: none !important; }
+    .header { border-radius: 0 !important; }
+    tbody tr:hover td { background: transparent !important; }
+    @page { size: A4; margin: 0; }
+    .header, .bottom { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .summary, tr.closing td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="btn-bar">
+  <button onclick="window.print()">Download / Print PDF</button>
+  <button class="alt" onclick="window.close()">Close</button>
+</div>
+
+<div class="paper">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="co-name">${esc(company.name || 'Your Company')}</div>
+        <div class="co-lines">
+          ${company.address ? esc(company.address) : ''}${company.postcode ? ', ' + esc(company.postcode) : ''}
+          ${company.phone ? '<br>Tel: ' + esc(company.phone) : ''}
+          ${company.email ? '<br>' + esc(company.email) : ''}
+          ${(company.companyNo || company.vatNo) ? '<span class="reg">' + (company.companyNo ? 'Company No. ' + esc(company.companyNo) : '') + (company.companyNo && company.vatNo ? ' &nbsp;·&nbsp; ' : '') + (company.vatNo ? 'VAT ' + esc(company.vatNo) : '') + '</span>' : ''}
+        </div>
+      </div>
+      <div class="doc-title">
+        <div class="label">Account</div>
+        <h1>Statement</h1>
+        <div class="no">No. ${esc(stmtNo)}</div>
+        <div class="date">Issued ${fmtDate(new Date().toISOString().slice(0, 10))}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- META -->
+  <div class="meta">
+    <div class="meta-block">
+      <div class="label">Statement For</div>
+      <div class="primary">${esc(c.name)}</div>
+      <div class="lines">
+        ${c.address ? esc(c.address) + '<br>' : ''}
+        ${c.postcode ? esc(c.postcode) + '<br>' : ''}
+        ${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}
+        ${c.email ? esc(c.email) + '<br>' : ''}
+        ${c.companyNo ? '<span class="muted">Company No. ' + esc(c.companyNo) + '</span><br>' : ''}
+        ${c.vatNo ? '<span class="muted">VAT ' + esc(c.vatNo) + '</span>' : ''}
+      </div>
+    </div>
+    <div class="meta-block">
+      <div class="label">Period</div>
+      <div class="primary">${fmtDate(from)}</div>
+      <div class="lines"><span class="muted">to</span><br><b>${fmtDate(to)}</b></div>
+    </div>
+    <div class="meta-block" style="text-align: right;">
+      <div class="label">Transactions</div>
+      <div class="primary">${inRange.length} ${inRange.length === 1 ? 'entry' : 'entries'}</div>
+      <div class="lines"><span class="muted">${totalPallets} pallet${totalPallets === 1 ? '' : 's'} collected</span></div>
+    </div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="summary">
+    <div class="sum-item">
+      <div class="label">Opening Balance</div>
+      <div class="value">${money(opening)}</div>
+    </div>
+    <div class="sum-item">
+      <div class="label">Payments In</div>
+      <div class="value pos">${money(totalIn)}</div>
+      <div class="sub">during period</div>
+    </div>
+    <div class="sum-item">
+      <div class="label">Deductions</div>
+      <div class="value neg">${money(totalOut)}</div>
+      <div class="sub">${totalPallets} pallet${totalPallets === 1 ? '' : 's'}</div>
+    </div>
+    <div class="sum-item"></div>
+    <div class="sum-item final">
+      <div class="label">${balanceLabel}</div>
+      <div class="value ${balanceClass}">${money(Math.abs(closing))}</div>
+      <div class="sub">as of ${fmtDate(to)}</div>
+    </div>
+  </div>
+
+  <!-- TRANSACTIONS -->
+  <div class="tx-wrap">
+    <div class="tx-title">Transaction History</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 110px;">Date</th>
+          <th>Description</th>
+          <th class="num" style="width: 100px;">In</th>
+          <th class="num" style="width: 100px;">Out</th>
+          <th class="num" style="width: 120px;">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="opening">
+          <td class="date-col">${fmtDate(from)}</td>
+          <td>Opening Balance</td>
+          <td class="num">&mdash;</td>
+          <td class="num">&mdash;</td>
+          <td class="num bal">${money(opening)}</td>
+        </tr>
+        ${rowsHtml || `<tr class="empty"><td colspan="5">No transactions during this period.</td></tr>`}
+        <tr class="closing">
+          <td class="date-col">${fmtDate(to)}</td>
+          <td>Closing Balance</td>
+          <td class="num">&mdash;</td>
+          <td class="num">&mdash;</td>
+          <td class="num bal">${money(closing)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- FOOTER GRID -->
+  <div class="footer-grid">
+    <div class="note-block">
+      <div class="label">Notes</div>
+      <p>All pallet collections during the statement period are invoiced at the unit price shown opposite. Please review this statement and contact us if any entry appears incorrect.</p>
+      ${closing < 0
+        ? `<p style="margin-top:10px;"><b style="color:var(--neg);">Action required:</b> your account shows an outstanding balance of <b>${money(Math.abs(closing))}</b>. Please settle at your earliest convenience.</p>`
+        : `<p style="margin-top:10px;">Your account currently holds a credit of <b style="color:var(--pos);">${money(Math.abs(closing))}</b>, available against future collections.</p>`
+      }
+    </div>
+    <div class="pay-block">
+      <div class="unit-price">
+        <div class="k">Unit Price</div>
+        <div class="v">${money(sellPrice)}</div>
+      </div>
+      ${company.bank ? `<div class="note-block"><div class="label">Payment Details</div><p>${esc(company.bank)}</p></div>` : ''}
+      ${(!company.bank) ? `<div class="note-block"><div class="label">Remit To</div><p class="muted">${esc(company.name || 'Our office')}${company.email ? '<br>' + esc(company.email) : ''}${company.phone ? '<br>' + esc(company.phone) : ''}</p></div>` : ''}
+    </div>
+  </div>
+
+  <!-- BOTTOM -->
+  <div class="bottom">
+    <div>Statement ${esc(stmtNo)} &nbsp;·&nbsp; ${inRange.length} ${inRange.length === 1 ? 'entry' : 'entries'} &nbsp;·&nbsp; Generated ${new Date().toISOString().slice(0, 10)}</div>
+    <div class="thanks">Thank you for your business.</div>
+  </div>
+
+</div>
+</body>
+</html>`;
+
+  // Open in a new window/tab
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口后再试'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  closeStatementModal();
 }
 
 function exportJson() {
