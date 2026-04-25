@@ -631,6 +631,83 @@ select option { background: var(--bg-2); color: var(--text); }
 /* Hide utility for dynamic ledger form rows */
 .row-hidden { display: none !important; }
 
+/* === Quick Quote Card === */
+.quote-card {
+  margin-top: 24px;
+  padding: 20px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,92,246,0.06) 100%);
+  border: 1px solid rgba(0,229,255,0.18);
+  position: relative;
+  overflow: hidden;
+}
+.quote-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.4), transparent);
+}
+.quote-icon {
+  font-size: 24px;
+  width: 44px; height: 44px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: rgba(0,229,255,0.12);
+}
+.quote-title {
+  font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.2px;
+}
+.quote-sub {
+  font-size: 12px; color: var(--text-dim); margin-top: 2px;
+}
+.quote-input-wrap {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.quote-input-wrap label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+}
+.quote-input-wrap input {
+  width: 130px;
+  padding: 10px 12px;
+  font-size: 16px; font-weight: 700;
+  background: rgba(5,6,15,0.5);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 10px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.quote-input-wrap input:focus {
+  outline: none;
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+}
+.quote-result {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(139,150,255,0.15);
+}
+.qq-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 6px 0; }
+.qq-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px;
+}
+.qq-cell { padding: 10px 12px; border-radius: 10px; background: rgba(5,6,15,0.4); border: 1px solid rgba(139,150,255,0.08); }
+.qq-cell .k { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px; }
+.qq-cell .v { font-size: 18px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.3px; }
+.qq-cell .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.qq-cell.headline {
+  background: linear-gradient(135deg, rgba(251,113,133,0.15) 0%, rgba(244,114,182,0.12) 100%);
+  border-color: rgba(251,113,133,0.4);
+}
+.qq-cell.headline .v { color: var(--rose); font-size: 22px; }
+.qq-cell.headline.zero {
+  background: linear-gradient(135deg, rgba(34,211,165,0.15) 0%, rgba(0,229,255,0.10) 100%);
+  border-color: rgba(34,211,165,0.4);
+}
+.qq-cell.headline.zero .v { color: var(--green); }
+@media (max-width: 720px) {
+  .quote-input-wrap input { width: 100%; }
+}
+
 .ai-output {
   padding: 18px;
   border-radius: 12px;
@@ -1052,6 +1129,25 @@ select option { background: var(--bg-2); color: var(--text); }
             <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div></div>
             <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div></div>
             <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div></div>
+          </div>
+
+          <!-- Quick Quote Calculator (no ledger save) -->
+          <div class="quote-card">
+            <div class="row" style="align-items: center; gap: 14px; flex-wrap: wrap;">
+              <div class="quote-icon">💷</div>
+              <div class="grow">
+                <div class="quote-title">快速询价</div>
+                <div class="quote-sub">输入要卖给客人的托盘数,立刻算出他还差多少钱(只算,不记账)</div>
+              </div>
+              <div class="quote-input-wrap">
+                <label>托盘数</label>
+                <input type="number" id="qq-pallets" placeholder="如 100" min="0" oninput="updateQuickQuote()" onkeydown="if(event.key==='Enter')event.preventDefault();">
+              </div>
+              <button class="btn ghost sm" onclick="document.getElementById('qq-pallets').value=''; updateQuickQuote();">清空</button>
+            </div>
+            <div class="quote-result" id="qq-result">
+              <div class="qq-empty">等你输入托盘数…</div>
+            </div>
           </div>
 
           <div class="card-title mt-6">新增流水</div>
@@ -1699,6 +1795,9 @@ function renderCustomerDetail() {
 
   document.getElementById('cd-count').textContent = c.ledger.length + ' 条';
 
+  // Refresh quick quote if user has a value entered
+  updateQuickQuote();
+
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
   const rowsHtml = sorted.map(e => {
@@ -1948,9 +2047,77 @@ function openCustomer(id) {
   document.getElementById('lg-pallets').value = '';
   if (document.getElementById('lg-truck')) document.getElementById('lg-truck').value = '';
   document.getElementById('lg-note').value = '';
+  // Reset Quick Quote
+  const qq = document.getElementById('qq-pallets');
+  if (qq) qq.value = '';
+  updateQuickQuote();
   updateLedgerForm();
   renderCustomerDetail();
 }
+
+// ============ QUICK QUOTE (no ledger save) ============
+function updateQuickQuote() {
+  const box = document.getElementById('qq-result');
+  if (!box) return;
+  if (!currentCustomer) { box.innerHTML = '<div class="qq-empty">先选一个客户</div>'; return; }
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) { box.innerHTML = '<div class="qq-empty">客户不存在</div>'; return; }
+  const inputEl = document.getElementById('qq-pallets');
+  const raw = (inputEl && inputEl.value || '').trim();
+  if (!raw) { box.innerHTML = '<div class="qq-empty">输入要卖给 ' + (c.name || '客户') + ' 的托盘数,立刻算出他还差多少钱…</div>'; return; }
+  const pallets = parseInt(raw, 10);
+  if (!isFinite(pallets) || pallets < 0) { box.innerHTML = '<div class="qq-empty">请输入正整数</div>'; return; }
+
+  const sellPrice = state.params.sellPrice || 265;
+  const balance = customerBalance(c);
+  const totalCost = pallets * sellPrice;
+  const owe = totalCost - balance;  // > 0 = customer needs to pay, < 0 = leftover credit, = 0 = perfect
+  const moneyFmt = v => '£' + Math.round(v).toLocaleString('en-GB');
+
+  let headline;
+  if (owe > 0) {
+    headline = `<div class="qq-cell headline">
+      <div class="k">客人还需付款</div>
+      <div class="v">${moneyFmt(owe)}</div>
+      <div class="sub">${pallets} × £${sellCost(sellPrice)} − 余额 ${moneyFmt(balance)}</div>
+    </div>`;
+  } else if (owe === 0) {
+    headline = `<div class="qq-cell headline zero">
+      <div class="k">余额刚好够 ✓</div>
+      <div class="v">£0</div>
+      <div class="sub">${pallets} × £${sellCost(sellPrice)} = 余额 ${moneyFmt(balance)}</div>
+    </div>`;
+  } else {
+    headline = `<div class="qq-cell headline zero">
+      <div class="k">余额够付,无需再付</div>
+      <div class="v">${moneyFmt(Math.abs(owe))}</div>
+      <div class="sub">取后还剩余额 ${moneyFmt(Math.abs(owe))}</div>
+    </div>`;
+  }
+
+  box.innerHTML = `
+    <div class="qq-grid">
+      ${headline}
+      <div class="qq-cell">
+        <div class="k">货款总额</div>
+        <div class="v">${moneyFmt(totalCost)}</div>
+        <div class="sub">${pallets} 托盘 × £${sellPrice}</div>
+      </div>
+      <div class="qq-cell">
+        <div class="k">当前余额</div>
+        <div class="v">${moneyFmt(balance)}</div>
+        <div class="sub">可抵 ${sellPrice > 0 ? Math.floor(Math.max(0, balance) / sellPrice) : 0} 托盘</div>
+      </div>
+      <div class="qq-cell">
+        <div class="k">取货后余额</div>
+        <div class="v" style="color: ${(balance - totalCost) < 0 ? 'var(--rose)' : 'var(--green)'};">${moneyFmt(balance - totalCost)}</div>
+        <div class="sub">${(balance - totalCost) < 0 ? '将透支 ' + moneyFmt(Math.abs(balance - totalCost)) : '剩余信用'}</div>
+      </div>
+    </div>
+  `;
+}
+// Helper to format unit price with no thousands separator (always small)
+function sellCost(p) { return Number(p).toLocaleString('en-GB'); }
 function closeCustomerDetail() {
   currentCustomer = null;
   document.getElementById('customer-grid').classList.remove('hide');
