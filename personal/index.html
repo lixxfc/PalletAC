@@ -1049,8 +1049,9 @@ select option { background: var(--bg-2); color: var(--text); }
 
           <div class="kpi-grid mt-6" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
             <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div></div>
-            <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub">托盘</div></div>
-            <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub">该客户贡献</div></div>
+            <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div></div>
+            <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div></div>
+            <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div></div>
           </div>
 
           <div class="card-title mt-6">新增流水</div>
@@ -1633,13 +1634,69 @@ function renderCustomerDetail() {
   const c = state.customers.find(x => x.id === currentCustomer);
   if (!c) { closeCustomerDetail(); return; }
   document.getElementById('cd-name').textContent = c.name;
-  document.getElementById('cd-meta').textContent = `创建于 ${(c.createdAt || '').slice(0, 10)} · ${c.ledger.length} 条流水`;
+  // Build meta line: created date + ledger count + last activity
+  const lastEntry = [...c.ledger].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+  const lastPickup = [...c.ledger].filter(e => e.type === 'pickup').sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+  const lastDeposit = [...c.ledger].filter(e => e.type === 'deposit').sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+  const daysSince = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    const ms = Date.now() - d.getTime();
+    return Math.max(0, Math.floor(ms / 86400000));
+  };
+  const metaParts = [`创建于 ${(c.createdAt || '').slice(0, 10)}`, `${c.ledger.length} 条流水`];
+  if (lastEntry) {
+    const ds = daysSince(lastEntry.date);
+    metaParts.push(`最近活动 ${lastEntry.date}${ds === 0 ? ' (今天)' : ' (' + ds + ' 天前)'}`);
+  }
+  document.getElementById('cd-meta').textContent = metaParts.join(' · ');
   fillCustomerProfile(c);
+
   const bal = customerBalance(c);
+  const sellPrice = state.params.sellPrice || 265;
   document.getElementById('cd-balance').textContent = fmt(bal);
   document.getElementById('cd-deposit').textContent = fmt(customerTotalDeposit(c));
+
+  // 余额还能买多少托盘
+  const canBuyEl = document.getElementById('cd-canbuy');
+  const cbSub = document.getElementById('cd-canbuy-sub');
+  if (canBuyEl) {
+    if (bal < 0) {
+      canBuyEl.textContent = '透支';
+      if (cbSub) cbSub.textContent = `客户已透支 ${fmt(-bal)} · 请催款`;
+    } else if (sellPrice > 0) {
+      const canBuy = Math.floor(bal / sellPrice);
+      const remainder = bal - canBuy * sellPrice;
+      canBuyEl.textContent = canBuy;
+      if (cbSub) cbSub.textContent = `托盘 · 按 £${sellPrice} / 个${remainder > 0 ? '（余 £' + Math.round(remainder).toLocaleString('en-GB') + '）' : ''}`;
+    } else {
+      canBuyEl.textContent = '0';
+    }
+  }
+
   document.getElementById('cd-pallets').textContent = customerTotalPallets(c);
+  // 累计取货 sub: show last pickup date + days
+  const pSub = document.getElementById('cd-pallets-sub');
+  if (pSub) {
+    if (lastPickup) {
+      const ds = daysSince(lastPickup.date);
+      pSub.textContent = `托盘 · 上次 ${lastPickup.date}${ds === 0 ? ' (今天)' : ' (' + ds + ' 天前)'}`;
+    } else {
+      pSub.textContent = '托盘';
+    }
+  }
+
   document.getElementById('cd-profit').textContent = fmt(customerProfit(c));
+  // 累计利润 sub: show last deposit date
+  const profSub = document.getElementById('cd-profit-sub');
+  if (profSub) {
+    if (lastDeposit) {
+      profSub.textContent = `上次预付 ${lastDeposit.date} (${fmt(lastDeposit.amount)})`;
+    } else {
+      profSub.textContent = '该客户贡献';
+    }
+  }
+
   document.getElementById('cd-count').textContent = c.ledger.length + ' 条';
 
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
