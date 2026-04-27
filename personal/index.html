@@ -1147,6 +1147,7 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
 
           <div class="kpi-grid mt-6" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
+            <div class="kpi v5"><div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" id="cd-wk-range" style="font-size:9px;padding:2px 6px;">—</span></div><div class="kpi-icon">★</div></div><div class="kpi-value" id="cd-wk-profit">£0</div><div class="kpi-sub" id="cd-wk-sub">0 托盘 · 周一 → 周日</div></div>
             <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div></div>
             <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div></div>
             <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div></div>
@@ -1943,6 +1944,32 @@ function renderCustomerDetail() {
   }
 
   document.getElementById('cd-count').textContent = c.ledger.length + ' 条';
+
+  // === This customer's weekly profit (current week, Mon→Sun) ===
+  const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
+  const lastWkD = new Date(todayWk + 'T12:00:00'); lastWkD.setDate(lastWkD.getDate() - 7);
+  const lastWk = lastWkD.toISOString().slice(0, 10);
+  const perP = perPalletProfit();
+  let thisWkPallets = 0, thisWkProfit = 0, lastWkProfit = 0;
+  for (const e of (c.ledger || [])) {
+    if (e.type !== 'pickup') continue;
+    const wk = weekStartOf(e.date);
+    if (wk === todayWk) { thisWkPallets += (e.pallets || 0); thisWkProfit += (e.pallets || 0) * perP; }
+    else if (wk === lastWk) { lastWkProfit += (e.pallets || 0) * perP; }
+  }
+  let cwTrend = 'flat', cwTrendTxt = '—';
+  if (lastWkProfit > 0 || thisWkProfit > 0) {
+    const pct = (thisWkProfit - lastWkProfit) / (lastWkProfit || 1) * 100;
+    cwTrend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+    if (lastWkProfit > 0) cwTrendTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+    else if (thisWkProfit > 0) cwTrendTxt = '新';
+  }
+  const wkRangeEl = document.getElementById('cd-wk-range');
+  if (wkRangeEl) wkRangeEl.textContent = weekLabelShort(todayWk);
+  const wkProfitEl = document.getElementById('cd-wk-profit');
+  if (wkProfitEl) wkProfitEl.textContent = fmt(thisWkProfit);
+  const wkSubEl = document.getElementById('cd-wk-sub');
+  if (wkSubEl) wkSubEl.innerHTML = `${thisWkPallets} 托盘 <span class="kpi-trend ${cwTrend}">${cwTrendTxt}</span>`;
 
   // Refresh quick quote if user has a value entered
   updateQuickQuote();
