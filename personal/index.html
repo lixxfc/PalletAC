@@ -348,6 +348,7 @@ body::after { background: radial-gradient(circle, #00E5FF, transparent 70%); bot
 .btn.primary:hover { box-shadow: 0 6px 28px rgba(139, 92, 246, 0.6); transform: translateY(-2px); }
 .btn.ghost { background: transparent; }
 .btn.sm { padding: 7px 12px; font-size: 12px; }
+.btn.ghost.active { background: rgba(0, 229, 255, 0.12); border-color: rgba(0, 229, 255, 0.45); color: var(--cyan); }
 .btn.wide { width: 100%; justify-content: center; padding: 13px; }
 .btn.danger { color: var(--rose); border-color: rgba(251, 113, 133, 0.3); }
 .btn.danger:hover { background: rgba(251, 113, 133, 0.1); border-color: var(--rose); }
@@ -1023,6 +1024,27 @@ select option { background: var(--bg-2); color: var(--text); }
 
       <div class="kpi-grid" id="kpi-grid"></div>
 
+      <!-- Weekly profit breakdown -->
+      <div class="card mt-6">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">周利润明细 <span class="badge">周一 → 周日</span></div>
+            <div class="page-sub">每周从周一开始算到周日,显示托盘数、利润、客户数</div>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm" onclick="setWeeklyView(8)" id="wk-btn-8">近 8 周</button>
+            <button class="btn ghost sm active" onclick="setWeeklyView(12)" id="wk-btn-12">近 12 周</button>
+            <button class="btn ghost sm" onclick="setWeeklyView(0)" id="wk-btn-all">全部</button>
+          </div>
+        </div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead><tr><th>周次</th><th>日期范围</th><th>托盘</th><th>客户数</th><th>营收</th><th>利润</th><th>环比</th></tr></thead>
+            <tbody id="weekly-body"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="chart-grid">
         <div class="card chart-card">
           <div class="card-title">营收 / 成本 / 利润 走势 <span class="badge">近 6 月</span></div>
@@ -1174,6 +1196,15 @@ select option { background: var(--bg-2); color: var(--text); }
             <table>
               <thead><tr><th>日期</th><th>类型</th><th>托盘</th><th>车次</th><th>金额</th><th>余额</th><th>备注</th><th></th></tr></thead>
               <tbody id="ledger-body"></tbody>
+            </table>
+          </div>
+
+          <div class="card-title mt-6">本客户周利润明细 <span class="badge">周一 → 周日</span></div>
+          <div class="page-sub">该客户每周的取货数、营收、利润(按 £<span id="cw-perp">51</span> / 托盘 净利)</div>
+          <div class="table-wrap mt-4">
+            <table>
+              <thead><tr><th>周次</th><th>日期范围</th><th>托盘</th><th>取货次数</th><th>营收</th><th>利润</th></tr></thead>
+              <tbody id="cust-weekly-body"></tbody>
             </table>
           </div>
         </div>
@@ -1606,6 +1637,110 @@ function monthlyAgg() {
   return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
 }
 
+// ============ WEEKLY HELPERS (Mon → Sun, ISO style) ============
+// Given a YYYY-MM-DD string, return the Monday of that week (YYYY-MM-DD).
+function weekStartOf(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T12:00:00');  // noon, avoid DST edge
+  const day = d.getDay();                      // 0=Sun, 1=Mon, ..., 6=Sat
+  const offset = day === 0 ? -6 : 1 - day;     // back-step to Monday
+  d.setDate(d.getDate() + offset);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+// Sunday end of the same week (YYYY-MM-DD).
+function weekEndOf(dateStr) {
+  const mon = weekStartOf(dateStr); if (!mon) return null;
+  const d = new Date(mon + 'T12:00:00');
+  d.setDate(d.getDate() + 6);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+// Pretty label: "4/20 ~ 4/26" or "20 Apr ~ 26 Apr"
+function weekLabelShort(monday) {
+  if (!monday) return '';
+  const m = new Date(monday + 'T12:00:00');
+  const s = new Date(weekEndOf(monday) + 'T12:00:00');
+  const fmtMD = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${fmtMD(m)} ~ ${fmtMD(s)}`;
+}
+// ISO week number for tagging
+function isoWeekNum(monday) {
+  if (!monday) return 0;
+  const d = new Date(monday + 'T12:00:00');
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+}
+
+// Aggregate ALL pickups across all customers, week-by-week (Mon→Sun)
+function weeklyAgg() {
+  const map = {};
+  for (const r of allPickups()) {
+    const wk = weekStartOf(r.date);
+    if (!wk) continue;
+    if (!map[wk]) map[wk] = { week: wk, pallets: 0, revenue: 0, cost: 0, fee: 0, profit: 0, customers: new Set() };
+    const m = pickupMetrics(r);
+    map[wk].pallets += r.pallets;
+    map[wk].revenue += m.revenue;
+    map[wk].cost += m.cost;
+    map[wk].fee += m.fee;
+    map[wk].profit += m.profit;
+    if (r.customerName) map[wk].customers.add(r.customerName);
+  }
+  return Object.values(map)
+    .map(w => ({ ...w, customerCount: w.customers.size, customers: undefined }))
+    .sort((a, b) => a.week.localeCompare(b.week));
+}
+
+// Per-customer weekly aggregate (only this customer's pickups)
+function customerWeeklyAgg(customer) {
+  if (!customer) return [];
+  const map = {};
+  const perP = perPalletProfit();
+  for (const e of (customer.ledger || [])) {
+    if (e.type !== 'pickup') continue;
+    const wk = weekStartOf(e.date);
+    if (!wk) continue;
+    if (!map[wk]) map[wk] = { week: wk, pallets: 0, revenue: 0, profit: 0, entries: 0 };
+    map[wk].pallets += (e.pallets || 0);
+    map[wk].revenue += (e.amount || 0);
+    map[wk].profit += (e.pallets || 0) * perP;
+    map[wk].entries += 1;
+  }
+  return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
+}
+
+// "This week" totals for dashboard KPI
+function thisWeekTotals() {
+  const today = new Date().toISOString().slice(0, 10);
+  const wk = weekStartOf(today);
+  let pallets = 0, profit = 0, custs = new Set();
+  for (const r of allPickups()) {
+    if (weekStartOf(r.date) === wk) {
+      pallets += (r.pallets || 0);
+      profit += pickupMetrics(r).profit;
+      if (r.customerName) custs.add(r.customerName);
+    }
+  }
+  // Last week comparison
+  const lastWkD = new Date(wk + 'T12:00:00'); lastWkD.setDate(lastWkD.getDate() - 7);
+  const lastWk = lastWkD.toISOString().slice(0, 10);
+  let lpPallets = 0, lpProfit = 0;
+  for (const r of allPickups()) {
+    if (weekStartOf(r.date) === lastWk) {
+      lpPallets += (r.pallets || 0);
+      lpProfit += pickupMetrics(r).profit;
+    }
+  }
+  return { week: wk, pallets, profit, customerCount: custs.size, lastPallets: lpPallets, lastProfit: lpProfit };
+}
+
 function totals() {
   const pickups = allPickups();
   let pallets = 0, revenue = 0, cost = 0, fee = 0, profit = 0;
@@ -1632,12 +1767,26 @@ function renderKpis() {
     trend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
     trendTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
   }
+  // Weekly stats
+  const wk = thisWeekTotals();
+  let wTrend = 'flat', wTrendTxt = '—';
+  if (wk.lastProfit > 0 || wk.profit > 0) {
+    const pct = (wk.profit - wk.lastProfit) / (wk.lastProfit || 1) * 100;
+    wTrend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+    if (wk.lastProfit > 0) wTrendTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+    else if (wk.profit > 0) wTrendTxt = '新';
+  }
   const perP = perPalletProfit();
   const html = `
     <div class="kpi v2">
       <div class="kpi-head"><div class="kpi-label">累计净利润</div><div class="kpi-icon">✦</div></div>
       <div class="kpi-value">${fmt(t.profit)}</div>
       <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
+    </div>
+    <div class="kpi v3">
+      <div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" style="font-size:9px;padding:2px 6px;">${weekLabelShort(wk.week)}</span></div><div class="kpi-icon">★</div></div>
+      <div class="kpi-value">${fmt(wk.profit)}</div>
+      <div class="kpi-sub">${wk.pallets} 托盘 · ${wk.customerCount} 客户 <span class="kpi-trend ${wTrend}">${wTrendTxt}</span></div>
     </div>
     <div class="kpi v4">
       <div class="kpi-head"><div class="kpi-label">本月利润</div><div class="kpi-icon">$</div></div>
@@ -1649,7 +1798,7 @@ function renderKpis() {
       <div class="kpi-value">${t.mPallets}</div>
       <div class="kpi-sub">约 ${Math.round(t.mPallets / 30 * 7)} 托盘/周</div>
     </div>
-    <div class="kpi v3">
+    <div class="kpi v6">
       <div class="kpi-head"><div class="kpi-label">每托盘毛利</div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${fmt(perP)}</div>
       <div class="kpi-sub">${(perP / (state.params.sellPrice + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
@@ -1797,6 +1946,8 @@ function renderCustomerDetail() {
 
   // Refresh quick quote if user has a value entered
   updateQuickQuote();
+  // Render this customer's weekly profit table
+  renderCustomerWeekly(c);
 
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
@@ -3098,10 +3249,86 @@ function renderAll() {
   renderDaily();
   renderCustomers();
   renderMonthly();
+  renderWeekly();
   renderSettings();
   renderInsights();
   renderCharts();
   if (currentCustomer) renderCustomerDetail();
+}
+
+// ============ WEEKLY DASHBOARD TABLE ============
+let weeklyViewLimit = 12;  // default: last 12 weeks
+function setWeeklyView(n) {
+  weeklyViewLimit = n;
+  ['8','12','all'].forEach(k => {
+    const el = document.getElementById('wk-btn-' + k);
+    if (el) el.classList.remove('active');
+  });
+  const map = { 0: 'all', 8: '8', 12: '12' };
+  const btn = document.getElementById('wk-btn-' + (map[n] || 'all'));
+  if (btn) btn.classList.add('active');
+  renderWeekly();
+}
+function renderCustomerWeekly(c) {
+  const tb = document.getElementById('cust-weekly-body');
+  const perpEl = document.getElementById('cw-perp');
+  if (perpEl) perpEl.textContent = perPalletProfit();
+  if (!tb) return;
+  if (!c) { tb.innerHTML = ''; return; }
+  const agg = customerWeeklyAgg(c);
+  if (!agg.length) {
+    tb.innerHTML = `<tr><td colspan="6" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    return;
+  }
+  const todayWeek = weekStartOf(new Date().toISOString().slice(0, 10));
+  const reversed = [...agg].reverse();
+  tb.innerHTML = reversed.map(w => {
+    const isCurrent = w.week === todayWeek;
+    const wkNum = isoWeekNum(w.week);
+    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
+      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
+      <td class="dim">${weekLabelShort(w.week)}</td>
+      <td>${w.pallets}</td>
+      <td class="dim">${w.entries}</td>
+      <td>${fmt(w.revenue)}</td>
+      <td class="pos"><b>${fmt(w.profit)}</b></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderWeekly() {
+  const tb = document.getElementById('weekly-body');
+  if (!tb) return;
+  let agg = weeklyAgg();
+  if (weeklyViewLimit > 0 && agg.length > weeklyViewLimit) agg = agg.slice(-weeklyViewLimit);
+  if (!agg.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="dim" style="text-align:center;padding:40px;">暂无周数据</td></tr>`;
+    return;
+  }
+  const todayWeek = weekStartOf(new Date().toISOString().slice(0, 10));
+  const reversed = [...agg].reverse();
+  const rows = reversed.map((w, i) => {
+    const origIdx = agg.indexOf(w);
+    const prev = origIdx > 0 ? agg[origIdx - 1] : null;
+    let growth = '<span class="dim">—</span>';
+    if (prev) {
+      const pct = (w.profit - prev.profit) / (prev.profit || 1) * 100;
+      const cls = pct >= 0 ? 'pos' : 'neg';
+      growth = `<span class="${cls}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span>`;
+    }
+    const isCurrent = w.week === todayWeek;
+    const wkNum = isoWeekNum(w.week);
+    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
+      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
+      <td class="dim">${weekLabelShort(w.week)}</td>
+      <td>${w.pallets}</td>
+      <td class="dim">${w.customerCount}</td>
+      <td>${fmt(w.revenue + w.fee)}</td>
+      <td class="pos"><b>${fmt(w.profit)}</b></td>
+      <td>${growth}</td>
+    </tr>`;
+  }).join('');
+  tb.innerHTML = rows;
 }
 
 // ============ INIT ============
