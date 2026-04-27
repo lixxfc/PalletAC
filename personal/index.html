@@ -1778,15 +1778,15 @@ function renderKpis() {
   }
   const perP = perPalletProfit();
   const html = `
-    <div class="kpi v2">
-      <div class="kpi-head"><div class="kpi-label">累计净利润</div><div class="kpi-icon">✦</div></div>
-      <div class="kpi-value">${fmt(t.profit)}</div>
-      <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
-    </div>
     <div class="kpi v3">
       <div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" style="font-size:9px;padding:2px 6px;">${weekLabelShort(wk.week)}</span></div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${fmt(wk.profit)}</div>
       <div class="kpi-sub">${wk.pallets} 托盘 · ${wk.customerCount} 客户 <span class="kpi-trend ${wTrend}">${wTrendTxt}</span></div>
+    </div>
+    <div class="kpi v2">
+      <div class="kpi-head"><div class="kpi-label">累计净利润</div><div class="kpi-icon">✦</div></div>
+      <div class="kpi-value">${fmt(t.profit)}</div>
+      <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
     </div>
     <div class="kpi v4">
       <div class="kpi-head"><div class="kpi-label">本月利润</div><div class="kpi-icon">$</div></div>
