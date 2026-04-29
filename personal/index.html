@@ -1088,20 +1088,75 @@ select option { background: var(--bg-2); color: var(--text); }
           <div class="kpi-sub" id="sup-debt-sub">AMAZON · 私人记录</div>
         </div>
         <div class="kpi v1">
-          <div class="kpi-head"><div class="kpi-label">本周已记录</div><div class="kpi-icon">▦</div></div>
-          <div class="kpi-value" id="sup-week-trucks">0</div>
-          <div class="kpi-sub" id="sup-week-sub">车 · 周一 → 周日</div>
+          <div class="kpi-head"><div class="kpi-label">本周 TT 托盘</div><div class="kpi-icon">T</div></div>
+          <div class="kpi-value" id="sup-week-tt">0</div>
+          <div class="kpi-sub" id="sup-week-tt-sub">托盘 · 周一 → 周日</div>
+        </div>
+        <div class="kpi v4">
+          <div class="kpi-head"><div class="kpi-label">本周 AMAZON 托盘</div><div class="kpi-icon">A</div></div>
+          <div class="kpi-value" id="sup-week-amz">0</div>
+          <div class="kpi-sub" id="sup-week-amz-sub">托盘 · 周一 → 周日</div>
         </div>
         <div class="kpi v2">
-          <div class="kpi-head"><div class="kpi-label">本月 TT 卡车</div><div class="kpi-icon">T</div></div>
-          <div class="kpi-value" id="sup-month-tt">0</div>
-          <div class="kpi-sub" id="sup-month-tt-sub">车 · 含 Swap</div>
+          <div class="kpi-head"><div class="kpi-label">本月汇总</div><div class="kpi-icon">▦</div></div>
+          <div class="kpi-value" id="sup-month-total">0</div>
+          <div class="kpi-sub" id="sup-month-total-sub">车 · TT 0 / AMZ 0</div>
         </div>
-        <div class="kpi v3">
-          <div class="kpi-head"><div class="kpi-label">本月 AMAZON 卡车</div><div class="kpi-icon">A</div></div>
-          <div class="kpi-value" id="sup-month-amz">0</div>
-          <div class="kpi-sub" id="sup-month-amz-sub">车 · 含 Swap</div>
+      </div>
+
+      <!-- WEEKLY VISUAL: chart + week selector -->
+      <div class="card mb-4">
+        <div class="row" style="align-items:center;flex-wrap:wrap;">
+          <div class="grow">
+            <div class="card-title">本周日明细 <span class="badge" id="sup-chart-week-label">—</span></div>
+            <div class="page-sub">每天 TT / AMAZON 托盘数 · Swap 用斜线纹理标记</div>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm" onclick="navigateSupplyWeek(-1)" title="上一周">◀</button>
+            <button class="btn ghost sm" onclick="navigateSupplyWeek(0)" title="本周">本周</button>
+            <button class="btn ghost sm" onclick="navigateSupplyWeek(1)" title="下一周">▶</button>
+          </div>
         </div>
+        <div class="chart-box" style="height:300px;margin-top:16px;"><canvas id="chart-week-supply"></canvas></div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead>
+              <tr>
+                <th>星期</th>
+                <th>日期</th>
+                <th>谁取货</th>
+                <th>TT 托盘</th>
+                <th>AMZ 托盘</th>
+                <th>合计 / 车数</th>
+                <th>Swap</th>
+              </tr>
+            </thead>
+            <tbody id="sup-week-table"></tbody>
+            <tfoot id="sup-week-foot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- WEEKLY PATTERN: stacked bar chart of last 8 weeks -->
+      <div class="card mb-4">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">近 8 周对比</div>
+            <div class="page-sub">看哪几周 TT/AMZ 多 · 找规律</div>
+          </div>
+        </div>
+        <div class="chart-box" style="height:280px;margin-top:16px;"><canvas id="chart-weekly-trend"></canvas></div>
+      </div>
+
+      <!-- WEEKDAY PATTERN: average by weekday -->
+      <div class="card mb-4">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">星期规律(全部历史平均)</div>
+            <div class="page-sub">某一星期几历来一般有多少 TT 多少 AMZ — 找出哪天 TT 多哪天 AMZ 多</div>
+          </div>
+        </div>
+        <div class="chart-box" style="height:280px;margin-top:16px;"><canvas id="chart-weekday-avg"></canvas></div>
       </div>
 
       <div class="card">
@@ -4195,10 +4250,24 @@ function setSupplyView(v) {
   renderSupply();
 }
 
+// Currently viewed week's Monday (for chart selector). Defaults to current week.
+let supplyChartWeekMon = null;
+function navigateSupplyWeek(delta) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (delta === 0 || !supplyChartWeekMon) {
+    supplyChartWeekMon = mondayOf(today);
+  } else {
+    const d = new Date(supplyChartWeekMon + 'T12:00:00');
+    d.setDate(d.getDate() + delta * 7);
+    supplyChartWeekMon = d.toISOString().slice(0, 10);
+  }
+  renderSupply();
+}
+
 function renderSupply() {
   ensureSupplyArray();
 
-  // Top KPIs
+  // === Top KPIs ===
   const debt = emmaTruckDebt();
   const debtEl = document.getElementById('sup-debt-value');
   const debtSub = document.getElementById('sup-debt-sub');
@@ -4208,26 +4277,46 @@ function renderSupply() {
     else { debtEl.textContent = '0 车'; debtEl.style.color = ''; if (debtSub) debtSub.textContent = '已平衡 · 私人记录'; }
   }
 
-  // This week + month aggregates
+  // Current week (this calendar week, NOT the selected chart week)
   const today = new Date().toISOString().slice(0, 10);
-  const weekMon = weekStartOf ? weekStartOf(today) : null;
+  const thisWeekMon = mondayOf(today);
   const ym = today.slice(0, 7);
-  let weekTrucks = 0, monthTT = 0, monthAMZ = 0;
+  let wkTTPallets = 0, wkAmzPallets = 0;
+  let monthTrucks = 0, monthTT = 0, monthAMZ = 0;
   for (const day of state.dailySupply) {
-    if (weekMon && weekStartOf(day.date) === weekMon) weekTrucks += (day.trucks || []).length;
+    if (mondayOf(day.date) === thisWeekMon) {
+      for (const tr of (day.trucks || [])) {
+        if (tr.type === 'TT') wkTTPallets += (tr.pallets || 0);
+        else if (tr.type === 'AMAZON') wkAmzPallets += (tr.pallets || 0);
+      }
+    }
     if (day.date && day.date.startsWith(ym)) {
       for (const tr of (day.trucks || [])) {
+        monthTrucks++;
         if (tr.type === 'TT') monthTT++;
         else if (tr.type === 'AMAZON') monthAMZ++;
       }
     }
   }
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setText('sup-week-trucks', weekTrucks);
-  setText('sup-month-tt', monthTT);
-  setText('sup-month-amz', monthAMZ);
+  setText('sup-week-tt', wkTTPallets);
+  setText('sup-week-amz', wkAmzPallets);
+  setText('sup-month-total', monthTrucks);
+  const monthSub = document.getElementById('sup-month-total-sub');
+  if (monthSub) monthSub.textContent = `车 · TT ${monthTT} / AMZ ${monthAMZ}`;
 
-  // Table
+  // === Weekly chart (selected week, day by day) ===
+  if (!supplyChartWeekMon) supplyChartWeekMon = thisWeekMon;
+  renderSupplyWeekChart(supplyChartWeekMon);
+  renderSupplyWeekTable(supplyChartWeekMon);
+
+  // === Last 8 weeks trend chart ===
+  renderSupplyLast8Weeks();
+
+  // === Weekday average chart (full history) ===
+  renderSupplyWeekdayAvg();
+
+  // === Daily entries table at bottom ===
   const tb = document.getElementById('supply-body');
   if (!tb) return;
   let list = [...state.dailySupply].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -4265,6 +4354,251 @@ function renderSupply() {
       </td>
     </tr>`;
   }).join('');
+}
+
+// === Helpers: aggregate selected week's days ===
+function weekDaysOf(monStr) {
+  const out = [];
+  const d = new Date(monStr + 'T12:00:00');
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(d); day.setDate(d.getDate() + i);
+    out.push(day.toISOString().slice(0, 10));
+  }
+  return out;
+}
+function weekRangeLabel(monStr) {
+  if (!monStr) return '';
+  const days = weekDaysOf(monStr);
+  const m = new Date(days[0] + 'T12:00:00');
+  const s = new Date(days[6] + 'T12:00:00');
+  const fmtMD = (dd) => `${dd.getMonth() + 1}/${dd.getDate()}`;
+  return `${fmtMD(m)} ~ ${fmtMD(s)}`;
+}
+
+function renderSupplyWeekChart(weekMon) {
+  const ctx = document.getElementById('chart-week-supply');
+  if (!ctx || typeof Chart === 'undefined') return;
+  const days = weekDaysOf(weekMon);
+  const labels = days.map(d => {
+    const dd = new Date(d + 'T12:00:00');
+    return ['周日','周一','周二','周三','周四','周五','周六'][dd.getDay()];
+  });
+  const ttData = [], amzData = [], ttSwap = [], amzSwap = [];
+  for (const d of days) {
+    let tt = 0, amz = 0, ttS = 0, amzS = 0;
+    const day = state.dailySupply.find(x => x.date === d);
+    if (day) {
+      for (const tr of (day.trucks || [])) {
+        if (tr.type === 'TT') { tt += (tr.pallets || 0); if (tr.swapped) ttS += (tr.pallets || 0); }
+        else if (tr.type === 'AMAZON') { amz += (tr.pallets || 0); if (tr.swapped) amzS += (tr.pallets || 0); }
+      }
+    }
+    ttData.push(tt); amzData.push(amz); ttSwap.push(ttS); amzSwap.push(amzS);
+  }
+
+  const lbl = document.getElementById('sup-chart-week-label');
+  if (lbl) {
+    const isThis = weekMon === mondayOf(new Date().toISOString().slice(0, 10));
+    lbl.textContent = weekRangeLabel(weekMon) + (isThis ? ' (本周)' : '');
+  }
+
+  if (window._supplyWeekChart) window._supplyWeekChart.destroy();
+  window._supplyWeekChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'TT 托盘', data: ttData, backgroundColor: 'rgba(0, 229, 255, 0.6)', borderColor: 'rgba(0, 229, 255, 1)', borderWidth: 1, stack: 'a', borderRadius: 4 },
+        { label: 'AMAZON 托盘', data: amzData, backgroundColor: 'rgba(34, 211, 165, 0.6)', borderColor: 'rgba(34, 211, 165, 1)', borderWidth: 1, stack: 'a', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => {
+              if (!items || !items.length) return '';
+              const idx = items[0].dataIndex;
+              const lines = [];
+              if (ttSwap[idx]) lines.push(`(其中 Swap TT: ${ttSwap[idx]} 托盘)`);
+              if (amzSwap[idx]) lines.push(`(其中 Swap AMZ: ${amzSwap[idx]} 托盘)`);
+              const total = ttData[idx] + amzData[idx];
+              lines.push(`合计: ${total} 托盘`);
+              return lines;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: '#94A3C4', font: { size: 11 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+      }
+    }
+  });
+}
+
+function renderSupplyWeekTable(weekMon) {
+  const tb = document.getElementById('sup-week-table');
+  const tf = document.getElementById('sup-week-foot');
+  if (!tb) return;
+  const days = weekDaysOf(weekMon);
+  const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  let totTT = 0, totAMZ = 0, totTrucks = 0, totSwap = 0;
+  const today = new Date().toISOString().slice(0, 10);
+  tb.innerHTML = days.map(d => {
+    const dd = new Date(d + 'T12:00:00');
+    const dayLabel = dayNames[dd.getDay()];
+    const day = state.dailySupply.find(x => x.date === d);
+    let tt = 0, amz = 0, trucks = 0, swap = 0;
+    let owner = day ? day.pickupBy : rotationPickupBy(d);
+    if (day) {
+      for (const tr of (day.trucks || [])) {
+        trucks++;
+        if (tr.type === 'TT') tt += (tr.pallets || 0);
+        else if (tr.type === 'AMAZON') amz += (tr.pallets || 0);
+        if (tr.swapped) swap++;
+      }
+    }
+    totTT += tt; totAMZ += amz; totTrucks += trucks; totSwap += swap;
+    const ownerBadge = owner === 'Emma'
+      ? '<span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);">Emma</span>'
+      : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">Michael</span>';
+    const isToday = d === today;
+    const isWeekend = (dd.getDay() === 0 || dd.getDay() === 6);
+    const rowStyle = isToday ? 'background:rgba(251,191,36,0.06);' : (isWeekend ? 'opacity:0.5;' : '');
+    const swapBadge = swap > 0 ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${swap} 车</span>` : '<span class="dim">—</span>';
+    return `<tr style="${rowStyle}">
+      <td><b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}</td>
+      <td class="dim">${d}</td>
+      <td>${day ? ownerBadge : '<span class="dim">' + ownerBadge + ' (无记录)</span>'}</td>
+      <td><b style="color:${tt > 0 ? 'var(--cyan)' : 'var(--text-dim)'};">${tt}</b></td>
+      <td><b style="color:${amz > 0 ? 'var(--green)' : 'var(--text-dim)'};">${amz}</b></td>
+      <td>${tt + amz} 托 <span class="dim">/ ${trucks} 车</span></td>
+      <td>${swapBadge}</td>
+    </tr>`;
+  }).join('');
+  if (tf) {
+    tf.innerHTML = `<tr style="background:rgba(0,229,255,0.04);">
+      <td colspan="3"><b>本周合计</b></td>
+      <td><b style="color:var(--cyan);font-size:14px;">${totTT}</b></td>
+      <td><b style="color:var(--green);font-size:14px;">${totAMZ}</b></td>
+      <td><b>${totTT + totAMZ} 托 / ${totTrucks} 车</b></td>
+      <td>${totSwap > 0 ? '<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ' + totSwap + ' 车</span>' : '<span class="dim">无</span>'}</td>
+    </tr>`;
+  }
+}
+
+function renderSupplyLast8Weeks() {
+  const ctx = document.getElementById('chart-weekly-trend');
+  if (!ctx || typeof Chart === 'undefined') return;
+  const today = new Date().toISOString().slice(0, 10);
+  const thisMon = mondayOf(today);
+  const weeks = [];
+  for (let i = 7; i >= 0; i--) {
+    const d = new Date(thisMon + 'T12:00:00');
+    d.setDate(d.getDate() - i * 7);
+    weeks.push(d.toISOString().slice(0, 10));
+  }
+  const labels = weeks.map(weekRangeLabel);
+  const ttData = weeks.map(wm => {
+    const days = weekDaysOf(wm);
+    let s = 0;
+    for (const d of days) {
+      const day = state.dailySupply.find(x => x.date === d);
+      if (day) for (const tr of (day.trucks || [])) if (tr.type === 'TT') s += (tr.pallets || 0);
+    }
+    return s;
+  });
+  const amzData = weeks.map(wm => {
+    const days = weekDaysOf(wm);
+    let s = 0;
+    for (const d of days) {
+      const day = state.dailySupply.find(x => x.date === d);
+      if (day) for (const tr of (day.trucks || [])) if (tr.type === 'AMAZON') s += (tr.pallets || 0);
+    }
+    return s;
+  });
+
+  if (window._supplyTrendChart) window._supplyTrendChart.destroy();
+  window._supplyTrendChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'TT 托盘', data: ttData, backgroundColor: 'rgba(0, 229, 255, 0.6)', stack: 'a', borderRadius: 4 },
+        { label: 'AMAZON 托盘', data: amzData, backgroundColor: 'rgba(34, 211, 165, 0.6)', stack: 'a', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94A3C4', font: { size: 11 } } }
+      },
+      scales: {
+        x: { stacked: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+      }
+    }
+  });
+}
+
+function renderSupplyWeekdayAvg() {
+  const ctx = document.getElementById('chart-weekday-avg');
+  if (!ctx || typeof Chart === 'undefined') return;
+  // Aggregate by weekday across full history
+  const sums = { 1: { tt: 0, amz: 0, n: 0 }, 2: { tt: 0, amz: 0, n: 0 }, 3: { tt: 0, amz: 0, n: 0 }, 4: { tt: 0, amz: 0, n: 0 }, 5: { tt: 0, amz: 0, n: 0 } };
+  const seenByDay = { 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set() };
+  for (const day of state.dailySupply) {
+    if (!day.date) continue;
+    const wkday = new Date(day.date + 'T12:00:00').getDay();
+    if (!sums[wkday]) continue;  // skip weekends
+    seenByDay[wkday].add(day.date);
+    for (const tr of (day.trucks || [])) {
+      if (tr.type === 'TT') sums[wkday].tt += (tr.pallets || 0);
+      else if (tr.type === 'AMAZON') sums[wkday].amz += (tr.pallets || 0);
+    }
+  }
+  const labels = ['周一','周二','周三','周四','周五'];
+  const ttAvg = [1,2,3,4,5].map(k => {
+    const n = seenByDay[k].size; return n ? +(sums[k].tt / n).toFixed(1) : 0;
+  });
+  const amzAvg = [1,2,3,4,5].map(k => {
+    const n = seenByDay[k].size; return n ? +(sums[k].amz / n).toFixed(1) : 0;
+  });
+
+  if (window._supplyWeekdayChart) window._supplyWeekdayChart.destroy();
+  window._supplyWeekdayChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'TT 平均托盘', data: ttAvg, backgroundColor: 'rgba(0, 229, 255, 0.6)', borderRadius: 4 },
+        { label: 'AMAZON 平均托盘', data: amzAvg, backgroundColor: 'rgba(34, 211, 165, 0.6)', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            afterLabel: (item) => {
+              const idx = item.dataIndex;
+              const wk = idx + 1;
+              const n = seenByDay[wk].size;
+              return `(基于 ${n} 个${labels[idx]})`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#94A3C4', font: { size: 11 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
+        y: { beginAtZero: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+      }
+    }
+  });
 }
 
 function dayOfWeekShort(iso) {
