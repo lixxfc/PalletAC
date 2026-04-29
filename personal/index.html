@@ -1099,8 +1099,8 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
         <div class="kpi v2">
           <div class="kpi-head"><div class="kpi-label">本月汇总</div><div class="kpi-icon">▦</div></div>
-          <div class="kpi-value" id="sup-month-total">0</div>
-          <div class="kpi-sub" id="sup-month-total-sub">车 · TT 0 / AMZ 0</div>
+          <div class="kpi-value" id="sup-month-total" style="font-size:30px;">0 托 / 0 车</div>
+          <div class="kpi-sub" id="sup-month-total-sub">TT 0 车 · AMZ 0 车</div>
         </div>
       </div>
 
@@ -4284,7 +4284,7 @@ function renderSupply() {
   const thisWeekMon = mondayOf(today);
   const ym = today.slice(0, 7);
   let wkTTPallets = 0, wkAmzPallets = 0, wkTTTrucks = 0, wkAmzTrucks = 0;
-  let monthTrucks = 0, monthTT = 0, monthAMZ = 0;
+  let monthTrucks = 0, monthTT = 0, monthAMZ = 0, monthPallets = 0, monthTTPallets = 0, monthAMZPallets = 0;
   for (const day of state.dailySupply) {
     if (mondayOf(day.date) === thisWeekMon) {
       for (const tr of (day.trucks || [])) {
@@ -4295,18 +4295,19 @@ function renderSupply() {
     if (day.date && day.date.startsWith(ym)) {
       for (const tr of (day.trucks || [])) {
         monthTrucks++;
-        if (tr.type === 'TT') monthTT++;
-        else if (tr.type === 'AMAZON') monthAMZ++;
+        monthPallets += (tr.pallets || 0);
+        if (tr.type === 'TT') { monthTT++; monthTTPallets += (tr.pallets || 0); }
+        else if (tr.type === 'AMAZON') { monthAMZ++; monthAMZPallets += (tr.pallets || 0); }
       }
     }
   }
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  // Show "94 托盘 / 4 车" format inside KPI cards
+  // Show "94 托 / 4 车" format inside KPI cards
   setText('sup-week-tt', wkTTPallets + ' 托 / ' + wkTTTrucks + ' 车');
   setText('sup-week-amz', wkAmzPallets + ' 托 / ' + wkAmzTrucks + ' 车');
-  setText('sup-month-total', monthTrucks);
+  setText('sup-month-total', monthPallets + ' 托 / ' + monthTrucks + ' 车');
   const monthSub = document.getElementById('sup-month-total-sub');
-  if (monthSub) monthSub.textContent = `车 · TT ${monthTT} / AMZ ${monthAMZ}`;
+  if (monthSub) monthSub.innerHTML = `<span style="color:#a5b4fc;">TT ${monthTTPallets} 托 / ${monthTT} 车</span> &nbsp;·&nbsp; <span style="color:#67e8f9;">AMZ ${monthAMZPallets} 托 / ${monthAMZ} 车</span>`;
 
   // === Weekly chart (selected week, day by day) ===
   if (!supplyChartWeekMon) supplyChartWeekMon = thisWeekMon;
@@ -4385,6 +4386,74 @@ const COLOR_TT_BD = 'rgba(99, 102, 241, 1)';        // indigo-500
 const COLOR_AMZ_BG = 'rgba(103, 232, 249, 0.7)';    // cyan-300, light
 const COLOR_AMZ_BD = 'rgba(34, 211, 238, 1)';       // cyan-400
 
+// Chart.js plugin: draws total "{pallets} 托 / {trucks} 车" ABOVE each (stacked) bar
+const aboveBarTotalPlugin = {
+  id: 'aboveBarTotal',
+  afterDatasetsDraw(chart) {
+    const { ctx, data, chartArea } = chart;
+    if (!data || !data.labels) return;
+    const numBars = data.labels.length;
+    for (let i = 0; i < numBars; i++) {
+      let totalPallets = 0;
+      let totalTrucks = 0;
+      let topY = Infinity;
+      let centerX = null;
+      data.datasets.forEach((ds, dsIdx) => {
+        const meta = chart.getDatasetMeta(dsIdx);
+        if (!meta || meta.hidden) return;
+        const bar = meta.data[i];
+        if (!bar) return;
+        const value = ds.data[i];
+        if (!value || value <= 0) return;
+        totalPallets += value;
+        if (ds._truckCounts && ds._truckCounts[i] != null) totalTrucks += ds._truckCounts[i];
+        const props = bar.getProps(['x', 'y'], true);
+        if (props.y < topY) topY = props.y;
+        centerX = props.x;
+      });
+      if (totalPallets > 0 && topY !== Infinity && centerX != null) {
+        // Round nicely (avg charts may have decimals)
+        const palletsTxt = Number.isInteger(totalPallets) ? totalPallets : (+totalPallets.toFixed(1));
+        const trucksTxt = Number.isInteger(totalTrucks) ? totalTrucks : (+totalTrucks.toFixed(1));
+        const text = trucksTxt > 0 ? `${palletsTxt} 托 / ${trucksTxt} 车` : `${palletsTxt} 托`;
+        ctx.save();
+        ctx.font = '700 12px Inter, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        // Pill background
+        const padX = 8, padY = 4;
+        const m = ctx.measureText(text);
+        const w = m.width + padX * 2;
+        const h = 20;
+        const yPill = Math.max(topY - 8, (chartArea ? chartArea.top + h : h) + 2);
+        // Draw rounded pill behind text for legibility
+        ctx.fillStyle = 'rgba(15, 18, 40, 0.85)';
+        ctx.strokeStyle = 'rgba(139, 150, 255, 0.25)';
+        ctx.lineWidth = 1;
+        const r = 10;
+        ctx.beginPath();
+        const px = centerX - w / 2, py = yPill - h;
+        ctx.moveTo(px + r, py);
+        ctx.lineTo(px + w - r, py);
+        ctx.quadraticCurveTo(px + w, py, px + w, py + r);
+        ctx.lineTo(px + w, py + h - r);
+        ctx.quadraticCurveTo(px + w, py + h, px + w - r, py + h);
+        ctx.lineTo(px + r, py + h);
+        ctx.quadraticCurveTo(px, py + h, px, py + h - r);
+        ctx.lineTo(px, py + r);
+        ctx.quadraticCurveTo(px, py, px + r, py);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(text, centerX, yPill - padY);
+        ctx.restore();
+      }
+    }
+  }
+};
+
 // Chart.js plugin: draws "TT N 托/N 车" or "AMZ N 托/N 车" inside each bar segment
 const inBarLabelPlugin = {
   id: 'inBarLabel',
@@ -4449,10 +4518,14 @@ function renderSupplyWeekChart(weekMon) {
     lbl.textContent = weekRangeLabel(weekMon) + (isThis ? ' (本周)' : '');
   }
 
+  // Add ~18% headroom to Y axis so the "above bar" pills don't get clipped at the top
+  const maxBarHeight = Math.max(...ttData.map((v, i) => v + amzData[i]), 0);
+  const yMax = maxBarHeight > 0 ? Math.ceil(maxBarHeight * 1.20) : 10;
+
   if (window._supplyWeekChart) window._supplyWeekChart.destroy();
   window._supplyWeekChart = new Chart(ctx, {
     type: 'bar',
-    plugins: [inBarLabelPlugin],
+    plugins: [inBarLabelPlugin, aboveBarTotalPlugin],
     data: {
       labels,
       datasets: [
@@ -4462,8 +4535,9 @@ function renderSupplyWeekChart(weekMon) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: false,                        // ⛔ no flicker
+      animation: false,                        // no flicker
       transitions: { active: { animation: { duration: 0 } } },
+      layout: { padding: { top: 24 } },
       plugins: {
         legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
         tooltip: {
@@ -4491,7 +4565,7 @@ function renderSupplyWeekChart(weekMon) {
       },
       scales: {
         x: { stacked: true, ticks: { color: '#94A3C4', font: { size: 11 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
-        y: { stacked: true, beginAtZero: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+        y: { stacked: true, beginAtZero: true, suggestedMax: yMax, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
       }
     }
   });
@@ -4578,10 +4652,14 @@ function renderSupplyLast8Weeks() {
   const amzData = amzResults.map(r => r.pallets);
   const amzTrucks = amzResults.map(r => r.trucks);
 
+  // Headroom for "above bar" pills
+  const maxStack = Math.max(...ttData.map((v, i) => v + amzData[i]), 0);
+  const yMax = maxStack > 0 ? Math.ceil(maxStack * 1.18) : 10;
+
   if (window._supplyTrendChart) window._supplyTrendChart.destroy();
   window._supplyTrendChart = new Chart(ctx, {
     type: 'bar',
-    plugins: [inBarLabelPlugin],
+    plugins: [inBarLabelPlugin, aboveBarTotalPlugin],
     data: {
       labels,
       datasets: [
@@ -4593,6 +4671,7 @@ function renderSupplyLast8Weeks() {
       responsive: true, maintainAspectRatio: false,
       animation: false,
       transitions: { active: { animation: { duration: 0 } } },
+      layout: { padding: { top: 24 } },
       plugins: {
         legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
         tooltip: {
@@ -4601,13 +4680,20 @@ function renderSupplyLast8Weeks() {
               const isTT = item.datasetIndex === 0;
               const trucks = isTT ? ttTrucks[item.dataIndex] : amzTrucks[item.dataIndex];
               return `${isTT ? 'TT' : 'AMAZON'}: ${item.parsed.y} 托 / ${trucks} 车`;
+            },
+            afterBody: (items) => {
+              if (!items || !items.length) return '';
+              const idx = items[0].dataIndex;
+              const totalP = ttData[idx] + amzData[idx];
+              const totalT = ttTrucks[idx] + amzTrucks[idx];
+              return [`合计: ${totalP} 托 / ${totalT} 车`];
             }
           }
         }
       },
       scales: {
         x: { stacked: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
-        y: { stacked: true, beginAtZero: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
+        y: { stacked: true, beginAtZero: true, suggestedMax: yMax, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } }
       }
     }
   });
