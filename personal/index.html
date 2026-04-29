@@ -980,6 +980,7 @@ select option { background: var(--bg-2); color: var(--text); }
 
     <div class="nav-section-title">主要</div>
     <div class="nav-item active" data-view="dashboard"><span class="icon">◉</span><span>仪表盘</span></div>
+    <div class="nav-item" data-view="supply"><span class="icon">📦</span><span>每日供货</span></div>
     <div class="nav-item" data-view="daily"><span class="icon">▦</span><span>出货交易</span></div>
     <div class="nav-item" data-view="customers"><span class="icon">◈</span><span>客户账本</span></div>
     <div class="nav-item" data-view="monthly"><span class="icon">▩</span><span>月度汇总</span></div>
@@ -1064,6 +1065,62 @@ select option { background: var(--bg-2); color: var(--text); }
         <div class="card chart-card">
           <div class="card-title">利润累计趋势</div>
           <div class="chart-box"><canvas id="chart-cumprofit"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Daily Supply Log (每日供货) ===== -->
+    <section class="view" data-view="supply">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">📦 每日供货</h1>
+          <div class="page-sub">每天供货商送来的卡车 · TT / AMAZON · 与 Emma 的车对车 swap · 不动客户账本</div>
+        </div>
+        <div class="row">
+          <button class="btn primary" onclick="openSupplyEditor(null)">＋ 新增今日记录</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 24px;">
+        <div class="kpi v5">
+          <div class="kpi-head"><div class="kpi-label">欠 Emma 卡车</div><div class="kpi-icon">⇆</div></div>
+          <div class="kpi-value" id="sup-debt-value">0 车</div>
+          <div class="kpi-sub" id="sup-debt-sub">AMAZON · 私人记录</div>
+        </div>
+        <div class="kpi v1">
+          <div class="kpi-head"><div class="kpi-label">本周已记录</div><div class="kpi-icon">▦</div></div>
+          <div class="kpi-value" id="sup-week-trucks">0</div>
+          <div class="kpi-sub" id="sup-week-sub">车 · 周一 → 周日</div>
+        </div>
+        <div class="kpi v2">
+          <div class="kpi-head"><div class="kpi-label">本月 TT 卡车</div><div class="kpi-icon">T</div></div>
+          <div class="kpi-value" id="sup-month-tt">0</div>
+          <div class="kpi-sub" id="sup-month-tt-sub">车 · 含 Swap</div>
+        </div>
+        <div class="kpi v3">
+          <div class="kpi-head"><div class="kpi-label">本月 AMAZON 卡车</div><div class="kpi-icon">A</div></div>
+          <div class="kpi-value" id="sup-month-amz">0</div>
+          <div class="kpi-sub" id="sup-month-amz-sub">车 · 含 Swap</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">每日记录 <span class="badge" id="sup-count">0 天</span></div>
+            <div class="page-sub">按日期倒序;点 ✎ 编辑、🗑 删除</div>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm active" onclick="setSupplyView('30')" id="sup-btn-30">近 30 天</button>
+            <button class="btn ghost sm" onclick="setSupplyView('90')" id="sup-btn-90">近 90 天</button>
+            <button class="btn ghost sm" onclick="setSupplyView('all')" id="sup-btn-all">全部</button>
+          </div>
+        </div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead><tr><th style="width:110px;">日期</th><th style="width:90px;">谁取货</th><th>卡车</th><th style="width:140px;">备注</th><th style="width:120px;">操作</th></tr></thead>
+            <tbody id="supply-body"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -1188,6 +1245,12 @@ select option { background: var(--bg-2); color: var(--text); }
             <div class="form-row" id="lg-amount-row"><label id="lg-amount-label">金额 £</label><input type="number" id="lg-amount" placeholder="0" oninput="updateLedgerPreview()"></div>
             <div class="form-row row-hidden" id="lg-pallets-row"><label>托盘数</label><input type="number" id="lg-pallets" placeholder="24" min="1" oninput="updateLedgerPreview()"></div>
             <div class="form-row row-hidden" id="lg-truck-row"><label>车次（可选）</label><input type="text" id="lg-truck" placeholder="T-001"></div>
+            <div class="form-row row-hidden" id="lg-swap-row" style="grid-column: 1/-1;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(244,114,182,0.06);border:1px dashed rgba(244,114,182,0.3);border-radius:10px;">
+                <input type="checkbox" id="lg-swap" oninput="updateLedgerPreview()">
+                <span><b>🔁 Swap TT(+£30/托盘)</b> — 这一车是 Emma 换给我的 TT,客户多付 £30/托盘</span>
+              </label>
+            </div>
             <div class="form-row" style="grid-column: 1/-1;"><label>备注（可选）</label><input type="text" id="lg-note" placeholder="备注"></div>
           </div>
           <div id="lg-preview" class="preview-box"></div>
@@ -1300,6 +1363,32 @@ select option { background: var(--bg-2); color: var(--text); }
       </div>
 
       <div class="card mt-6">
+        <div class="card-title">轮次配置 <span class="page-sub" style="font-size:11px;font-weight:400;">(每日供货自动算谁取货,可单天手动改)</span></div>
+        <div class="form-grid mt-4">
+          <div class="form-row"><label>参考周一日期</label><input type="date" id="rot-ref" onchange="saveRotation()"></div>
+          <div class="form-row"><label>参考周 Michael 的取货日</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;">
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rot-mon" onchange="saveRotation()"> Mon</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rot-tue" onchange="saveRotation()"> Tue</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rot-wed" onchange="saveRotation()"> Wed</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rot-thu" onchange="saveRotation()"> Thu</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;"><input type="checkbox" id="rot-fri" onchange="saveRotation()"> Fri</label>
+            </div>
+          </div>
+          <div class="form-row"><label>是否每周交替</label>
+            <select id="rot-alt" onchange="saveRotation()">
+              <option value="weekly">是 — 每周 Michael / Emma 互换</option>
+              <option value="fixed">否 — 每周固定一样</option>
+            </select>
+          </div>
+        </div>
+        <div class="page-sub mt-4" style="font-size:12px;line-height:1.7;">
+          <b>预览未来 4 周:</b>
+          <div id="rot-preview" style="margin-top:6px;font-family:monospace;font-size:11px;color:var(--text-dim);"></div>
+        </div>
+      </div>
+
+      <div class="card mt-6">
         <div class="card-title">我的公司信息 <span class="page-sub" style="font-size:11px;font-weight:400;">(出现在对账单顶部)</span></div>
         <div class="form-grid mt-4">
           <div class="form-row"><label>公司名称</label><input type="text" id="s-co-name" placeholder="Your Company Ltd" onchange="saveCompanyInfo()"></div>
@@ -1344,6 +1433,60 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="form-row" style="grid-column: 1/-1;"><label>客户名称</label><input type="text" id="new-cust-name" placeholder="如：老王"></div>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="createCustomer()">创建</button></div>
+  </div>
+</div>
+
+<!-- Supply Editor Modal -->
+<div class="modal-backdrop" id="supply-modal">
+  <div class="modal" style="max-width: 720px; max-height: 92vh; overflow: auto;">
+    <div class="modal-head">
+      <div class="modal-title" id="sup-modal-title">新增供货记录</div>
+      <button class="modal-close" onclick="closeSupplyEditor()">×</button>
+    </div>
+    <div class="page-sub mb-4">每日记录 · 仅显示在你的私人账目里 · Emma / Hugo 看不到</div>
+
+    <div class="form-grid">
+      <div class="form-row"><label>日期</label><input type="date" id="sup-date" onchange="autoComputeSupplyOwner()"></div>
+      <div class="form-row"><label>谁取货 <span id="sup-auto-tag" class="badge" style="font-size:9px;padding:2px 6px;display:none;background:rgba(0,229,255,0.15);color:var(--cyan);">轮次自动</span> <span id="sup-manual-tag" class="badge" style="font-size:9px;padding:2px 6px;display:none;background:rgba(251,191,36,0.18);color:var(--amber);">已手动调整</span></label>
+        <select id="sup-pickup-by" onchange="onSupplyOwnerChange()">
+          <option value="Michael">Michael</option>
+          <option value="Emma">Emma</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row mt-6" style="align-items:center;">
+      <div class="grow"><div class="card-title">卡车明细 Trucks</div></div>
+      <button class="btn sm ghost" onclick="addSupplyTruck()">＋ 加一车</button>
+    </div>
+    <div class="table-wrap mt-2">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px;">类型</th>
+            <th style="width:90px;">托盘数</th>
+            <th>Swap?</th>
+            <th>备注</th>
+            <th style="width:50px;"></th>
+          </tr>
+        </thead>
+        <tbody id="sup-trucks-body"></tbody>
+      </table>
+    </div>
+    <div class="page-sub" style="font-size:11px;margin-top:8px;line-height:1.6;">
+      💡 Swap 含义:勾上后表示这辆车<b>换给了对方</b>。<br>
+      &nbsp;&nbsp;Emma 取货日 + TT + Swap = Emma 把这车 TT 换给 Michael(Michael 欠 Emma 1 车 AMAZON)<br>
+      &nbsp;&nbsp;Michael 取货日 + AMAZON + Swap = Michael 把这车 AMAZON 给 Emma(欠款 -1)
+    </div>
+
+    <div class="form-grid mt-4">
+      <div class="form-row" style="grid-column:1/-1;"><label>当日备注 (可选)</label><input type="text" id="sup-day-note" placeholder="如:Bank Holiday 调班 / 供货商延期"></div>
+    </div>
+
+    <div class="row mt-4" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" onclick="saveSupply()">保存</button>
+      <button class="btn ghost" onclick="closeSupplyEditor()">取消</button>
+    </div>
   </div>
 </div>
 
@@ -1442,6 +1585,7 @@ select option { background: var(--bg-2); color: var(--text); }
 <!-- Mobile Nav -->
 <nav class="mobile-nav no-print" id="mobile-nav">
   <div class="mobile-nav-item active" data-view="dashboard"><span class="icon">◉</span><span>仪表盘</span></div>
+  <div class="mobile-nav-item" data-view="supply"><span class="icon">📦</span><span>供货</span></div>
   <div class="mobile-nav-item" data-view="daily"><span class="icon">▦</span><span>出货</span></div>
   <div class="mobile-nav-item" data-view="customers"><span class="icon">◈</span><span>客户</span></div>
   <div class="mobile-nav-item" data-view="monthly"><span class="icon">▩</span><span>月度</span></div>
@@ -1568,9 +1712,15 @@ function showApp() {
 // ============ DATA SYNC ============
 function emptyState() {
   return {
-    params: { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2 },
+    params: { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2, swapPremium: 30 },
     customers: [],
-    invoices: []
+    invoices: [],
+    dailySupply: [],
+    rotation: {
+      refMonday: '2026-05-04',
+      michaelDays: { mon: true, tue: false, wed: true, thu: false, fri: true },
+      alternate: 'weekly'
+    }
   };
 }
 
@@ -1681,7 +1831,10 @@ function allPickups() {
         note: e.note || '',
         amount: e.amount || 0,
         customerId: c.id,
-        customerName: c.name
+        customerName: c.name,
+        isSwap: !!e.isSwap,
+        unitPrice: e.unitPrice,
+        swapPremium: e.swapPremium
       });
     }
   }
@@ -1689,11 +1842,17 @@ function allPickups() {
 }
 
 function pickupMetrics(row) {
-  const revenue = row.pallets * state.params.sellPrice;
+  // Effective unit price = base sellPrice + swap premium (if any).
+  // Use stored unitPrice on the row when present (snapshot), else compute live.
+  const base = state.params.sellPrice;
+  const premium = row.isSwap ? (row.swapPremium != null ? row.swapPremium : swapTtPremium()) : 0;
+  const effective = (row.unitPrice != null) ? row.unitPrice : (base + premium);
+  const revenue = row.pallets * effective;
   const cost = row.pallets * state.params.buyPrice;
   const fee = row.pallets * state.params.myFee;
+  const swapBonus = row.pallets * premium;  // extra profit from swap-TT
   const profit = revenue + fee - cost;
-  return { revenue, cost, fee, profit };
+  return { revenue, cost, fee, profit, swapBonus };
 }
 
 function customerBalance(c) {
@@ -1706,7 +1865,22 @@ function customerBalance(c) {
 }
 function customerTotalDeposit(c) { return c.ledger.filter(e => e.type === 'deposit').reduce((s, e) => s + e.amount, 0); }
 function customerTotalPallets(c) { return c.ledger.filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0); }
-function customerProfit(c) { return customerTotalPallets(c) * perPalletProfit(); }
+function customerProfit(c) {
+  // Base profit (per-pallet margin) + any swap-TT bonus (£30/pallet for tagged pickups)
+  let base = customerTotalPallets(c) * perPalletProfit();
+  let bonus = 0;
+  for (const e of (c.ledger || [])) {
+    if (e.type === 'pickup' && e.isSwap) bonus += (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium());
+  }
+  return base + bonus;
+}
+function customerSwapBonus(c) {
+  let bonus = 0;
+  for (const e of (c.ledger || [])) {
+    if (e.type === 'pickup' && e.isSwap) bonus += (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium());
+  }
+  return bonus;
+}
 function allBalance() { return state.customers.reduce((s, c) => s + customerBalance(c), 0); }
 
 function monthlyAgg() {
@@ -1895,6 +2069,33 @@ function renderKpis() {
       <div class="kpi-value">${fmt(invoiceOutstanding())}</div>
       <div class="kpi-sub">${invoiceCount('unpaid')} 张未付${invoiceCount('overdue') > 0 ? ' · ' + invoiceCount('overdue') + ' 张逾期' : ''}</div>
     </div>
+    ${(() => {
+      // Swap TT bonus this month
+      const ymStr = new Date().toISOString().slice(0, 7);
+      let swapBonus = 0, swapPallets = 0;
+      for (const r of allPickups()) {
+        if (r.isSwap && r.date && r.date.startsWith(ymStr)) {
+          const prem = r.swapPremium != null ? r.swapPremium : swapTtPremium();
+          swapBonus += (r.pallets || 0) * prem;
+          swapPallets += (r.pallets || 0);
+        }
+      }
+      const debt = emmaTruckDebt();
+      const debtColor = debt > 0 ? '' : (debt < 0 ? 'color:var(--green);' : '');
+      const debtText = debt > 0 ? `欠 Emma ${debt} 车` : (debt < 0 ? `Emma 欠你 ${Math.abs(debt)} 车` : '已平衡');
+      return `
+        <div class="kpi v5">
+          <div class="kpi-head"><div class="kpi-label">本月 Swap TT 加成</div><div class="kpi-icon">🔁</div></div>
+          <div class="kpi-value">${fmt(swapBonus)}</div>
+          <div class="kpi-sub">${swapPallets} 托盘 · 额外 £${swapTtPremium()}/个</div>
+        </div>
+        <div class="kpi v3">
+          <div class="kpi-head"><div class="kpi-label">卡车欠条 (私人)</div><div class="kpi-icon">⇆</div></div>
+          <div class="kpi-value" style="${debtColor}">${Math.abs(debt)}</div>
+          <div class="kpi-sub">${debtText}${debt !== 0 ? ' · AMAZON' : ''}</div>
+        </div>
+      `;
+    })()}
     <div class="kpi v5">
       <div class="kpi-head"><div class="kpi-label">客户预付余额</div><div class="kpi-icon">◈</div></div>
       <div class="kpi-value">${fmt(bal)}</div>
@@ -2078,9 +2279,12 @@ function renderCustomerDetail() {
     const sign = e.type === 'deposit' ? '+' : '-';
     const amtCls = e.type === 'deposit' ? 'pos' : 'neg';
     const runCls = running < 0 ? 'neg' : '';
+    const swapTag = (e.type === 'pickup' && e.isSwap)
+      ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(244,114,182,0.18);color:var(--pink);">🔁 SWAP</span>'
+      : '';
     return { html: `<tr>
       <td>${e.date}</td>
-      <td><span class="badge-type ${cls}">${label}</span></td>
+      <td><span class="badge-type ${cls}">${label}</span>${swapTag}</td>
       <td>${e.pallets || '-'}</td>
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
@@ -2131,6 +2335,7 @@ function renderSettings() {
   document.getElementById('calc-profit').textContent = fmt(perPalletProfit());
   document.getElementById('calc-sell').textContent = state.params.sellPrice;
   fillCompanyInfo();
+  if (typeof fillRotation === 'function') fillRotation();
 }
 
 const chartOpts = {
@@ -2321,6 +2526,7 @@ function openCustomer(id) {
   document.getElementById('lg-pallets').value = '';
   if (document.getElementById('lg-truck')) document.getElementById('lg-truck').value = '';
   document.getElementById('lg-note').value = '';
+  const lgSwap = document.getElementById('lg-swap'); if (lgSwap) lgSwap.checked = false;
   // Reset Quick Quote
   const qq = document.getElementById('qq-pallets');
   if (qq) qq.value = '';
@@ -2411,35 +2617,45 @@ function updateLedgerForm() {
   const amountRow = document.getElementById('lg-amount-row');
   const palletsRow = document.getElementById('lg-pallets-row');
   const truckRow = document.getElementById('lg-truck-row');
+  const swapRow = document.getElementById('lg-swap-row');
   const amountLbl = document.getElementById('lg-amount-label');
   const amountInp = document.getElementById('lg-amount');
 
   if (t === 'pickup') {
-    // Pickup: pallets + truck shown, amount auto-computed and read-only
+    // Pickup: pallets + truck + swap shown, amount auto-computed and read-only
     amountRow.classList.add('row-hidden');
     palletsRow.classList.remove('row-hidden');
     truckRow.classList.remove('row-hidden');
+    if (swapRow) swapRow.classList.remove('row-hidden');
   } else if (t === 'deposit') {
     amountLbl.textContent = '金额 £ (预付入账)';
     amountInp.placeholder = '例如 10000';
     amountRow.classList.remove('row-hidden');
     palletsRow.classList.add('row-hidden');
     truckRow.classList.add('row-hidden');
+    if (swapRow) swapRow.classList.add('row-hidden');
   } else if (t === 'refund') {
     amountLbl.textContent = '金额 £ (退款)';
     amountInp.placeholder = '例如 500';
     amountRow.classList.remove('row-hidden');
     palletsRow.classList.add('row-hidden');
     truckRow.classList.add('row-hidden');
+    if (swapRow) swapRow.classList.add('row-hidden');
   } else if (t === 'adjust') {
     amountLbl.textContent = '金额 £ (+ 为加 / - 为减)';
     amountInp.placeholder = '例如 -50 或 120';
     amountRow.classList.remove('row-hidden');
     palletsRow.classList.add('row-hidden');
     truckRow.classList.add('row-hidden');
+    if (swapRow) swapRow.classList.add('row-hidden');
   }
   updateLedgerPreview();
 }
+
+// Swap-TT premium per pallet (defaults to £30, configurable via state.params.swapPremium)
+function swapTtPremium() { return (state.params && state.params.swapPremium != null) ? state.params.swapPremium : 30; }
+// Effective unit price for a pickup (factors in swap premium)
+function effectiveUnitPrice(isSwap) { return state.params.sellPrice + (isSwap ? swapTtPremium() : 0); }
 
 function updateLedgerPreview() {
   const box = document.getElementById('lg-preview');
@@ -2453,8 +2669,13 @@ function updateLedgerPreview() {
   let delta = 0, label = '';
   if (t === 'pickup') {
     if (!pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
-    delta = -pallets * state.params.sellPrice;
-    label = `取货 ${pallets} × £${state.params.sellPrice}`;
+    const swapEl = document.getElementById('lg-swap');
+    const isSwap = !!(swapEl && swapEl.checked);
+    const unitPrice = effectiveUnitPrice(isSwap);
+    delta = -pallets * unitPrice;
+    label = isSwap
+      ? `🔁 Swap TT 取货 ${pallets} × £${unitPrice} (+£${swapTtPremium()}/托盘)`
+      : `取货 ${pallets} × £${unitPrice}`;
   } else if (t === 'deposit') {
     if (!amt) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
     delta = Math.abs(amt);
@@ -2497,9 +2718,15 @@ function addLedger() {
   let entry = null;
   if (type === 'pickup') {
     if (!pallets || pallets <= 0) { alert('取货请填托盘数 (>0)'); return; }
+    const swapEl = document.getElementById('lg-swap');
+    const isSwap = !!(swapEl && swapEl.checked);
+    const unitPrice = effectiveUnitPrice(isSwap);
     entry = {
       id: crypto.randomUUID(), date, type: 'pickup',
-      amount: pallets * state.params.sellPrice,
+      amount: pallets * unitPrice,
+      unitPrice,                     // store for posterity (in case sellPrice changes later)
+      isSwap,                        // tagged: this came from Emma's swap
+      swapPremium: isSwap ? swapTtPremium() : 0,  // snapshot of premium at time of save
       pallets, truck, note
     };
   } else if (type === 'deposit') {
@@ -2521,6 +2748,8 @@ function addLedger() {
   document.getElementById('lg-pallets').value = '';
   document.getElementById('lg-truck').value = '';
   document.getElementById('lg-note').value = '';
+  const swapReset = document.getElementById('lg-swap');
+  if (swapReset) swapReset.checked = false;
   save(); renderAll();
   flash('已添加流水');
 }
@@ -2708,7 +2937,10 @@ function generateStatement() {
     const label = typeMap[e.type] || e.type;
     let desc;
     if (e.type === 'pickup') {
-      desc = `${label} &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(sellPrice)}`;
+      // Use entry's stored unitPrice if present (handles swap-TT +£30); else fallback to sellPrice
+      const lineUnit = (e.unitPrice != null) ? e.unitPrice : sellPrice;
+      const swapTag = e.isSwap ? ' <span style="background:#fbe4ee;color:#b21e60;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.5px;">SWAP TT</span>' : '';
+      desc = `${label}${swapTag} &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(lineUnit)}`;
       if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
       if (e.note) desc += ` <span class="muted">&middot; ${esc(e.note)}</span>`;
     } else {
@@ -3274,10 +3506,14 @@ function openInvoiceEditor(opts) {
     if (opts.fromPickup) {
       const pickup = (customer.ledger || []).find(e => e.id === opts.fromPickup);
       if (pickup) {
+        const isSwap = !!pickup.isSwap;
+        const unitPrice = pickup.unitPrice != null
+          ? pickup.unitPrice
+          : (isSwap ? (state.params.sellPrice + swapTtPremium()) : state.params.sellPrice);
         inv.lineItems.push({
-          description: 'Pallets' + (pickup.truck ? ' (Vehicle ' + pickup.truck + ')' : ''),
+          description: (isSwap ? 'Pallets (Swap TT)' : 'Pallets') + (pickup.truck ? ' (Vehicle ' + pickup.truck + ')' : ''),
           qty: pickup.pallets || 0,
-          unitPrice: state.params.sellPrice || 265
+          unitPrice
         });
         inv.linkedPickupId = pickup.id;
         inv.issueDate = pickup.date || inv.issueDate;
@@ -3882,6 +4118,371 @@ function printInvoice(id) {
   w.document.close();
 }
 
+// ============================================================
+// DAILY SUPPLY LOG (per-day record of supplier trucks)
+// ============================================================
+function ensureSupplyArray() { if (!Array.isArray(state.dailySupply)) state.dailySupply = []; }
+
+function ensureRotation() {
+  if (!state.rotation) {
+    // Default: reference Monday = next normal week (May 4, 2026), Michael = Mon/Wed/Fri, weekly alternating
+    state.rotation = {
+      refMonday: '2026-05-04',
+      michaelDays: { mon: true, tue: false, wed: true, thu: false, fri: true },
+      alternate: 'weekly'  // 'weekly' or 'fixed'
+    };
+  }
+  return state.rotation;
+}
+
+// Returns Monday (YYYY-MM-DD) of the week containing dateStr
+function mondayOf(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+// Whole weeks between two YYYY-MM-DD Mondays (b - a, can be negative)
+function weeksBetween(aMon, bMon) {
+  const da = new Date(aMon + 'T12:00:00');
+  const db = new Date(bMon + 'T12:00:00');
+  return Math.round((db - da) / (7 * 86400000));
+}
+
+// Compute who picks up on a given date (auto, by rotation rules)
+function rotationPickupBy(dateStr) {
+  ensureRotation();
+  const rot = state.rotation;
+  if (!dateStr || !rot.refMonday) return 'Michael';
+  const dayIdx = new Date(dateStr + 'T12:00:00').getDay();  // 0=Sun, 1=Mon ... 5=Fri, 6=Sat
+  if (dayIdx === 0 || dayIdx === 6) return 'Michael';  // weekends: default Michael (no rotation), unused
+  const dayKey = ['sun','mon','tue','wed','thu','fri','sat'][dayIdx];
+  const myMon = mondayOf(dateStr);
+  const refMon = mondayOf(rot.refMonday);
+  const wkDiff = weeksBetween(refMon, myMon);
+  let isMichaelOnRef = !!rot.michaelDays[dayKey];
+  // Alternate every week if 'weekly'
+  if (rot.alternate === 'weekly' && Math.abs(wkDiff) % 2 === 1) isMichaelOnRef = !isMichaelOnRef;
+  return isMichaelOnRef ? 'Michael' : 'Emma';
+}
+
+// === Truck-debt to Emma (positive = Michael owes Emma N trucks AMAZON) ===
+function emmaTruckDebt() {
+  ensureSupplyArray();
+  let owed = 0;
+  for (const day of state.dailySupply) {
+    for (const truck of (day.trucks || [])) {
+      if (!truck.swapped) continue;
+      if (day.pickupBy === 'Emma') owed++;       // Emma's truck swapped to Michael → Michael owes 1
+      else if (day.pickupBy === 'Michael') owed--; // Michael's truck swapped to Emma → Michael's debt -1
+    }
+  }
+  return owed;
+}
+
+// === Render Daily Supply view ===
+let supplyViewLimit = 30;
+function setSupplyView(v) {
+  supplyViewLimit = (v === 'all') ? 0 : parseInt(v, 10);
+  ['30','90','all'].forEach(k => {
+    const el = document.getElementById('sup-btn-' + k);
+    if (el) el.classList.remove('active');
+  });
+  const btn = document.getElementById('sup-btn-' + (v || '30'));
+  if (btn) btn.classList.add('active');
+  renderSupply();
+}
+
+function renderSupply() {
+  ensureSupplyArray();
+
+  // Top KPIs
+  const debt = emmaTruckDebt();
+  const debtEl = document.getElementById('sup-debt-value');
+  const debtSub = document.getElementById('sup-debt-sub');
+  if (debtEl) {
+    if (debt > 0) { debtEl.textContent = debt + ' 车'; debtEl.style.color = ''; if (debtSub) debtSub.textContent = `Michael 欠 Emma · AMAZON · 私人记录`; }
+    else if (debt < 0) { debtEl.textContent = Math.abs(debt) + ' 车'; debtEl.style.color = 'var(--green)'; if (debtSub) debtSub.textContent = `Emma 欠 Michael · 私人记录`; }
+    else { debtEl.textContent = '0 车'; debtEl.style.color = ''; if (debtSub) debtSub.textContent = '已平衡 · 私人记录'; }
+  }
+
+  // This week + month aggregates
+  const today = new Date().toISOString().slice(0, 10);
+  const weekMon = weekStartOf ? weekStartOf(today) : null;
+  const ym = today.slice(0, 7);
+  let weekTrucks = 0, monthTT = 0, monthAMZ = 0;
+  for (const day of state.dailySupply) {
+    if (weekMon && weekStartOf(day.date) === weekMon) weekTrucks += (day.trucks || []).length;
+    if (day.date && day.date.startsWith(ym)) {
+      for (const tr of (day.trucks || [])) {
+        if (tr.type === 'TT') monthTT++;
+        else if (tr.type === 'AMAZON') monthAMZ++;
+      }
+    }
+  }
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setText('sup-week-trucks', weekTrucks);
+  setText('sup-month-tt', monthTT);
+  setText('sup-month-amz', monthAMZ);
+
+  // Table
+  const tb = document.getElementById('supply-body');
+  if (!tb) return;
+  let list = [...state.dailySupply].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (supplyViewLimit > 0) {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - supplyViewLimit);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    list = list.filter(d => d.date >= cutoffStr);
+  }
+  const cnt = document.getElementById('sup-count');
+  if (cnt) cnt.textContent = list.length + ' 天';
+  if (!list.length) {
+    tb.innerHTML = `<tr><td colspan="5" class="dim" style="text-align:center;padding:40px;">还没有记录 — 点右上角"＋ 新增今日记录"开始</td></tr>`;
+    return;
+  }
+  tb.innerHTML = list.map(d => {
+    const trucksHtml = (d.trucks || []).map(tr => {
+      const typeBadge = tr.type === 'TT'
+        ? '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);font-weight:700;">TT</span>'
+        : '<span class="badge" style="background:rgba(34,211,165,0.15);color:var(--green);font-weight:700;">AMZ</span>';
+      const swapTag = tr.swapped ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : '';
+      return `<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 8px;border-radius:6px;background:rgba(5,6,15,0.4);border:1px solid rgba(139,150,255,0.08);font-size:11px;">${typeBadge} ${tr.pallets || 0} 托${swapTag}</span>`;
+    }).join('') || '<span class="dim">无</span>';
+    const ownerBadge = d.pickupBy === 'Emma'
+      ? '<span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);">Emma</span>'
+      : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">Michael</span>';
+    const manualTag = d.manualOverride ? ' <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;">手动</span>' : '';
+    return `<tr>
+      <td><b>${escapeHtml(d.date)}</b><br><span class="dim" style="font-size:10px;">${dayOfWeekShort(d.date)}</span></td>
+      <td>${ownerBadge}${manualTag}</td>
+      <td>${trucksHtml}</td>
+      <td class="dim" style="font-size:11px;">${escapeHtml(d.note || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn sm ghost" onclick="openSupplyEditor('${d.id}')">✎</button>
+        <button class="btn sm danger" onclick="deleteSupply('${d.id}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function dayOfWeekShort(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T12:00:00');
+  return ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
+}
+
+// === Supply editor ===
+let editingSupplyId = null;
+let supplyDraftTrucks = [];
+
+function openSupplyEditor(id) {
+  ensureSupplyArray();
+  editingSupplyId = id || null;
+  let day;
+  if (id) {
+    day = state.dailySupply.find(d => d.id === id);
+    if (!day) { editingSupplyId = null; return; }
+  } else {
+    day = {
+      date: new Date().toISOString().slice(0, 10),
+      pickupBy: rotationPickupBy(new Date().toISOString().slice(0, 10)),
+      manualOverride: false,
+      trucks: [{ type: 'TT', pallets: 25, swapped: false, note: '' }],
+      note: ''
+    };
+  }
+  document.getElementById('sup-modal-title').textContent = id ? `编辑供货记录 — ${day.date}` : '新增供货记录';
+  document.getElementById('sup-date').value = day.date;
+  document.getElementById('sup-pickup-by').value = day.pickupBy || 'Michael';
+  document.getElementById('sup-day-note').value = day.note || '';
+  // Tags
+  document.getElementById('sup-auto-tag').style.display = day.manualOverride ? 'none' : '';
+  document.getElementById('sup-manual-tag').style.display = day.manualOverride ? '' : 'none';
+  // Trucks draft
+  supplyDraftTrucks = (day.trucks || []).map(t => ({ ...t }));
+  if (supplyDraftTrucks.length === 0) supplyDraftTrucks.push({ type: 'TT', pallets: 25, swapped: false, note: '' });
+  renderSupplyTrucks();
+  document.getElementById('supply-modal').classList.add('open');
+}
+
+function closeSupplyEditor() {
+  document.getElementById('supply-modal').classList.remove('open');
+  editingSupplyId = null;
+  supplyDraftTrucks = [];
+}
+
+function autoComputeSupplyOwner() {
+  // When date changes, recompute by rotation (unless user manually overrode this record before)
+  // Caveat: in editor, we honor the new date and re-suggest auto owner; user can still flip manually.
+  const date = document.getElementById('sup-date').value;
+  if (!date) return;
+  const auto = rotationPickupBy(date);
+  document.getElementById('sup-pickup-by').value = auto;
+  document.getElementById('sup-auto-tag').style.display = '';
+  document.getElementById('sup-manual-tag').style.display = 'none';
+}
+
+function onSupplyOwnerChange() {
+  // When user manually changes owner, mark as manual
+  const date = document.getElementById('sup-date').value;
+  const chosen = document.getElementById('sup-pickup-by').value;
+  const auto = rotationPickupBy(date);
+  const isManual = (chosen !== auto);
+  document.getElementById('sup-auto-tag').style.display = isManual ? 'none' : '';
+  document.getElementById('sup-manual-tag').style.display = isManual ? '' : 'none';
+}
+
+function renderSupplyTrucks() {
+  const tb = document.getElementById('sup-trucks-body');
+  if (!tb) return;
+  const owner = document.getElementById('sup-pickup-by') ? document.getElementById('sup-pickup-by').value : 'Michael';
+  tb.innerHTML = supplyDraftTrucks.map((tr, idx) => {
+    const swapHint = tr.swapped
+      ? (owner === 'Emma' ? '换给 Michael' : '换给 Emma')
+      : '保留';
+    return `<tr>
+      <td>
+        <select onchange="updateSupplyTruck(${idx}, 'type', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;">
+          <option value="TT" ${tr.type === 'TT' ? 'selected' : ''}>TT</option>
+          <option value="AMAZON" ${tr.type === 'AMAZON' ? 'selected' : ''}>AMAZON</option>
+        </select>
+      </td>
+      <td><input type="number" min="0" value="${parseInt(tr.pallets) || 0}" oninput="updateSupplyTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" ${tr.swapped ? 'checked' : ''} onchange="toggleSupplyTruckSwap(${idx}, this.checked)">
+          <span style="color:${tr.swapped ? 'var(--pink)' : 'var(--text-dim)'};">${swapHint}</span>
+        </label>
+      </td>
+      <td><input type="text" value="${escapeHtmlAttr(tr.note || '')}" placeholder="可选" oninput="updateSupplyTruck(${idx}, 'note', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td><button class="btn sm danger" onclick="removeSupplyTruck(${idx})" ${supplyDraftTrucks.length === 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>×</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateSupplyTruck(idx, field, val) {
+  if (!supplyDraftTrucks[idx]) return;
+  if (field === 'pallets') supplyDraftTrucks[idx][field] = parseInt(val) || 0;
+  else supplyDraftTrucks[idx][field] = val;
+}
+function toggleSupplyTruckSwap(idx, checked) {
+  if (!supplyDraftTrucks[idx]) return;
+  supplyDraftTrucks[idx].swapped = !!checked;
+  // Auto-fill default note when swapping (block A)
+  const owner = document.getElementById('sup-pickup-by').value;
+  if (checked && !supplyDraftTrucks[idx].note) {
+    if (owner === 'Emma') supplyDraftTrucks[idx].note = '换给 Michael · Michael 欠 Emma 1 车 AMAZON';
+    else supplyDraftTrucks[idx].note = '换给 Emma · Michael 欠款 -1 车';
+  }
+  renderSupplyTrucks();
+}
+function addSupplyTruck() {
+  supplyDraftTrucks.push({ type: 'TT', pallets: 25, swapped: false, note: '' });
+  renderSupplyTrucks();
+}
+function removeSupplyTruck(idx) {
+  if (supplyDraftTrucks.length <= 1) return;
+  supplyDraftTrucks.splice(idx, 1);
+  renderSupplyTrucks();
+}
+
+function saveSupply() {
+  ensureSupplyArray();
+  const date = document.getElementById('sup-date').value;
+  const pickupBy = document.getElementById('sup-pickup-by').value;
+  const note = document.getElementById('sup-day-note').value.trim();
+  if (!date) { alert('请填写日期'); return; }
+  const trucks = supplyDraftTrucks
+    .filter(t => parseInt(t.pallets) > 0)
+    .map(t => ({ type: t.type, pallets: parseInt(t.pallets) || 0, swapped: !!t.swapped, note: (t.note || '').trim() }));
+  if (!trucks.length) { alert('请至少加一辆有托盘的车'); return; }
+  const auto = rotationPickupBy(date);
+  const manualOverride = (pickupBy !== auto);
+
+  if (editingSupplyId) {
+    const day = state.dailySupply.find(d => d.id === editingSupplyId);
+    if (!day) { closeSupplyEditor(); return; }
+    day.date = date;
+    day.pickupBy = pickupBy;
+    day.manualOverride = manualOverride;
+    day.trucks = trucks;
+    day.note = note;
+    day.updatedAt = new Date().toISOString();
+  } else {
+    state.dailySupply.push({
+      id: crypto.randomUUID(),
+      date, pickupBy, manualOverride, trucks, note,
+      createdAt: new Date().toISOString()
+    });
+  }
+  save(); renderAll();
+  closeSupplyEditor();
+  flash(editingSupplyId ? '供货记录已更新' : '供货记录已保存');
+}
+
+function deleteSupply(id) {
+  if (!confirm('删除这条供货记录?(此操作不可撤销)')) return;
+  state.dailySupply = (state.dailySupply || []).filter(d => d.id !== id);
+  save(); renderAll();
+}
+
+// === Rotation settings save / load / preview ===
+function saveRotation() {
+  ensureRotation();
+  const ref = document.getElementById('rot-ref').value;
+  if (ref) state.rotation.refMonday = mondayOf(ref);  // snap to Monday
+  state.rotation.michaelDays = {
+    mon: !!document.getElementById('rot-mon').checked,
+    tue: !!document.getElementById('rot-tue').checked,
+    wed: !!document.getElementById('rot-wed').checked,
+    thu: !!document.getElementById('rot-thu').checked,
+    fri: !!document.getElementById('rot-fri').checked
+  };
+  state.rotation.alternate = document.getElementById('rot-alt').value;
+  save();
+  renderRotationPreview();
+}
+function fillRotation() {
+  ensureRotation();
+  const r = state.rotation;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  set('rot-ref', r.refMonday || '2026-05-04');
+  setChk('rot-mon', !!(r.michaelDays || {}).mon);
+  setChk('rot-tue', !!(r.michaelDays || {}).tue);
+  setChk('rot-wed', !!(r.michaelDays || {}).wed);
+  setChk('rot-thu', !!(r.michaelDays || {}).thu);
+  setChk('rot-fri', !!(r.michaelDays || {}).fri);
+  set('rot-alt', r.alternate || 'weekly');
+  renderRotationPreview();
+}
+function renderRotationPreview() {
+  const box = document.getElementById('rot-preview');
+  if (!box) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const startMon = mondayOf(today);
+  const lines = [];
+  for (let w = 0; w < 4; w++) {
+    const wkMon = new Date(startMon + 'T12:00:00');
+    wkMon.setDate(wkMon.getDate() + w * 7);
+    const wMonStr = wkMon.toISOString().slice(0, 10);
+    const days = ['mon','tue','wed','thu','fri'];
+    const labels = days.map((dk, i) => {
+      const d = new Date(wMonStr + 'T12:00:00');
+      d.setDate(d.getDate() + i);
+      const dStr = d.toISOString().slice(0, 10);
+      const owner = rotationPickupBy(dStr);
+      const initial = owner === 'Michael' ? 'M' : 'E';
+      const color = owner === 'Michael' ? 'var(--cyan)' : 'var(--pink)';
+      return `<span style="color:${color};font-weight:700;">${initial}</span>`;
+    }).join(' ');
+    lines.push(`<div>${wMonStr} (Mon~Fri): ${labels}</div>`);
+  }
+  box.innerHTML = lines.join('') + `<div style="margin-top:6px;color:var(--text-dim);">M = Michael · E = Emma · 周末跳过</div>`;
+}
+
 function exportJson() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -4064,6 +4665,7 @@ function renderAll() {
   renderSettings();
   renderInsights();
   renderCharts();
+  if (typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
 }
 
