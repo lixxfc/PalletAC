@@ -1129,6 +1129,7 @@ select option { background: var(--bg-2); color: var(--text); }
               <div class="page-title" id="cd-name"></div>
               <div class="page-sub" id="cd-meta"></div>
             </div>
+            <button class="btn sm" onclick="openInvoiceEditor({customerId: currentCustomer})">＋ 新建 Invoice</button>
             <button class="btn sm" onclick="openStatementModal()">📄 导出对账单</button>
             <button class="btn sm ghost" onclick="closeCustomerDetail()">← 返回列表</button>
             <button class="btn sm danger" onclick="deleteCustomer()">删除客户</button>
@@ -1206,6 +1207,20 @@ select option { background: var(--bg-2); color: var(--text); }
             <table>
               <thead><tr><th>周次</th><th>日期范围</th><th>托盘</th><th>取货次数</th><th>营收</th><th>利润</th></tr></thead>
               <tbody id="cust-weekly-body"></tbody>
+            </table>
+          </div>
+
+          <div class="row mt-6" style="align-items:center;">
+            <div class="grow">
+              <div class="card-title">发票历史 Invoices <span class="badge" id="cd-inv-count">0 张</span></div>
+              <div class="page-sub">所有发给该客户的发票 · 可标记付款 / 作废 / 重新打印</div>
+            </div>
+            <button class="btn sm" onclick="openInvoiceEditor({customerId: currentCustomer})">＋ 新建 Invoice</button>
+          </div>
+          <div class="table-wrap mt-4">
+            <table>
+              <thead><tr><th>发票号</th><th>开票日</th><th>到期日</th><th>明细</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="cust-invoice-body"></tbody>
             </table>
           </div>
         </div>
@@ -1329,6 +1344,76 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="form-row" style="grid-column: 1/-1;"><label>客户名称</label><input type="text" id="new-cust-name" placeholder="如：老王"></div>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="createCustomer()">创建</button></div>
+  </div>
+</div>
+
+<!-- Invoice Editor Modal -->
+<div class="modal-backdrop" id="invoice-modal">
+  <div class="modal" style="max-width: 760px; max-height: 92vh; overflow: auto;">
+    <div class="modal-head">
+      <div class="modal-title" id="inv-modal-title">新建 Invoice</div>
+      <button class="modal-close" onclick="closeInvoiceEditor()">×</button>
+    </div>
+    <div class="page-sub mb-4">所有字段都可以改 · 保存后会出现在客户的发票历史里 · 可一键打印 / 存为 PDF</div>
+
+    <div class="form-grid">
+      <div class="form-row"><label>发票号</label><input type="text" id="inv-no" placeholder="INV-YYYYMMDD-XXX"></div>
+      <div class="form-row"><label>开票日期</label><input type="date" id="inv-date" onchange="recomputeInvoiceDueDate()"></div>
+      <div class="form-row"><label>付款条件</label>
+        <select id="inv-terms" onchange="onTermsChange()">
+          <option value="0">On Receipt(立即支付)</option>
+          <option value="7" selected>Net 7 天</option>
+          <option value="14">Net 14 天</option>
+          <option value="30">Net 30 天</option>
+          <option value="custom">Custom 自定义</option>
+        </select>
+      </div>
+      <div class="form-row" id="inv-custom-days-row" style="display:none;"><label>自定义天数</label><input type="number" id="inv-custom-days" min="0" placeholder="如 21" oninput="recomputeInvoiceDueDate()"></div>
+      <div class="form-row"><label>到期日</label><input type="date" id="inv-due"></div>
+      <div class="form-row"><label>客户 PO 号 (可选)</label><input type="text" id="inv-po" placeholder="如 PO-2026-001"></div>
+    </div>
+
+    <div class="row mt-6" style="align-items:center;">
+      <div class="grow"><div class="card-title">商品明细 Line Items</div></div>
+      <button class="btn sm ghost" onclick="addInvoiceLineItem()">＋ 加一行</button>
+    </div>
+    <div class="table-wrap mt-2">
+      <table id="inv-items-table">
+        <thead>
+          <tr>
+            <th style="min-width:180px;">描述 Description</th>
+            <th style="width:80px;">数量</th>
+            <th style="width:100px;">单价 £</th>
+            <th style="width:110px;">小计</th>
+            <th style="width:50px;"></th>
+          </tr>
+        </thead>
+        <tbody id="inv-items-body"></tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:14px;padding:14px 16px;background:rgba(5,6,15,0.4);border-radius:10px;border:1px solid rgba(139,150,255,0.08);">
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);">
+        <span>Subtotal · 小计</span><span style="color:var(--text);font-weight:700;font-variant-numeric:tabular-nums;" id="inv-subtotal">£0.00</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);margin-top:4px;">
+        <span>VAT</span><span style="font-style:italic;">Not applicable</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(139,150,255,0.15);">
+        <span style="font-size:13px;color:var(--text-dim);font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Total Due · 应付总额</span>
+        <span style="font-size:24px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums;" id="inv-total">£0.00</span>
+      </div>
+    </div>
+
+    <div class="form-grid mt-4">
+      <div class="form-row" style="grid-column:1/-1;"><label>备注 Notes (出现在发票底部)</label><textarea id="inv-notes" placeholder="如:Thank you for your business. Payment by bank transfer." style="min-height:60px;padding:10px 12px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:10px;color:var(--text);font-family:inherit;font-size:13px;resize:vertical;"></textarea></div>
+    </div>
+
+    <div class="row mt-4" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" onclick="saveInvoice(false)">保存</button>
+      <button class="btn primary" onclick="saveInvoice(true)" style="background:linear-gradient(135deg,var(--cyan),var(--purple));">保存并打印</button>
+      <button class="btn ghost" onclick="closeInvoiceEditor()">取消</button>
+    </div>
   </div>
 </div>
 
@@ -1484,7 +1569,8 @@ function showApp() {
 function emptyState() {
   return {
     params: { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2 },
-    customers: []
+    customers: [],
+    invoices: []
   };
 }
 
@@ -1804,6 +1890,11 @@ function renderKpis() {
       <div class="kpi-value">${fmt(perP)}</div>
       <div class="kpi-sub">${(perP / (state.params.sellPrice + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
     </div>
+    <div class="kpi v3">
+      <div class="kpi-head"><div class="kpi-label">未收款 Outstanding</div><div class="kpi-icon">!</div></div>
+      <div class="kpi-value">${fmt(invoiceOutstanding())}</div>
+      <div class="kpi-sub">${invoiceCount('unpaid')} 张未付${invoiceCount('overdue') > 0 ? ' · ' + invoiceCount('overdue') + ' 张逾期' : ''}</div>
+    </div>
     <div class="kpi v5">
       <div class="kpi-head"><div class="kpi-label">客户预付余额</div><div class="kpi-icon">◈</div></div>
       <div class="kpi-value">${fmt(bal)}</div>
@@ -1975,6 +2066,8 @@ function renderCustomerDetail() {
   updateQuickQuote();
   // Render this customer's weekly profit table
   renderCustomerWeekly(c);
+  // Render invoice history
+  renderCustomerInvoices(c);
 
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
@@ -1993,7 +2086,10 @@ function renderCustomerDetail() {
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
       <td class="${runCls}"><b>${fmt(running)}</b></td>
       <td class="dim">${escapeHtml(e.note || '')}</td>
-      <td><button class="btn sm danger" onclick="delLedger('${e.id}')">删</button></td>
+      <td style="white-space:nowrap;">
+        ${e.type === 'pickup' ? `<button class="btn sm ghost" title="为这条取货生成发票" onclick="openInvoiceEditor({customerId: currentCustomer, fromPickup: '${e.id}'})">📄</button> ` : ''}
+        <button class="btn sm danger" onclick="delLedger('${e.id}')">删</button>
+      </td>
     </tr>`, id: e.id };
   });
   const reversed = [...rowsHtml].reverse();
@@ -3096,6 +3192,694 @@ function generateStatement() {
   w.document.write(html);
   w.document.close();
   closeStatementModal();
+}
+
+// ============================================================
+// INVOICES
+// ============================================================
+let editingInvoiceId = null;  // null = creating new
+
+function ensureInvoicesArray() {
+  if (!Array.isArray(state.invoices)) state.invoices = [];
+}
+
+function nextInvoiceNumber() {
+  ensureInvoicesArray();
+  // Format: INV-YYYYMMDD-NNN  (NNN = 1-based count for that day, padded)
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const sameDay = state.invoices.filter(i => i.number && i.number.startsWith('INV-' + today + '-'));
+  const seq = String(sameDay.length + 1).padStart(3, '0');
+  return `INV-${today}-${seq}`;
+}
+
+function invoiceStatusOf(inv) {
+  // Returns: 'paid' | 'void' | 'overdue' | 'unpaid'
+  if (inv.status === 'paid') return 'paid';
+  if (inv.status === 'void') return 'void';
+  const today = new Date().toISOString().slice(0, 10);
+  if (inv.dueDate && inv.dueDate < today) return 'overdue';
+  return 'unpaid';
+}
+
+function invoiceCount(status) {
+  ensureInvoicesArray();
+  return state.invoices.filter(i => invoiceStatusOf(i) === status).length;
+}
+
+function invoiceOutstanding() {
+  // Sum of unpaid + overdue (NOT paid, NOT void)
+  ensureInvoicesArray();
+  let total = 0;
+  for (const inv of state.invoices) {
+    const s = invoiceStatusOf(inv);
+    if (s === 'unpaid' || s === 'overdue') total += (inv.total || 0);
+  }
+  return total;
+}
+
+function customerInvoices(customerId) {
+  ensureInvoicesArray();
+  return state.invoices
+    .filter(i => i.customerId === customerId)
+    .sort((a, b) => (b.issueDate || '').localeCompare(a.issueDate || ''));
+}
+
+// === Editor: open / close ===
+function openInvoiceEditor(opts) {
+  ensureInvoicesArray();
+  opts = opts || {};
+  editingInvoiceId = opts.invoiceId || null;
+  const isEditing = !!editingInvoiceId;
+  const customer = (state.customers || []).find(c => c.id === (opts.customerId || (state.invoices.find(i => i.id === editingInvoiceId) || {}).customerId));
+  if (!customer) { alert('请先在客户账本里选一个客户'); return; }
+
+  document.getElementById('inv-modal-title').textContent = isEditing ? `编辑发票 — ${customer.name}` : `新建 Invoice — ${customer.name}`;
+
+  let inv;
+  if (isEditing) {
+    inv = state.invoices.find(i => i.id === editingInvoiceId);
+    if (!inv) { editingInvoiceId = null; return; }
+  } else {
+    // New invoice: pre-fill defaults
+    inv = {
+      number: nextInvoiceNumber(),
+      issueDate: new Date().toISOString().slice(0, 10),
+      paymentTerms: '7',
+      customDays: '',
+      poNumber: '',
+      lineItems: [],
+      notes: 'Thank you for your business. Payment by bank transfer.'
+    };
+    // (a) From an existing pickup: pre-fill one line item
+    if (opts.fromPickup) {
+      const pickup = (customer.ledger || []).find(e => e.id === opts.fromPickup);
+      if (pickup) {
+        inv.lineItems.push({
+          description: 'Pallets' + (pickup.truck ? ' (Vehicle ' + pickup.truck + ')' : ''),
+          qty: pickup.pallets || 0,
+          unitPrice: state.params.sellPrice || 265
+        });
+        inv.linkedPickupId = pickup.id;
+        inv.issueDate = pickup.date || inv.issueDate;
+      }
+    }
+    // (b) Blank: just one empty line
+    if (inv.lineItems.length === 0) {
+      inv.lineItems.push({
+        description: 'Pallets',
+        qty: 0,
+        unitPrice: state.params.sellPrice || 265
+      });
+    }
+    inv.dueDate = computeDueDate(inv.issueDate, inv.paymentTerms, inv.customDays);
+  }
+
+  // Fill form
+  document.getElementById('inv-no').value = inv.number || '';
+  document.getElementById('inv-date').value = inv.issueDate || '';
+  document.getElementById('inv-terms').value = inv.paymentTerms || '7';
+  document.getElementById('inv-custom-days').value = inv.customDays || '';
+  document.getElementById('inv-custom-days-row').style.display = (inv.paymentTerms === 'custom') ? '' : 'none';
+  document.getElementById('inv-due').value = inv.dueDate || '';
+  document.getElementById('inv-po').value = inv.poNumber || '';
+  document.getElementById('inv-notes').value = inv.notes || '';
+  // Items
+  invoiceDraftItems = JSON.parse(JSON.stringify(inv.lineItems || []));
+  renderInvoiceItems();
+
+  document.getElementById('invoice-modal').classList.add('open');
+}
+
+function closeInvoiceEditor() {
+  document.getElementById('invoice-modal').classList.remove('open');
+  editingInvoiceId = null;
+}
+
+let invoiceDraftItems = [];
+
+function renderInvoiceItems() {
+  const tbody = document.getElementById('inv-items-body');
+  if (!tbody) return;
+  tbody.innerHTML = invoiceDraftItems.map((it, idx) => {
+    const total = (parseFloat(it.qty) || 0) * (parseFloat(it.unitPrice) || 0);
+    return `<tr>
+      <td><input type="text" value="${escapeHtmlAttr(it.description || '')}" oninput="updateInvoiceLineItem(${idx}, 'description', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td><input type="number" min="0" step="0.01" value="${parseFloat(it.qty) || 0}" oninput="updateInvoiceLineItem(${idx}, 'qty', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td><input type="number" min="0" step="0.01" value="${parseFloat(it.unitPrice) || 0}" oninput="updateInvoiceLineItem(${idx}, 'unitPrice', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td style="font-variant-numeric:tabular-nums;text-align:right;font-weight:600;">£${total.toFixed(2)}</td>
+      <td><button class="btn sm danger" onclick="removeInvoiceLineItem(${idx})" ${invoiceDraftItems.length === 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>×</button></td>
+    </tr>`;
+  }).join('');
+  recomputeInvoiceTotals();
+}
+function escapeHtmlAttr(s) {
+  return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+function updateInvoiceLineItem(idx, field, value) {
+  if (!invoiceDraftItems[idx]) return;
+  if (field === 'qty' || field === 'unitPrice') invoiceDraftItems[idx][field] = parseFloat(value) || 0;
+  else invoiceDraftItems[idx][field] = value;
+  recomputeInvoiceTotals();
+}
+function addInvoiceLineItem() {
+  invoiceDraftItems.push({ description: '', qty: 0, unitPrice: state.params.sellPrice || 265 });
+  renderInvoiceItems();
+}
+function removeInvoiceLineItem(idx) {
+  if (invoiceDraftItems.length <= 1) return;
+  invoiceDraftItems.splice(idx, 1);
+  renderInvoiceItems();
+}
+function recomputeInvoiceTotals() {
+  let subtotal = 0;
+  for (const it of invoiceDraftItems) {
+    subtotal += (parseFloat(it.qty) || 0) * (parseFloat(it.unitPrice) || 0);
+  }
+  // Update only totals (don't re-render items, which would lose focus)
+  const sub = document.getElementById('inv-subtotal');
+  const tot = document.getElementById('inv-total');
+  if (sub) sub.textContent = '£' + subtotal.toFixed(2);
+  if (tot) tot.textContent = '£' + subtotal.toFixed(2);
+  // Update inline line totals
+  const rows = document.querySelectorAll('#inv-items-body tr');
+  invoiceDraftItems.forEach((it, idx) => {
+    const total = (parseFloat(it.qty) || 0) * (parseFloat(it.unitPrice) || 0);
+    const cells = rows[idx] && rows[idx].cells;
+    if (cells && cells[3]) cells[3].textContent = '£' + total.toFixed(2);
+  });
+}
+
+function onTermsChange() {
+  const t = document.getElementById('inv-terms').value;
+  document.getElementById('inv-custom-days-row').style.display = (t === 'custom') ? '' : 'none';
+  recomputeInvoiceDueDate();
+}
+function recomputeInvoiceDueDate() {
+  const issue = document.getElementById('inv-date').value;
+  const terms = document.getElementById('inv-terms').value;
+  const custom = parseInt(document.getElementById('inv-custom-days').value, 10);
+  const days = computeTermsDays(terms, custom);
+  if (!issue || !isFinite(days)) return;
+  const d = new Date(issue + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  document.getElementById('inv-due').value = d.toISOString().slice(0, 10);
+}
+function computeTermsDays(terms, custom) {
+  if (terms === 'custom') return (isFinite(custom) && custom >= 0) ? custom : 0;
+  return parseInt(terms, 10) || 0;
+}
+function computeDueDate(issueDate, terms, custom) {
+  if (!issueDate) return '';
+  const d = new Date(issueDate + 'T12:00:00');
+  d.setDate(d.getDate() + computeTermsDays(terms, parseInt(custom, 10)));
+  return d.toISOString().slice(0, 10);
+}
+
+function saveInvoice(printAfter) {
+  ensureInvoicesArray();
+  const isEditing = !!editingInvoiceId;
+  const number = (document.getElementById('inv-no').value || '').trim();
+  const issueDate = document.getElementById('inv-date').value;
+  const dueDate = document.getElementById('inv-due').value;
+  const terms = document.getElementById('inv-terms').value;
+  const customDays = document.getElementById('inv-custom-days').value;
+  const poNumber = (document.getElementById('inv-po').value || '').trim();
+  const notes = (document.getElementById('inv-notes').value || '').trim();
+  const items = invoiceDraftItems.map(it => ({
+    description: (it.description || '').trim(),
+    qty: parseFloat(it.qty) || 0,
+    unitPrice: parseFloat(it.unitPrice) || 0
+  })).filter(it => it.description || it.qty || it.unitPrice);
+
+  if (!number) { alert('请填写发票号'); return; }
+  if (!issueDate) { alert('请填写开票日期'); return; }
+  if (!items.length) { alert('请至少添加一行明细'); return; }
+  const subtotal = items.reduce((s, it) => s + it.qty * it.unitPrice, 0);
+  if (subtotal <= 0) { alert('明细金额必须大于 0'); return; }
+
+  const customer = state.customers.find(c => c.id === currentCustomer);
+  if (!customer) { alert('找不到客户'); return; }
+
+  let inv;
+  if (isEditing) {
+    inv = state.invoices.find(i => i.id === editingInvoiceId);
+    if (!inv) { closeInvoiceEditor(); return; }
+  } else {
+    // Block duplicate numbers
+    if (state.invoices.some(i => i.number === number)) {
+      if (!confirm('已有同号发票,确定继续保存?')) return;
+    }
+    inv = {
+      id: crypto.randomUUID(),
+      customerId: customer.id,
+      status: 'unpaid',
+      paidDate: null,
+      paidNote: null,
+      createdAt: new Date().toISOString()
+    };
+    state.invoices.push(inv);
+  }
+
+  // Common fields
+  inv.number = number;
+  inv.issueDate = issueDate;
+  inv.dueDate = dueDate;
+  inv.paymentTerms = terms;
+  inv.customDays = customDays;
+  inv.poNumber = poNumber;
+  inv.notes = notes;
+  inv.lineItems = items;
+  inv.subtotal = subtotal;
+  inv.total = subtotal;  // VAT not applicable
+  inv.updatedAt = new Date().toISOString();
+  // Snapshots — so editing customer profile later doesn't change historic invoices
+  inv.customerSnapshot = {
+    name: customer.name || '',
+    address: customer.address || '',
+    postcode: customer.postcode || '',
+    phone: customer.phone || '',
+    email: customer.email || '',
+    companyNo: customer.companyNo || '',
+    vatNo: customer.vatNo || ''
+  };
+  const co = state.company || {};
+  inv.companySnapshot = {
+    name: co.name || '', address: co.address || '', postcode: co.postcode || '',
+    phone: co.phone || '', email: co.email || '',
+    companyNo: co.companyNo || '', vatNo: co.vatNo || '',
+    bank: co.bank || ''
+  };
+
+  save();
+  renderAll();
+  closeInvoiceEditor();
+  flash(isEditing ? '发票已更新' : '发票已保存');
+  if (printAfter) printInvoice(inv.id);
+}
+
+function editInvoice(id) {
+  const inv = (state.invoices || []).find(i => i.id === id);
+  if (!inv) return;
+  if (inv.customerId !== currentCustomer) {
+    // Switch to that customer's detail first
+    openCustomer(inv.customerId);
+    setTimeout(() => openInvoiceEditor({ invoiceId: id, customerId: inv.customerId }), 100);
+    return;
+  }
+  openInvoiceEditor({ invoiceId: id, customerId: inv.customerId });
+}
+
+function markInvoicePaid(id) {
+  const inv = (state.invoices || []).find(i => i.id === id);
+  if (!inv) return;
+  if (inv.status === 'paid') {
+    if (!confirm('取消"已付款"标记?')) return;
+    inv.status = 'unpaid';
+    inv.paidDate = null;
+    inv.paidNote = null;
+  } else {
+    const note = prompt('确认收到付款 ' + fmt(inv.total) + ' ?(可选填备注,如"银行转账 ref XXX")', '');
+    if (note === null) return;
+    inv.status = 'paid';
+    inv.paidDate = new Date().toISOString().slice(0, 10);
+    inv.paidNote = note || '';
+  }
+  inv.updatedAt = new Date().toISOString();
+  save(); renderAll();
+  flash(inv.status === 'paid' ? '已标记为 Paid' : '已标记为 Unpaid');
+}
+
+function voidInvoice(id) {
+  const inv = (state.invoices || []).find(i => i.id === id);
+  if (!inv) return;
+  if (inv.status === 'void') {
+    if (!confirm('恢复发票(取消作废)?')) return;
+    inv.status = 'unpaid';
+  } else {
+    if (!confirm('作废这张发票?(记录会保留,但状态变为 Void)')) return;
+    inv.status = 'void';
+  }
+  inv.updatedAt = new Date().toISOString();
+  save(); renderAll();
+}
+
+function deleteInvoiceForever(id) {
+  if (!confirm('永久删除这张发票?(此操作不可撤销,建议用作废而不是删除)')) return;
+  state.invoices = (state.invoices || []).filter(i => i.id !== id);
+  save(); renderAll();
+}
+
+// === History table on customer page ===
+function renderCustomerInvoices(c) {
+  const tb = document.getElementById('cust-invoice-body');
+  const cnt = document.getElementById('cd-inv-count');
+  if (!tb) return;
+  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; return; }
+  const list = customerInvoices(c.id);
+  if (cnt) cnt.textContent = list.length + ' 张';
+  if (!list.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">还没有发票 — 点上方"＋ 新建 Invoice"开第一张</td></tr>`;
+    return;
+  }
+  const statusBadge = {
+    paid: '<span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);">PAID</span>',
+    unpaid: '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">UNPAID</span>',
+    overdue: '<span class="badge" style="background:rgba(251,113,133,0.18);color:var(--rose);">OVERDUE</span>',
+    void: '<span class="badge" style="background:rgba(148,163,196,0.18);color:var(--text-dim);text-decoration:line-through;">VOID</span>'
+  };
+  tb.innerHTML = list.map(inv => {
+    const status = invoiceStatusOf(inv);
+    const itemsSummary = (inv.lineItems || []).map(it => `${it.qty || 0} × £${parseFloat(it.unitPrice || 0).toFixed(0)}`).join(' · ');
+    const truncSummary = itemsSummary.length > 40 ? itemsSummary.slice(0, 38) + '…' : itemsSummary;
+    return `<tr ${status === 'void' ? 'style="opacity:0.55;"' : ''}>
+      <td><b>${escapeHtml(inv.number)}</b></td>
+      <td class="dim">${escapeHtml(inv.issueDate)}</td>
+      <td class="dim">${escapeHtml(inv.dueDate || '—')}</td>
+      <td class="dim" style="font-size:11px;">${escapeHtml(truncSummary)}</td>
+      <td><b>${fmt(inv.total)}</b></td>
+      <td>${statusBadge[status] || ''}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn sm ghost" title="打印 / PDF" onclick="printInvoice('${inv.id}')">🖨</button>
+        <button class="btn sm ghost" title="编辑" onclick="editInvoice('${inv.id}')">✎</button>
+        <button class="btn sm ${status === 'paid' ? 'ghost' : ''}" title="${status === 'paid' ? '取消已付款' : '标记已付款'}" onclick="markInvoicePaid('${inv.id}')" ${status === 'void' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>${status === 'paid' ? '↺' : '✓'}</button>
+        <button class="btn sm ghost danger" title="${status === 'void' ? '取消作废' : '作废'}" onclick="voidInvoice('${inv.id}')">${status === 'void' ? '↺' : '∅'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// === Print invoice — same UI as Statement ===
+function printInvoice(id) {
+  const inv = (state.invoices || []).find(i => i.id === id);
+  if (!inv) return;
+
+  const c = inv.customerSnapshot || {};
+  const company = inv.companySnapshot || {};
+  const status = invoiceStatusOf(inv);
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round(v * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+
+  const termsLabel = (() => {
+    if (inv.paymentTerms === '0') return 'Payable on receipt';
+    if (inv.paymentTerms === 'custom') return `Payment due within ${inv.customDays || 0} days`;
+    return `Payment due within ${inv.paymentTerms || 0} days`;
+  })();
+
+  const lineItems = inv.lineItems || [];
+  const rowsHtml = lineItems.map((it, idx) => {
+    const total = (it.qty || 0) * (it.unitPrice || 0);
+    return `<tr>
+      <td class="num dim">${idx + 1}</td>
+      <td>${esc(it.description || '')}</td>
+      <td class="num">${(it.qty || 0).toLocaleString('en-GB')}</td>
+      <td class="num">${money(it.unitPrice || 0)}</td>
+      <td class="num bal">${money(total)}</td>
+    </tr>`;
+  }).join('');
+
+  const denseClass = lineItems.length > 12 ? 'dense' : '';
+  const statusBanner = status === 'paid'
+    ? `<div class="status-stamp paid">PAID</div>`
+    : status === 'void'
+    ? `<div class="status-stamp void">VOID</div>`
+    : status === 'overdue'
+    ? `<div class="status-stamp overdue">OVERDUE</div>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Invoice ${esc(inv.number)} &mdash; ${esc(c.name || '')}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0a0e1a; --ink-2: #1e293b; --muted: #64748b; --mute-2: #94a3b8;
+    --line: #e2e8f0; --line-soft: #f1f5f9; --bg: #fafbfc;
+    --accent: #0f4c75; --accent-soft: #e8f1f8;
+    --pos: #047857; --neg: #b91c1c; --paper: #ffffff;
+  }
+  html, body { background: var(--bg); }
+  body { font-family: 'Inter', -apple-system, sans-serif; color: var(--ink); font-size: 13px; line-height: 1.55; font-feature-settings: 'tnum' on, 'ss01' on; -webkit-font-smoothing: antialiased; padding: 32px 16px 48px; }
+  .paper { max-width: 820px; margin: 0 auto; background: var(--paper); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 40px rgba(10,14,26,0.08); overflow: hidden; position: relative; }
+  .status-stamp {
+    position: absolute; top: 130px; right: -50px; transform: rotate(-12deg);
+    font-family: 'Playfair Display', Georgia, serif; font-size: 56px; font-weight: 900;
+    letter-spacing: 6px; opacity: 0.18; pointer-events: none;
+    padding: 6px 70px; border: 5px solid currentColor; border-radius: 6px;
+    z-index: 5;
+  }
+  .status-stamp.paid { color: #047857; }
+  .status-stamp.void { color: #64748b; }
+  .status-stamp.overdue { color: #b91c1c; }
+  .header { padding: 40px 48px 32px; background: linear-gradient(135deg, var(--accent) 0%, #1a6ca8 100%); color: #fff; position: relative; overflow: hidden; }
+  .header::after { content: ''; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,0.06); }
+  .header::before { content: ''; position: absolute; right: 80px; bottom: -40px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,0.04); }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1; }
+  .brand { max-width: 60%; }
+  .brand .co-name { font-family: 'Playfair Display', Georgia, serif; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; color: #fff; }
+  .brand .co-lines { margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.7; }
+  .brand .co-lines .reg { opacity: 0.7; font-size: 11px; margin-top: 6px; display: block; }
+  .doc-title { text-align: right; }
+  .doc-title .label { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+  .doc-title h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 40px; font-weight: 900; letter-spacing: -0.5px; margin-top: 2px; color: #fff; }
+  .doc-title .no { margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 500; letter-spacing: 1px; }
+
+  .meta { padding: 28px 48px 0; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 28px; }
+  .meta-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px; }
+  .meta-block .primary { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .meta-block .lines { font-size: 12px; color: var(--ink-2); line-height: 1.65; }
+  .meta-block .muted { color: var(--muted); }
+
+  .summary { margin: 32px 48px 0; padding: 22px 24px; background: var(--accent-soft); border-radius: 6px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 24px; align-items: center; }
+  .sum-item .label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .sum-item .value { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .sum-item.due { text-align: right; padding-left: 24px; border-left: 1px solid rgba(15,76,117,0.18); }
+  .sum-item.due .label { color: var(--accent); font-weight: 800; }
+  .sum-item.due .value { font-size: 28px; color: var(--accent); letter-spacing: -0.5px; }
+
+  .tx-wrap { padding: 32px 48px 8px; }
+  .tx-title { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; padding: 10px 8px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--mute-2); border-bottom: 1.5px solid var(--ink); }
+  thead th.num { text-align: right; }
+  tbody td { padding: 12px 8px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; color: var(--ink-2); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.bal { font-weight: 700; color: var(--ink); }
+  .dim { color: var(--mute-2); }
+  tr.subtotal-row td, tr.vat-row td, tr.total-row td { padding: 8px 8px; }
+  tr.subtotal-row td { border-bottom: 1px solid var(--line-soft); font-weight: 600; }
+  tr.vat-row td { border-bottom: 1px solid var(--line-soft); font-style: italic; color: var(--muted); }
+  tr.total-row td { background: var(--accent); color: #fff !important; font-size: 14px; font-weight: 700; padding-top: 12px; padding-bottom: 12px; border: none; }
+  tr.total-row td.bal { font-size: 18px; }
+
+  .footer-grid { padding: 28px 48px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; border-top: 1px solid var(--line-soft); margin-top: 24px; }
+  .note-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px; }
+  .note-block p { font-size: 12px; color: var(--ink-2); line-height: 1.7; }
+  .pay-block { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px; }
+  .pay-block .terms-line { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 12px; border-bottom: 1px dashed var(--line); margin-bottom: 12px; }
+  .pay-block .terms-line .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  .pay-block .terms-line .v { font-family: 'Playfair Display', Georgia, serif; font-size: 16px; font-weight: 700; color: var(--accent); }
+
+  .bottom { padding: 18px 48px; background: var(--ink); color: rgba(255,255,255,0.7); font-size: 11px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.3px; }
+  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 13px; font-style: italic; font-weight: 400; }
+
+  .btn-bar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 100; }
+  .btn-bar button { padding: 10px 18px; background: var(--ink); color: #fff; border: 0; border-radius: 999px; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 4px 14px rgba(0,0,0,0.15); transition: transform 0.15s ease; }
+  .btn-bar button:hover { transform: translateY(-1px); }
+  .btn-bar button.alt { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+  @media print {
+    @page { size: A4; margin: 6mm 8mm; }
+    html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; font-size: 10px !important; }
+    .btn-bar { display: none !important; }
+    tbody tr:hover td { background: transparent !important; }
+    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; width: 100% !important; page-break-inside: avoid !important; }
+    .header, .bottom, .summary, tr.total-row td, .status-stamp { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+    .header { padding: 12px 18px 10px !important; border-radius: 0 !important; }
+    .brand .co-name { font-size: 17px !important; }
+    .brand .co-lines { margin-top: 4px !important; font-size: 9.5px !important; line-height: 1.4 !important; }
+    .brand .co-lines .reg { font-size: 9px !important; margin-top: 2px !important; }
+    .doc-title .label { font-size: 8.5px !important; letter-spacing: 2px !important; }
+    .doc-title h1 { font-size: 24px !important; line-height: 1 !important; }
+    .doc-title .no { margin-top: 4px !important; font-size: 9.5px !important; }
+    .header::before, .header::after { display: none !important; }
+    .status-stamp { top: 70px !important; right: -30px !important; font-size: 36px !important; padding: 4px 50px !important; border-width: 3px !important; opacity: 0.15 !important; }
+
+    .meta { padding: 10px 18px 0 !important; gap: 14px !important; }
+    .meta-block .label { font-size: 8.5px !important; margin-bottom: 3px !important; letter-spacing: 1px !important; }
+    .meta-block .primary { font-size: 11.5px !important; margin-bottom: 1px !important; }
+    .meta-block .lines { font-size: 9.5px !important; line-height: 1.35 !important; }
+
+    .summary { margin: 10px 18px 0 !important; padding: 9px 12px !important; border-radius: 4px !important; border-left-width: 3px !important; gap: 14px !important; }
+    .sum-item .label { font-size: 8px !important; margin-bottom: 2px !important; letter-spacing: 0.8px !important; }
+    .sum-item .value { font-size: 11.5px !important; }
+    .sum-item.due .value { font-size: 18px !important; }
+
+    .tx-wrap { padding: 10px 18px 0 !important; }
+    .tx-title { font-size: 8.5px !important; letter-spacing: 1.5px !important; margin-bottom: 5px !important; padding-bottom: 4px !important; }
+    thead th { padding: 5px 6px !important; font-size: 8.5px !important; }
+    tbody td { padding: 4px 6px !important; font-size: 9.5px !important; line-height: 1.3 !important; }
+    tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+    tr.total-row td { font-size: 10.5px !important; padding: 6px 6px !important; }
+    tr.total-row td.bal { font-size: 13px !important; }
+
+    .footer-grid { padding: 10px 18px !important; margin-top: 8px !important; gap: 16px !important; }
+    .note-block .label { font-size: 8.5px !important; margin-bottom: 3px !important; }
+    .note-block p { font-size: 9.5px !important; line-height: 1.4 !important; }
+    .pay-block { padding: 8px 10px !important; border-radius: 4px !important; }
+    .pay-block .terms-line { padding-bottom: 6px !important; margin-bottom: 6px !important; }
+    .pay-block .terms-line .k { font-size: 8.5px !important; }
+    .pay-block .terms-line .v { font-size: 13px !important; }
+
+    .bottom { padding: 7px 18px !important; font-size: 8.5px !important; }
+    .bottom .thanks { font-size: 10px !important; }
+
+    body.dense tbody td { padding: 2.5px 6px !important; font-size: 9px !important; }
+    body.dense thead th { padding: 4px 6px !important; font-size: 8px !important; }
+  }
+</style>
+</head>
+<body class="${denseClass}">
+
+<div class="btn-bar">
+  <button onclick="window.print()">Download / Print PDF</button>
+  <button class="alt" onclick="window.close()">Close</button>
+</div>
+
+<div class="paper">
+  ${statusBanner}
+
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="co-name">${esc(company.name || 'Your Company')}</div>
+        <div class="co-lines">
+          ${company.address ? esc(company.address) : ''}${company.postcode ? ', ' + esc(company.postcode) : ''}
+          ${company.phone ? '<br>Tel: ' + esc(company.phone) : ''}
+          ${company.email ? '<br>' + esc(company.email) : ''}
+          ${(company.companyNo || company.vatNo) ? '<span class="reg">' + (company.companyNo ? 'Company No. ' + esc(company.companyNo) : '') + (company.companyNo && company.vatNo ? ' &nbsp;·&nbsp; ' : '') + (company.vatNo ? 'VAT ' + esc(company.vatNo) : '') + '</span>' : ''}
+        </div>
+      </div>
+      <div class="doc-title">
+        <div class="label">Sales Invoice</div>
+        <h1>Invoice</h1>
+        <div class="no">No. ${esc(inv.number)}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="meta-block">
+      <div class="label">Bill To</div>
+      <div class="primary">${esc(c.name || 'Customer')}</div>
+      <div class="lines">
+        ${c.address ? esc(c.address) + '<br>' : ''}
+        ${c.postcode ? esc(c.postcode) + '<br>' : ''}
+        ${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}
+        ${c.email ? esc(c.email) + '<br>' : ''}
+        ${c.companyNo ? '<span class="muted">Company No. ' + esc(c.companyNo) + '</span><br>' : ''}
+        ${c.vatNo ? '<span class="muted">VAT ' + esc(c.vatNo) + '</span>' : ''}
+      </div>
+    </div>
+    <div class="meta-block">
+      <div class="label">Issue Date</div>
+      <div class="primary">${fmtDate(inv.issueDate)}</div>
+      <div class="lines"><span class="muted">Due ${fmtDate(inv.dueDate || inv.issueDate)}</span></div>
+    </div>
+    <div class="meta-block" style="text-align: right;">
+      <div class="label">PO / Reference</div>
+      <div class="primary">${esc(inv.poNumber || '—')}</div>
+      <div class="lines"><span class="muted">${(inv.lineItems || []).length} line item${(inv.lineItems || []).length === 1 ? '' : 's'}</span></div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="sum-item">
+      <div class="label">Subtotal</div>
+      <div class="value">${money(inv.subtotal)}</div>
+    </div>
+    <div class="sum-item">
+      <div class="label">VAT</div>
+      <div class="value" style="font-size:13px;color:var(--muted);font-style:italic;font-weight:500;">Not applicable</div>
+    </div>
+    <div class="sum-item due">
+      <div class="label">Total Due</div>
+      <div class="value">${money(inv.total)}</div>
+    </div>
+  </div>
+
+  <div class="tx-wrap">
+    <div class="tx-title">Items &amp; Services</div>
+    <table>
+      <thead>
+        <tr>
+          <th class="num" style="width:30px;">#</th>
+          <th>Description</th>
+          <th class="num" style="width:90px;">Quantity</th>
+          <th class="num" style="width:100px;">Unit Price</th>
+          <th class="num" style="width:120px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml || `<tr><td colspan="5" style="text-align:center;padding:24px;color:#888;font-style:italic;">No items.</td></tr>`}
+        <tr class="subtotal-row">
+          <td class="num"></td>
+          <td colspan="3" style="text-align:right;">Subtotal</td>
+          <td class="num bal">${money(inv.subtotal)}</td>
+        </tr>
+        <tr class="vat-row">
+          <td class="num"></td>
+          <td colspan="3" style="text-align:right;">VAT &mdash; Not applicable</td>
+          <td class="num">&mdash;</td>
+        </tr>
+        <tr class="total-row">
+          <td class="num"></td>
+          <td colspan="3" style="text-align:right;">TOTAL DUE</td>
+          <td class="num bal">${money(inv.total)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer-grid">
+    <div class="note-block">
+      <div class="label">Notes</div>
+      <p>${inv.notes ? esc(inv.notes) : 'Thank you for your business.'}</p>
+      ${status === 'paid' ? `<p style="margin-top:10px;"><b style="color:var(--pos);">Payment received</b> on ${fmtDate(inv.paidDate)}${inv.paidNote ? ' &mdash; ' + esc(inv.paidNote) : ''}.</p>` : ''}
+      ${status === 'overdue' ? `<p style="margin-top:10px;"><b style="color:var(--neg);">This invoice is overdue.</b> Please remit payment at your earliest convenience.</p>` : ''}
+    </div>
+    <div class="pay-block">
+      <div class="terms-line">
+        <div class="k">Payment Terms</div>
+        <div class="v">${esc(termsLabel)}</div>
+      </div>
+      ${company.bank ? `<div class="note-block"><div class="label">Bank Details</div><p>${esc(company.bank)}</p></div>` : `<div class="note-block"><div class="label">Remit To</div><p class="dim">${esc(company.name || 'Our office')}${company.email ? '<br>' + esc(company.email) : ''}</p></div>`}
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div>Invoice ${esc(inv.number)} &nbsp;·&nbsp; Issued ${fmtDate(inv.issueDate)} &nbsp;·&nbsp; Due ${fmtDate(inv.dueDate || inv.issueDate)}</div>
+    <div class="thanks">Thank you for your business.</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口后再试'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 function exportJson() {
