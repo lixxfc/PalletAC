@@ -1088,14 +1088,14 @@ select option { background: var(--bg-2); color: var(--text); }
           <div class="kpi-sub" id="sup-debt-sub">AMAZON · 私人记录</div>
         </div>
         <div class="kpi v1">
-          <div class="kpi-head"><div class="kpi-label">本周 TT 托盘</div><div class="kpi-icon">T</div></div>
-          <div class="kpi-value" id="sup-week-tt">0</div>
-          <div class="kpi-sub" id="sup-week-tt-sub">托盘 · 周一 → 周日</div>
+          <div class="kpi-head"><div class="kpi-label">本周 TT</div><div class="kpi-icon">T</div></div>
+          <div class="kpi-value" id="sup-week-tt" style="font-size:30px;">0 托 / 0 车</div>
+          <div class="kpi-sub" id="sup-week-tt-sub">周一 → 周日</div>
         </div>
         <div class="kpi v4">
-          <div class="kpi-head"><div class="kpi-label">本周 AMAZON 托盘</div><div class="kpi-icon">A</div></div>
-          <div class="kpi-value" id="sup-week-amz">0</div>
-          <div class="kpi-sub" id="sup-week-amz-sub">托盘 · 周一 → 周日</div>
+          <div class="kpi-head"><div class="kpi-label">本周 AMAZON</div><div class="kpi-icon">A</div></div>
+          <div class="kpi-value" id="sup-week-amz" style="font-size:30px;">0 托 / 0 车</div>
+          <div class="kpi-sub" id="sup-week-amz-sub">周一 → 周日</div>
         </div>
         <div class="kpi v2">
           <div class="kpi-head"><div class="kpi-label">本月汇总</div><div class="kpi-icon">▦</div></div>
@@ -2395,6 +2395,8 @@ function renderSettings() {
 
 const chartOpts = {
   responsive: true, maintainAspectRatio: false,
+  animation: false,
+  transitions: { active: { animation: { duration: 0 } } },
   plugins: { legend: { labels: { color: '#94A3C4', font: { size: 11 } } } },
   scales: {
     x: { ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
@@ -4281,13 +4283,13 @@ function renderSupply() {
   const today = new Date().toISOString().slice(0, 10);
   const thisWeekMon = mondayOf(today);
   const ym = today.slice(0, 7);
-  let wkTTPallets = 0, wkAmzPallets = 0;
+  let wkTTPallets = 0, wkAmzPallets = 0, wkTTTrucks = 0, wkAmzTrucks = 0;
   let monthTrucks = 0, monthTT = 0, monthAMZ = 0;
   for (const day of state.dailySupply) {
     if (mondayOf(day.date) === thisWeekMon) {
       for (const tr of (day.trucks || [])) {
-        if (tr.type === 'TT') wkTTPallets += (tr.pallets || 0);
-        else if (tr.type === 'AMAZON') wkAmzPallets += (tr.pallets || 0);
+        if (tr.type === 'TT') { wkTTPallets += (tr.pallets || 0); wkTTTrucks++; }
+        else if (tr.type === 'AMAZON') { wkAmzPallets += (tr.pallets || 0); wkAmzTrucks++; }
       }
     }
     if (day.date && day.date.startsWith(ym)) {
@@ -4299,8 +4301,9 @@ function renderSupply() {
     }
   }
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setText('sup-week-tt', wkTTPallets);
-  setText('sup-week-amz', wkAmzPallets);
+  // Show "94 托盘 / 4 车" format inside KPI cards
+  setText('sup-week-tt', wkTTPallets + ' 托 / ' + wkTTTrucks + ' 车');
+  setText('sup-week-amz', wkAmzPallets + ' 托 / ' + wkAmzTrucks + ' 车');
   setText('sup-month-total', monthTrucks);
   const monthSub = document.getElementById('sup-month-total-sub');
   if (monthSub) monthSub.textContent = `车 · TT ${monthTT} / AMZ ${monthAMZ}`;
@@ -4334,8 +4337,8 @@ function renderSupply() {
   tb.innerHTML = list.map(d => {
     const trucksHtml = (d.trucks || []).map(tr => {
       const typeBadge = tr.type === 'TT'
-        ? '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);font-weight:700;">TT</span>'
-        : '<span class="badge" style="background:rgba(34,211,165,0.15);color:var(--green);font-weight:700;">AMZ</span>';
+        ? '<span class="badge" style="background:rgba(67,56,202,0.30);color:#a5b4fc;font-weight:700;border:1px solid rgba(99,102,241,0.5);">TT</span>'
+        : '<span class="badge" style="background:rgba(103,232,249,0.18);color:#67e8f9;font-weight:700;border:1px solid rgba(34,211,238,0.4);">AMZ</span>';
       const swapTag = tr.swapped ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : '';
       return `<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 8px;border-radius:6px;background:rgba(5,6,15,0.4);border:1px solid rgba(139,150,255,0.08);font-size:11px;">${typeBadge} ${tr.pallets || 0} 托${swapTag}</span>`;
     }).join('') || '<span class="dim">无</span>';
@@ -4375,6 +4378,50 @@ function weekRangeLabel(monStr) {
   return `${fmtMD(m)} ~ ${fmtMD(s)}`;
 }
 
+// === Color tokens for TT/AMAZON ===
+// User wants: TT = DARK color, AMAZON = LIGHT color
+const COLOR_TT_BG = 'rgba(67, 56, 202, 0.85)';     // indigo-700, dark
+const COLOR_TT_BD = 'rgba(99, 102, 241, 1)';        // indigo-500
+const COLOR_AMZ_BG = 'rgba(103, 232, 249, 0.7)';    // cyan-300, light
+const COLOR_AMZ_BD = 'rgba(34, 211, 238, 1)';       // cyan-400
+
+// Chart.js plugin: draws "TT N 托/N 车" or "AMZ N 托/N 车" inside each bar segment
+const inBarLabelPlugin = {
+  id: 'inBarLabel',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    chart.data.datasets.forEach((ds, dsIdx) => {
+      const meta = chart.getDatasetMeta(dsIdx);
+      if (!meta || meta.hidden) return;
+      meta.data.forEach((bar, idx) => {
+        const value = ds.data[idx];
+        if (!value || value <= 0) return;
+        const trucks = (ds._truckCounts && ds._truckCounts[idx]) ? ds._truckCounts[idx] : null;
+        const prefix = ds._labelPrefix || '';
+        const text = trucks != null
+          ? `${prefix} ${value} 托 / ${trucks} 车`
+          : `${prefix} ${value} 托`;
+        const { x, y, base, width, height } = bar.getProps(['x','y','base','width','height'], true);
+        const barH = Math.abs(base - y);
+        const barW = Math.abs(width || 0);
+        if (barH < 18 || barW < 50) return;  // too small to fit text — skip
+        ctx.save();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '700 11px Inter, -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const cx = x;
+        const cy = (y + base) / 2;
+        // Subtle text shadow for legibility
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        ctx.shadowBlur = 3;
+        ctx.fillText(text, cx, cy);
+        ctx.restore();
+      });
+    });
+  }
+};
+
 function renderSupplyWeekChart(weekMon) {
   const ctx = document.getElementById('chart-week-supply');
   if (!ctx || typeof Chart === 'undefined') return;
@@ -4383,17 +4430,17 @@ function renderSupplyWeekChart(weekMon) {
     const dd = new Date(d + 'T12:00:00');
     return ['周日','周一','周二','周三','周四','周五','周六'][dd.getDay()];
   });
-  const ttData = [], amzData = [], ttSwap = [], amzSwap = [];
+  const ttData = [], amzData = [], ttSwap = [], amzSwap = [], ttTrucks = [], amzTrucks = [];
   for (const d of days) {
-    let tt = 0, amz = 0, ttS = 0, amzS = 0;
+    let tt = 0, amz = 0, ttS = 0, amzS = 0, ttT = 0, amzT = 0;
     const day = state.dailySupply.find(x => x.date === d);
     if (day) {
       for (const tr of (day.trucks || [])) {
-        if (tr.type === 'TT') { tt += (tr.pallets || 0); if (tr.swapped) ttS += (tr.pallets || 0); }
-        else if (tr.type === 'AMAZON') { amz += (tr.pallets || 0); if (tr.swapped) amzS += (tr.pallets || 0); }
+        if (tr.type === 'TT') { tt += (tr.pallets || 0); ttT++; if (tr.swapped) ttS += (tr.pallets || 0); }
+        else if (tr.type === 'AMAZON') { amz += (tr.pallets || 0); amzT++; if (tr.swapped) amzS += (tr.pallets || 0); }
       }
     }
-    ttData.push(tt); amzData.push(amz); ttSwap.push(ttS); amzSwap.push(amzS);
+    ttData.push(tt); amzData.push(amz); ttSwap.push(ttS); amzSwap.push(amzS); ttTrucks.push(ttT); amzTrucks.push(amzT);
   }
 
   const lbl = document.getElementById('sup-chart-week-label');
@@ -4405,19 +4452,29 @@ function renderSupplyWeekChart(weekMon) {
   if (window._supplyWeekChart) window._supplyWeekChart.destroy();
   window._supplyWeekChart = new Chart(ctx, {
     type: 'bar',
+    plugins: [inBarLabelPlugin],
     data: {
       labels,
       datasets: [
-        { label: 'TT 托盘', data: ttData, backgroundColor: 'rgba(0, 229, 255, 0.6)', borderColor: 'rgba(0, 229, 255, 1)', borderWidth: 1, stack: 'a', borderRadius: 4 },
-        { label: 'AMAZON 托盘', data: amzData, backgroundColor: 'rgba(34, 211, 165, 0.6)', borderColor: 'rgba(34, 211, 165, 1)', borderWidth: 1, stack: 'a', borderRadius: 4 }
+        { label: 'TT 托盘', data: ttData, backgroundColor: COLOR_TT_BG, borderColor: COLOR_TT_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: ttTrucks, _labelPrefix: 'TT' },
+        { label: 'AMAZON 托盘', data: amzData, backgroundColor: COLOR_AMZ_BG, borderColor: COLOR_AMZ_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: amzTrucks, _labelPrefix: 'AMZ' }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: false,                        // ⛔ no flicker
+      transitions: { active: { animation: { duration: 0 } } },
       plugins: {
         legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
         tooltip: {
           callbacks: {
+            label: (item) => {
+              const idx = item.dataIndex;
+              const isTT = item.datasetIndex === 0;
+              const trucks = isTT ? ttTrucks[idx] : amzTrucks[idx];
+              const pallets = item.parsed.y;
+              return `${isTT ? 'TT' : 'AMAZON'}: ${pallets} 托盘 / ${trucks} 车`;
+            },
             afterBody: (items) => {
               if (!items || !items.length) return '';
               const idx = items[0].dataIndex;
@@ -4425,7 +4482,8 @@ function renderSupplyWeekChart(weekMon) {
               if (ttSwap[idx]) lines.push(`(其中 Swap TT: ${ttSwap[idx]} 托盘)`);
               if (amzSwap[idx]) lines.push(`(其中 Swap AMZ: ${amzSwap[idx]} 托盘)`);
               const total = ttData[idx] + amzData[idx];
-              lines.push(`合计: ${total} 托盘`);
+              const tot = ttTrucks[idx] + amzTrucks[idx];
+              lines.push(`合计: ${total} 托盘 / ${tot} 车`);
               return lines;
             }
           }
@@ -4473,17 +4531,17 @@ function renderSupplyWeekTable(weekMon) {
       <td><b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}</td>
       <td class="dim">${d}</td>
       <td>${day ? ownerBadge : '<span class="dim">' + ownerBadge + ' (无记录)</span>'}</td>
-      <td><b style="color:${tt > 0 ? 'var(--cyan)' : 'var(--text-dim)'};">${tt}</b></td>
-      <td><b style="color:${amz > 0 ? 'var(--green)' : 'var(--text-dim)'};">${amz}</b></td>
+      <td><b style="color:${tt > 0 ? '#a5b4fc' : 'var(--text-dim)'};">${tt}</b></td>
+      <td><b style="color:${amz > 0 ? '#67e8f9' : 'var(--text-dim)'};">${amz}</b></td>
       <td>${tt + amz} 托 <span class="dim">/ ${trucks} 车</span></td>
       <td>${swapBadge}</td>
     </tr>`;
   }).join('');
   if (tf) {
-    tf.innerHTML = `<tr style="background:rgba(0,229,255,0.04);">
+    tf.innerHTML = `<tr style="background:rgba(67,56,202,0.06);">
       <td colspan="3"><b>本周合计</b></td>
-      <td><b style="color:var(--cyan);font-size:14px;">${totTT}</b></td>
-      <td><b style="color:var(--green);font-size:14px;">${totAMZ}</b></td>
+      <td><b style="color:#a5b4fc;font-size:14px;">${totTT}</b></td>
+      <td><b style="color:#67e8f9;font-size:14px;">${totAMZ}</b></td>
       <td><b>${totTT + totAMZ} 托 / ${totTrucks} 车</b></td>
       <td>${totSwap > 0 ? '<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ' + totSwap + ' 车</span>' : '<span class="dim">无</span>'}</td>
     </tr>`;
@@ -4502,39 +4560,50 @@ function renderSupplyLast8Weeks() {
     weeks.push(d.toISOString().slice(0, 10));
   }
   const labels = weeks.map(weekRangeLabel);
-  const ttData = weeks.map(wm => {
+  const aggregate = (wm, type) => {
     const days = weekDaysOf(wm);
-    let s = 0;
+    let pallets = 0, trucks = 0;
     for (const d of days) {
       const day = state.dailySupply.find(x => x.date === d);
-      if (day) for (const tr of (day.trucks || [])) if (tr.type === 'TT') s += (tr.pallets || 0);
+      if (day) for (const tr of (day.trucks || [])) {
+        if (tr.type === type) { pallets += (tr.pallets || 0); trucks++; }
+      }
     }
-    return s;
-  });
-  const amzData = weeks.map(wm => {
-    const days = weekDaysOf(wm);
-    let s = 0;
-    for (const d of days) {
-      const day = state.dailySupply.find(x => x.date === d);
-      if (day) for (const tr of (day.trucks || [])) if (tr.type === 'AMAZON') s += (tr.pallets || 0);
-    }
-    return s;
-  });
+    return { pallets, trucks };
+  };
+  const ttResults = weeks.map(wm => aggregate(wm, 'TT'));
+  const amzResults = weeks.map(wm => aggregate(wm, 'AMAZON'));
+  const ttData = ttResults.map(r => r.pallets);
+  const ttTrucks = ttResults.map(r => r.trucks);
+  const amzData = amzResults.map(r => r.pallets);
+  const amzTrucks = amzResults.map(r => r.trucks);
 
   if (window._supplyTrendChart) window._supplyTrendChart.destroy();
   window._supplyTrendChart = new Chart(ctx, {
     type: 'bar',
+    plugins: [inBarLabelPlugin],
     data: {
       labels,
       datasets: [
-        { label: 'TT 托盘', data: ttData, backgroundColor: 'rgba(0, 229, 255, 0.6)', stack: 'a', borderRadius: 4 },
-        { label: 'AMAZON 托盘', data: amzData, backgroundColor: 'rgba(34, 211, 165, 0.6)', stack: 'a', borderRadius: 4 }
+        { label: 'TT 托盘', data: ttData, backgroundColor: COLOR_TT_BG, borderColor: COLOR_TT_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: ttTrucks, _labelPrefix: 'TT' },
+        { label: 'AMAZON 托盘', data: amzData, backgroundColor: COLOR_AMZ_BG, borderColor: COLOR_AMZ_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: amzTrucks, _labelPrefix: 'AMZ' }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: false,
+      transitions: { active: { animation: { duration: 0 } } },
       plugins: {
-        legend: { labels: { color: '#94A3C4', font: { size: 11 } } }
+        legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const isTT = item.datasetIndex === 0;
+              const trucks = isTT ? ttTrucks[item.dataIndex] : amzTrucks[item.dataIndex];
+              return `${isTT ? 'TT' : 'AMAZON'}: ${item.parsed.y} 托 / ${trucks} 车`;
+            }
+          }
+        }
       },
       scales: {
         x: { stacked: true, ticks: { color: '#94A3C4', font: { size: 10 } }, grid: { color: 'rgba(139, 150, 255, 0.06)' } },
@@ -4548,16 +4617,16 @@ function renderSupplyWeekdayAvg() {
   const ctx = document.getElementById('chart-weekday-avg');
   if (!ctx || typeof Chart === 'undefined') return;
   // Aggregate by weekday across full history
-  const sums = { 1: { tt: 0, amz: 0, n: 0 }, 2: { tt: 0, amz: 0, n: 0 }, 3: { tt: 0, amz: 0, n: 0 }, 4: { tt: 0, amz: 0, n: 0 }, 5: { tt: 0, amz: 0, n: 0 } };
+  const sums = { 1: { tt: 0, amz: 0, ttT: 0, amzT: 0 }, 2: { tt: 0, amz: 0, ttT: 0, amzT: 0 }, 3: { tt: 0, amz: 0, ttT: 0, amzT: 0 }, 4: { tt: 0, amz: 0, ttT: 0, amzT: 0 }, 5: { tt: 0, amz: 0, ttT: 0, amzT: 0 } };
   const seenByDay = { 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set() };
   for (const day of state.dailySupply) {
     if (!day.date) continue;
     const wkday = new Date(day.date + 'T12:00:00').getDay();
-    if (!sums[wkday]) continue;  // skip weekends
+    if (!sums[wkday]) continue;
     seenByDay[wkday].add(day.date);
     for (const tr of (day.trucks || [])) {
-      if (tr.type === 'TT') sums[wkday].tt += (tr.pallets || 0);
-      else if (tr.type === 'AMAZON') sums[wkday].amz += (tr.pallets || 0);
+      if (tr.type === 'TT') { sums[wkday].tt += (tr.pallets || 0); sums[wkday].ttT++; }
+      else if (tr.type === 'AMAZON') { sums[wkday].amz += (tr.pallets || 0); sums[wkday].amzT++; }
     }
   }
   const labels = ['周一','周二','周三','周四','周五'];
@@ -4567,23 +4636,38 @@ function renderSupplyWeekdayAvg() {
   const amzAvg = [1,2,3,4,5].map(k => {
     const n = seenByDay[k].size; return n ? +(sums[k].amz / n).toFixed(1) : 0;
   });
+  const ttAvgTrucks = [1,2,3,4,5].map(k => {
+    const n = seenByDay[k].size; return n ? +(sums[k].ttT / n).toFixed(1) : 0;
+  });
+  const amzAvgTrucks = [1,2,3,4,5].map(k => {
+    const n = seenByDay[k].size; return n ? +(sums[k].amzT / n).toFixed(1) : 0;
+  });
 
   if (window._supplyWeekdayChart) window._supplyWeekdayChart.destroy();
   window._supplyWeekdayChart = new Chart(ctx, {
     type: 'bar',
+    plugins: [inBarLabelPlugin],
     data: {
       labels,
       datasets: [
-        { label: 'TT 平均托盘', data: ttAvg, backgroundColor: 'rgba(0, 229, 255, 0.6)', borderRadius: 4 },
-        { label: 'AMAZON 平均托盘', data: amzAvg, backgroundColor: 'rgba(34, 211, 165, 0.6)', borderRadius: 4 }
+        { label: 'TT 平均托盘', data: ttAvg, backgroundColor: COLOR_TT_BG, borderColor: COLOR_TT_BD, borderWidth: 1, borderRadius: 4, _truckCounts: ttAvgTrucks, _labelPrefix: 'TT' },
+        { label: 'AMAZON 平均托盘', data: amzAvg, backgroundColor: COLOR_AMZ_BG, borderColor: COLOR_AMZ_BD, borderWidth: 1, borderRadius: 4, _truckCounts: amzAvgTrucks, _labelPrefix: 'AMZ' }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: false,
+      transitions: { active: { animation: { duration: 0 } } },
       plugins: {
         legend: { labels: { color: '#94A3C4', font: { size: 11 } } },
         tooltip: {
           callbacks: {
+            label: (item) => {
+              const isTT = item.datasetIndex === 0;
+              const idx = item.dataIndex;
+              const trucks = isTT ? ttAvgTrucks[idx] : amzAvgTrucks[idx];
+              return `${isTT ? 'TT' : 'AMAZON'}: 平均 ${item.parsed.y} 托 / ${trucks} 车`;
+            },
             afterLabel: (item) => {
               const idx = item.dataIndex;
               const wk = idx + 1;
@@ -4981,11 +5065,16 @@ function flash(msg) {
   setTimeout(() => el.remove(), 2000);
 }
 
+let currentViewName = 'dashboard';
 function switchView(name) {
+  currentViewName = name;
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
   document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   if (name === 'ai') renderInsights();
   if (name === 'customers') closeCustomerDetail();
+  // When entering supply view, render its charts (only here, to avoid flicker)
+  if (name === 'supply' && typeof renderSupply === 'function') renderSupply();
+  if (name === 'dashboard' && typeof renderCharts === 'function') renderCharts();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -4998,8 +5087,10 @@ function renderAll() {
   renderWeekly();
   renderSettings();
   renderInsights();
-  renderCharts();
-  if (typeof renderSupply === 'function') renderSupply();
+  // Only render dashboard charts when on dashboard — prevents flicker
+  if (currentViewName === 'dashboard') renderCharts();
+  // Only render supply view when it's the active tab — prevents chart flicker
+  if (currentViewName === 'supply' && typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
 }
 
