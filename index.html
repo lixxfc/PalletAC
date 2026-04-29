@@ -700,6 +700,63 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
 .modal-close { background: none; border: 0; color: var(--text-dim); font-size: 22px; cursor: pointer; padding: 0 6px; }
 .modal-close:hover { color: var(--text); }
 
+/* === Quick Quote Card === */
+.quote-card {
+  margin-top: 24px; padding: 20px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(0,229,255,0.06) 0%, rgba(139,92,246,0.06) 100%);
+  border: 1px solid rgba(0,229,255,0.18);
+  position: relative; overflow: hidden;
+}
+.quote-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.4), transparent);
+}
+.quote-icon {
+  font-size: 24px; width: 44px; height: 44px;
+  display: grid; place-items: center; border-radius: 12px;
+  background: rgba(0,229,255,0.12);
+}
+.quote-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.2px; }
+.quote-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.quote-input-wrap { display: flex; flex-direction: column; gap: 4px; }
+.quote-input-wrap label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+}
+.quote-input-wrap input {
+  width: 130px; padding: 10px 12px;
+  font-size: 16px; font-weight: 700;
+  background: rgba(5,6,15,0.5);
+  border: 1px solid rgba(0,229,255,0.25);
+  border-radius: 10px; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.quote-input-wrap input:focus {
+  outline: none; border-color: var(--cyan, #00E5FF);
+  box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+}
+.quote-result { margin-top: 16px; padding-top: 14px; border-top: 1px dashed rgba(139,150,255,0.15); }
+.qq-empty { color: var(--text-dim); font-size: 13px; text-align: center; padding: 6px 0; }
+.qq-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.qq-cell { padding: 10px 12px; border-radius: 10px; background: rgba(5,6,15,0.4); border: 1px solid rgba(139,150,255,0.08); }
+.qq-cell .k { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px; }
+.qq-cell .v { font-size: 18px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.3px; }
+.qq-cell .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.qq-cell.headline {
+  background: linear-gradient(135deg, rgba(251,113,133,0.15) 0%, rgba(244,114,182,0.12) 100%);
+  border-color: rgba(251,113,133,0.4);
+}
+.qq-cell.headline .v { color: var(--rose, #FB7185); font-size: 22px; }
+.qq-cell.headline.zero {
+  background: linear-gradient(135deg, rgba(34,211,165,0.15) 0%, rgba(0,229,255,0.10) 100%);
+  border-color: rgba(34,211,165,0.4);
+}
+.qq-cell.headline.zero .v { color: var(--green, #22D3A5); }
+@media (max-width: 720px) {
+  .quote-input-wrap input { width: 100%; }
+}
+
 /* Mobile nav */
 .mobile-nav {
   display: none;
@@ -819,6 +876,26 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         </div>
       </div>
       <div class="kpi-grid" id="kpi-grid"></div>
+
+      <!-- Quick Quote: how much more to send Emma for X pallets -->
+      <div class="quote-card">
+        <div class="row" style="align-items: center; gap: 14px; flex-wrap: wrap;">
+          <div class="quote-icon">💷</div>
+          <div class="grow">
+            <div class="quote-title">快速询价 · 给 Emma 转多少</div>
+            <div class="quote-sub">输入即将取的托盘数,系统按 £<span id="qq-buy">245</span> / 托盘 算出还差多少钱给 Emma 转(只算,不记账)</div>
+          </div>
+          <div class="quote-input-wrap">
+            <label>托盘数</label>
+            <input type="number" id="qq-pallets" placeholder="如 100" min="0" oninput="updateEmmaQuote()" onkeydown="if(event.key==='Enter')event.preventDefault();">
+          </div>
+          <button class="btn ghost sm" onclick="document.getElementById('qq-pallets').value=''; updateEmmaQuote();">清空</button>
+        </div>
+        <div class="quote-result" id="qq-result">
+          <div class="qq-empty">等你输入托盘数…</div>
+        </div>
+      </div>
+
       <div class="chart-row">
         <div class="card chart-card">
           <div class="card-title">月度转账 vs 取货花费</div>
@@ -2083,6 +2160,67 @@ function renderCharts() {
   });
 }
 
+// ===== QUICK QUOTE (no save, just calculator) =====
+function updateEmmaQuote() {
+  const box = document.getElementById('qq-result');
+  if (!box) return;
+  const buyEl = document.getElementById('qq-buy');
+  const buyPrice = state.params.buyPrice || 245;
+  if (buyEl) buyEl.textContent = buyPrice;
+  const inputEl = document.getElementById('qq-pallets');
+  const raw = (inputEl && inputEl.value || '').trim();
+  if (!raw) { box.innerHTML = '<div class="qq-empty">输入即将取的托盘数,系统按 £' + buyPrice + ' / 托盘 算出还差多少钱给 Emma 转…</div>'; return; }
+  const pallets = parseInt(raw, 10);
+  if (!isFinite(pallets) || pallets < 0) { box.innerHTML = '<div class="qq-empty">请输入正整数</div>'; return; }
+
+  const bal = balance();
+  const totalCost = pallets * buyPrice;
+  const owe = totalCost - bal;  // > 0 = need to send Emma more, < 0 = leftover credit
+  const moneyFmt = v => '£' + Math.round(v).toLocaleString('en-GB');
+
+  let headline;
+  if (owe > 0) {
+    headline = `<div class="qq-cell headline">
+      <div class="k">还需给 Emma 转</div>
+      <div class="v">${moneyFmt(owe)}</div>
+      <div class="sub">${pallets} × £${buyPrice} − 余额 ${moneyFmt(bal)}</div>
+    </div>`;
+  } else if (owe === 0) {
+    headline = `<div class="qq-cell headline zero">
+      <div class="k">余额刚好够 ✓</div>
+      <div class="v">£0</div>
+      <div class="sub">${pallets} × £${buyPrice} = 余额 ${moneyFmt(bal)}</div>
+    </div>`;
+  } else {
+    headline = `<div class="qq-cell headline zero">
+      <div class="k">余额够付,无需再转</div>
+      <div class="v">${moneyFmt(Math.abs(owe))}</div>
+      <div class="sub">取后还剩余额 ${moneyFmt(Math.abs(owe))}</div>
+    </div>`;
+  }
+
+  box.innerHTML = `
+    <div class="qq-grid">
+      ${headline}
+      <div class="qq-cell">
+        <div class="k">货款总额</div>
+        <div class="v">${moneyFmt(totalCost)}</div>
+        <div class="sub">${pallets} 托盘 × £${buyPrice}</div>
+      </div>
+      <div class="qq-cell">
+        <div class="k">Emma 当前余额</div>
+        <div class="v">${moneyFmt(bal)}</div>
+        <div class="sub">可拉 ${buyPrice > 0 ? Math.floor(Math.max(0, bal) / buyPrice) : 0} 托盘</div>
+      </div>
+      <div class="qq-cell">
+        <div class="k">取货后余额</div>
+        <div class="v" style="color: ${(bal - totalCost) < 0 ? 'var(--rose)' : 'var(--green)'};">${moneyFmt(bal - totalCost)}</div>
+        <div class="sub">${(bal - totalCost) < 0 ? '将透支 ' + moneyFmt(Math.abs(bal - totalCost)) : '剩余信用'}</div>
+      </div>
+    </div>
+  `;
+}
+
 // ===== PREVIEW =====
 function updateTransferPreview() {
   const box = document.getElementById('t-preview');
@@ -2397,6 +2535,8 @@ function renderAll() {
   renderSettings();
   renderInsights();
   renderCharts();
+  // Refresh quick quote so balance and unit price stay in sync
+  if (typeof updateEmmaQuote === 'function') updateEmmaQuote();
 }
 
 // ===== INIT =====
