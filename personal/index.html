@@ -1185,7 +1185,7 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="page-head">
         <div>
           <h1 class="page-title">出货交易记录</h1>
-          <div class="page-sub">选客户 → 输托盘数 → 系统自动按 £<span id="d-sell">265</span> × 托盘 扣除客户余额</div>
+          <div class="page-sub">选客户 → 输托盘数 → 系统自动按 £<span id="d-sell">265</span> × 托盘 扣除客户余额 · 勾 🔁 Swap TT 后单价变 £295(+£30/托盘)</div>
         </div>
       </div>
 
@@ -1200,6 +1200,12 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
           <div class="form-row"><label>托盘数</label><input type="number" id="d-pallets" placeholder="24" min="1" oninput="updatePickupPreview()"></div>
           <div class="form-row"><label>车次（可选）</label><input type="text" id="d-truck" placeholder="T-001"></div>
+          <div class="form-row" style="grid-column: 1/-1;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(244,114,182,0.06);border:1px dashed rgba(244,114,182,0.3);border-radius:10px;">
+              <input type="checkbox" id="d-swap" oninput="updatePickupPreview()">
+              <span><b>🔁 Swap TT(+£30/托盘)</b> — 这一车是 Emma 换给我的 TT,客户多付 £30/托盘</span>
+            </label>
+          </div>
           <div class="form-row" style="grid-column: 1/-1;"><label>备注（可选）</label><input type="text" id="d-notes" placeholder="备注"></div>
         </div>
         <div id="d-preview" class="preview-box"></div>
@@ -2026,7 +2032,9 @@ function customerWeeklyAgg(customer) {
     if (!map[wk]) map[wk] = { week: wk, pallets: 0, revenue: 0, profit: 0, entries: 0 };
     map[wk].pallets += (e.pallets || 0);
     map[wk].revenue += (e.amount || 0);
-    map[wk].profit += (e.pallets || 0) * perP;
+    // Profit = base per-pallet margin + swap-TT bonus (£30/pallet for tagged entries)
+    const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium()) : 0;
+    map[wk].profit += (e.pallets || 0) * perP + swapBonus;
     map[wk].entries += 1;
   }
   return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
@@ -2187,8 +2195,9 @@ function renderDaily() {
   document.getElementById('daily-count').textContent = rows.length + ' 条';
   const body = rows.map(r => {
     const m = pickupMetrics(r);
+    const swapTag = r.isSwap ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(244,114,182,0.18);color:var(--pink);">🔁 SWAP</span>' : '';
     return `<tr>
-      <td>${r.date}</td>
+      <td>${r.date}${swapTag}</td>
       <td><b>${escapeHtml(r.customerName)}</b></td>
       <td><b>${r.pallets}</b></td>
       <td class="dim">${escapeHtml(r.truck || '-')}</td>
@@ -2301,8 +2310,12 @@ function renderCustomerDetail() {
   for (const e of (c.ledger || [])) {
     if (e.type !== 'pickup') continue;
     const wk = weekStartOf(e.date);
-    if (wk === todayWk) { thisWkPallets += (e.pallets || 0); thisWkProfit += (e.pallets || 0) * perP; }
-    else if (wk === lastWk) { lastWkProfit += (e.pallets || 0) * perP; }
+    // Per-pallet profit + swap-TT bonus (£30/pallet) if tagged
+    const palletProfit = (e.pallets || 0) * perP;
+    const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium()) : 0;
+    const profitForEntry = palletProfit + swapBonus;
+    if (wk === todayWk) { thisWkPallets += (e.pallets || 0); thisWkProfit += profitForEntry; }
+    else if (wk === lastWk) { lastWkProfit += profitForEntry; }
   }
   let cwTrend = 'flat', cwTrendTxt = '—';
   if (lastWkProfit > 0 || thisWkProfit > 0) {
@@ -2510,20 +2523,24 @@ function updatePickupPreview() {
   }
   const c = state.customers.find(x => x.id === cid);
   if (!c) return;
-  const sell = state.params.sellPrice;
-  const deduction = pallets * sell;
+  const swapEl = document.getElementById('d-swap');
+  const isSwap = !!(swapEl && swapEl.checked);
+  const unitPrice = effectiveUnitPrice(isSwap);          // £265 or £295
+  const deduction = pallets * unitPrice;
   const bal = customerBalance(c);
   const after = bal - deduction;
-  const profit = pallets * perPalletProfit();
+  const profit = pallets * perPalletProfit() + (isSwap ? pallets * swapTtPremium() : 0);
   const overdraft = after < 0;
   box.classList.add('show');
   box.classList.toggle('danger', overdraft);
-  const afterCls = overdraft ? 'neg' : (after < sell * 3 ? 'warn' : 'pos');
+  const afterCls = overdraft ? 'neg' : (after < unitPrice * 3 ? 'warn' : 'pos');
+  const swapTitle = isSwap ? `<div class="pv-row"><span class="pv-k">🔁 类型</span><span class="pv-v" style="color:var(--pink);">Swap TT(+£${swapTtPremium()}/托盘)</span></div>` : '';
   box.innerHTML = `
-    <div class="pv-row"><span class="pv-k">出货金额 (${pallets} × £${sell})</span><span class="pv-v neg">-${fmt(deduction)}</span></div>
+    ${swapTitle}
+    <div class="pv-row"><span class="pv-k">出货金额 (${pallets} × £${unitPrice})</span><span class="pv-v neg">-${fmt(deduction)}</span></div>
     <div class="pv-row"><span class="pv-k">${escapeHtml(c.name)} 当前余额</span><span class="pv-v">${fmt(bal)}</span></div>
     <div class="pv-row"><span class="pv-k">出货后余额</span><span class="pv-v ${afterCls}">${fmt(after)}</span></div>
-    <div class="pv-row"><span class="pv-k">本次毛利</span><span class="pv-v pos">+${fmt(profit)}</span></div>
+    <div class="pv-row"><span class="pv-k">本次毛利${isSwap ? ' (含 +£' + (pallets * swapTtPremium()) + ' Swap 加成)' : ''}</span><span class="pv-v pos">+${fmt(profit)}</span></div>
     <div class="pv-warning">⚠ 余额将为负（${fmt(after)}）— 客户透支！可以保存，但建议先催款或预付。</div>
   `;
 }
@@ -2539,17 +2556,25 @@ function addPickup() {
   if (!pallets || pallets <= 0) { alert('请填写托盘数（>0）'); return; }
   const c = state.customers.find(x => x.id === cid);
   if (!c) { alert('客户不存在'); return; }
-  const amount = pallets * state.params.sellPrice;
+  const swapEl = document.getElementById('d-swap');
+  const isSwap = !!(swapEl && swapEl.checked);
+  const unitPrice = effectiveUnitPrice(isSwap);
+  const amount = pallets * unitPrice;
   c.ledger.push({
     id: crypto.randomUUID(),
-    date, type: 'pickup', amount, pallets, truck, note
+    date, type: 'pickup', amount,
+    unitPrice,
+    isSwap,
+    swapPremium: isSwap ? swapTtPremium() : 0,
+    pallets, truck, note
   });
   // Reset form (keep customer selected for rapid entry)
   document.getElementById('d-pallets').value = '';
   document.getElementById('d-truck').value = '';
   document.getElementById('d-notes').value = '';
+  if (swapEl) swapEl.checked = false;
   save(); renderAll();
-  flash('已记录：' + c.name + ' × ' + pallets + ' 托盘');
+  flash('已记录：' + c.name + ' × ' + pallets + ' 托盘' + (isSwap ? ' 🔁 Swap TT' : ''));
 }
 
 function delPickup(customerId, id) {
