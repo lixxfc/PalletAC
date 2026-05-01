@@ -632,6 +632,111 @@ select option { background: var(--bg-2); color: var(--text); }
 /* Hide utility for dynamic ledger form rows */
 .row-hidden { display: none !important; }
 
+/* 🧠 Smart Alerts card */
+.alerts-card {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.04), rgba(139, 92, 246, 0.06));
+  border: 1px solid rgba(0, 229, 255, 0.2);
+}
+.alerts-list { display: grid; gap: 8px; }
+.alert-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: 10px;
+  background: rgba(5, 6, 15, 0.4); border: 1px solid rgba(139, 150, 255, 0.08);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+  cursor: default;
+}
+.alert-item.actionable { cursor: pointer; }
+.alert-item.actionable:hover { transform: translateX(2px); border-color: rgba(0, 229, 255, 0.4); }
+.alert-icon {
+  font-size: 18px; width: 36px; height: 36px;
+  display: grid; place-items: center; border-radius: 10px; flex-shrink: 0;
+}
+.alert-icon.red    { background: rgba(251, 113, 133, 0.18); color: var(--rose); }
+.alert-icon.amber  { background: rgba(251, 191, 36, 0.18); color: var(--amber); }
+.alert-icon.green  { background: rgba(34, 211, 165, 0.18); color: var(--green); }
+.alert-icon.cyan   { background: rgba(0, 229, 255, 0.15);  color: var(--cyan); }
+.alert-icon.purple { background: rgba(139, 92, 246, 0.18); color: var(--purple); }
+.alert-text { flex: 1; }
+.alert-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.alert-sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; line-height: 1.5; }
+.alert-action {
+  font-size: 11px; padding: 4px 10px; border-radius: 6px;
+  background: rgba(0, 229, 255, 0.12); color: var(--cyan); font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Command palette (Cmd+K) */
+.cmdk-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(5, 6, 15, 0.7); backdrop-filter: blur(8px);
+  align-items: flex-start; justify-content: center; padding-top: 96px;
+}
+.cmdk-backdrop.open { display: flex; }
+.cmdk-box {
+  width: 100%; max-width: 540px;
+  background: linear-gradient(180deg, rgba(20,28,60,0.97), rgba(15,22,50,0.97));
+  border: 1px solid rgba(139, 150, 255, 0.2);
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+}
+.cmdk-search {
+  width: 100%; padding: 18px 20px;
+  background: transparent; border: 0; outline: none;
+  color: var(--text); font-size: 16px; font-family: inherit;
+  border-bottom: 1px solid rgba(139, 150, 255, 0.1);
+}
+.cmdk-search::placeholder { color: var(--text-dim); }
+.cmdk-list { max-height: 50vh; overflow-y: auto; padding: 8px; }
+.cmdk-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; color: var(--text);
+}
+.cmdk-item:hover, .cmdk-item.active {
+  background: rgba(0, 229, 255, 0.1);
+  color: var(--cyan);
+}
+.cmdk-item .cmdk-icon { font-size: 16px; width: 24px; text-align: center; flex-shrink: 0; }
+.cmdk-item .cmdk-label { flex: 1; }
+.cmdk-item .cmdk-hint { font-size: 11px; color: var(--text-dim); }
+.cmdk-empty { padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px; }
+.cmdk-section-label {
+  font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+  padding: 8px 12px 4px;
+}
+.cmdk-foot {
+  padding: 8px 12px; border-top: 1px solid rgba(139, 150, 255, 0.08);
+  font-size: 10.5px; color: var(--text-dim); display: flex; gap: 12px;
+}
+.cmdk-foot kbd {
+  background: rgba(139, 150, 255, 0.15); padding: 1px 6px; border-radius: 3px;
+  font-family: inherit; font-size: 10px; color: var(--text);
+}
+
+/* Customer switcher arrows */
+.customer-switch {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 12px; vertical-align: middle;
+}
+.customer-switch button {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: rgba(5, 6, 15, 0.4);
+  border: 1px solid rgba(139, 150, 255, 0.15);
+  color: var(--text-dim); cursor: pointer;
+  display: grid; place-items: center; font-size: 14px;
+  transition: all 0.15s ease;
+}
+.customer-switch button:hover { color: var(--cyan); border-color: rgba(0, 229, 255, 0.4); }
+.customer-switch .pos-text { font-size: 11px; color: var(--text-dim); padding: 0 4px; }
+
+/* Anomaly flag */
+.anomaly-flag {
+  display: inline-block; margin-left: 6px;
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: rgba(251, 113, 133, 0.18); color: var(--rose); font-weight: 700;
+  cursor: help;
+}
+
 /* === Monthly History Cards === */
 .month-history-grid {
   display: grid;
@@ -1115,6 +1220,17 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
+      <!-- 🧠 Smart Alerts / Today's Todo -->
+      <div class="card alerts-card mb-4" id="alerts-card" style="display:none;">
+        <div class="row" style="align-items:center;flex-wrap:wrap;gap:12px;">
+          <div class="grow">
+            <div class="card-title">🧠 今日要做 <span class="badge" id="alerts-count">0 项</span></div>
+            <div class="page-sub">系统自动扫描:余额预警 / 客户活跃度 / Swap 加成 / 月底预测</div>
+          </div>
+        </div>
+        <div class="alerts-list mt-4" id="alerts-list"></div>
+      </div>
+
       <div class="kpi-grid" id="kpi-grid"></div>
 
       <!-- Weekly profit breakdown -->
@@ -1357,9 +1473,16 @@ select option { background: var(--bg-2); color: var(--text); }
 
       <div id="customer-detail" class="hide mt-6">
         <div class="card">
-          <div class="row mb-4">
+          <div class="row mb-4" style="align-items:flex-start;flex-wrap:wrap;gap:10px;">
             <div class="grow">
-              <div class="page-title" id="cd-name"></div>
+              <div class="row" style="align-items:center;">
+                <div class="page-title" id="cd-name"></div>
+                <span class="customer-switch" id="cd-switch">
+                  <button onclick="switchToAdjacentCustomer(-1)" title="上一个客户(←)">‹</button>
+                  <span class="pos-text" id="cd-pos"></span>
+                  <button onclick="switchToAdjacentCustomer(1)" title="下一个客户(→)">›</button>
+                </span>
+              </div>
               <div class="page-sub" id="cd-meta"></div>
             </div>
             <button class="btn sm" onclick="openInvoiceEditor({customerId: currentCustomer})">＋ 新建 Invoice</button>
@@ -1793,6 +1916,20 @@ select option { background: var(--bg-2); color: var(--text); }
       <button class="btn ghost sm" onclick="setStatementRange('all')">全部</button>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="generateStatement()">生成对账单</button></div>
+  </div>
+</div>
+
+<!-- ⌘K Command Palette -->
+<div class="cmdk-backdrop" id="cmdk-backdrop" onclick="if(event.target===this)closeCmdK()">
+  <div class="cmdk-box">
+    <input type="text" class="cmdk-search" id="cmdk-search" placeholder="搜客户 / 跳页面 / 快捷动作 …" oninput="renderCmdK()" onkeydown="cmdKKeydown(event)">
+    <div class="cmdk-list" id="cmdk-list"></div>
+    <div class="cmdk-foot">
+      <span><kbd>↑↓</kbd> 选择</span>
+      <span><kbd>⏎</kbd> 打开</span>
+      <span><kbd>Esc</kbd> 关闭</span>
+      <span style="margin-left:auto;"><kbd>⌘K</kbd> 任何时候打开</span>
+    </div>
   </div>
 </div>
 
@@ -2266,11 +2403,20 @@ function renderKpis() {
       <div class="kpi-value">${fmt(t.profit)}</div>
       <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
     </div>
-    <div class="kpi v4">
-      <div class="kpi-head"><div class="kpi-label">本月利润</div><div class="kpi-icon">$</div></div>
-      <div class="kpi-value">${fmt(t.mProfit)}</div>
-      <div class="kpi-sub">${t.mPallets} 托盘 <span class="kpi-trend ${trend}">${trendTxt}</span></div>
-    </div>
+    ${(() => {
+      // Compute month-end forecast (linear projection from current pace)
+      const todayD = new Date();
+      const mEnd = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getDate();
+      const mDay = todayD.getDate();
+      const projected = (mDay >= 3 && t.mProfit > 0) ? (t.mProfit / mDay * mEnd) : 0;
+      const forecastTxt = projected > 0 ? `预计月底 ${fmt(projected)}` : '';
+      return `<div class="kpi v4">
+        <div class="kpi-head"><div class="kpi-label">本月利润</div><div class="kpi-icon">$</div></div>
+        <div class="kpi-value">${fmt(t.mProfit)}</div>
+        <div class="kpi-sub">${t.mPallets} 托盘 <span class="kpi-trend ${trend}">${trendTxt}</span></div>
+        ${forecastTxt ? `<div class="kpi-sub" style="font-size:11px;color:var(--cyan);margin-top:2px;">📈 ${forecastTxt}</div>` : ''}
+      </div>`;
+    })()}
     <div class="kpi v1">
       <div class="kpi-head"><div class="kpi-label">本月托盘</div><div class="kpi-icon">▦</div></div>
       <div class="kpi-value">${t.mPallets}</div>
@@ -2494,6 +2640,8 @@ function renderCustomerDetail() {
   renderSelfBreakdown(c);
   // Render invoice history
   renderCustomerInvoices(c);
+  // Update prev/next customer position indicator
+  if (typeof updateCustomerSwitcher === 'function') updateCustomerSwitcher();
 
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
@@ -2519,15 +2667,19 @@ function renderCustomerDetail() {
       const tpLabel = tp === 'AMAZON' ? 'AMZ' : (tp === 'Mixed' ? '?' : tp);
       typeBadge = ` <span class="badge" title="点击修改类型" style="font-size:9px;padding:2px 6px;cursor:pointer;font-weight:700;${typeStyles[tp] || typeStyles.Mixed}" onclick="cyclePalletType('${e.id}')">${tpLabel}</span>`;
     }
+    // Anomaly flag: pallets > 3× this customer's median pickup
+    const anomaly = (e.type === 'pickup') ? checkAnomaly(c, e) : null;
+    const anomalyTag = anomaly ? ` <span class="anomaly-flag" title="${escapeHtml(anomaly)}">⚠</span>` : '';
     return { html: `<tr>
       <td>${e.date}</td>
       <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}</td>
-      <td>${e.pallets || '-'}</td>
+      <td>${e.pallets || '-'}${anomalyTag}</td>
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
       <td class="${runCls}"><b>${fmt(running)}</b></td>
       <td class="dim">${escapeHtml(e.note || '')}</td>
       <td style="white-space:nowrap;">
+        ${e.type === 'pickup' ? `<button class="btn sm ghost" title="重复这一笔(填到下面新增表单,日期=今天)" onclick="repeatLedgerEntry('${e.id}')">↻</button> ` : ''}
         ${e.type === 'pickup' ? `<button class="btn sm ghost" title="为这条取货生成发票" onclick="openInvoiceEditor({customerId: currentCustomer, fromPickup: '${e.id}'})">📄</button> ` : ''}
         <button class="btn sm danger" onclick="delLedger('${e.id}')">删</button>
       </td>
@@ -2911,6 +3063,313 @@ function updateLedgerForm() {
     togglePickupRows(false);
   }
   updateLedgerPreview();
+}
+
+// === Anomaly detection: flag pickup if pallets > 3× this customer's median ===
+function checkAnomaly(customer, entry) {
+  if (!customer || !entry || entry.type !== 'pickup') return null;
+  const counts = (customer.ledger || [])
+    .filter(x => x.type === 'pickup' && x.id !== entry.id && (x.pallets || 0) > 0)
+    .map(x => x.pallets || 0)
+    .sort((a, b) => a - b);
+  if (counts.length < 3) return null;  // not enough data
+  const median = counts[Math.floor(counts.length / 2)];
+  const cur = entry.pallets || 0;
+  if (cur > median * 3) return `异常:这一笔 ${cur} 托盘,该客户平均 ${median} 托盘 — 是不是输错了?`;
+  return null;
+}
+
+// === Repeat last pickup: pre-fill the new ledger form ===
+function repeatLedgerEntry(entryId) {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const e = (c.ledger || []).find(x => x.id === entryId);
+  if (!e || e.type !== 'pickup') return;
+  // Switch to pickup mode + populate fields with today's date
+  document.getElementById('lg-type').value = 'pickup';
+  updateLedgerForm();
+  document.getElementById('lg-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('lg-pallets').value = e.pallets || '';
+  document.getElementById('lg-truck').value = e.truck || '';
+  document.getElementById('lg-note').value = e.note || '';
+  const lgSwap = document.getElementById('lg-swap');
+  if (lgSwap) lgSwap.checked = !!e.isSwap;
+  const lgTypeSelect = document.getElementById('lg-type-select');
+  if (lgTypeSelect) lgTypeSelect.value = e.palletType || (e.isSwap ? 'TT' : 'TT');
+  updateLedgerPreview();
+  flash('已填好,确认后点"+ 添加流水"');
+  // Scroll to the form
+  const formCard = document.querySelector('#customer-detail .card-title');
+  if (formCard) formCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// === Customer prev/next navigation ===
+function switchToAdjacentCustomer(delta) {
+  if (!currentCustomer) return;
+  const list = state.customers || [];
+  if (list.length < 2) return;
+  const idx = list.findIndex(c => c.id === currentCustomer);
+  if (idx < 0) return;
+  let nextIdx = idx + delta;
+  if (nextIdx < 0) nextIdx = list.length - 1;
+  if (nextIdx >= list.length) nextIdx = 0;
+  openCustomer(list[nextIdx].id);
+}
+
+// === Update customer-position indicator (shown next to switcher) ===
+function updateCustomerSwitcher() {
+  const posEl = document.getElementById('cd-pos');
+  const switchEl = document.getElementById('cd-switch');
+  if (!posEl || !switchEl) return;
+  if (!currentCustomer) { switchEl.style.display = 'none'; return; }
+  const list = state.customers || [];
+  const idx = list.findIndex(c => c.id === currentCustomer);
+  if (idx < 0 || list.length < 2) { switchEl.style.display = 'none'; return; }
+  switchEl.style.display = 'inline-flex';
+  posEl.textContent = `${idx + 1} / ${list.length}`;
+}
+
+// === ⌘K Command Palette ===
+let cmdkActiveIdx = 0;
+let cmdkResults = [];
+function openCmdK() {
+  document.getElementById('cmdk-backdrop').classList.add('open');
+  const inp = document.getElementById('cmdk-search');
+  inp.value = ''; cmdkActiveIdx = 0;
+  setTimeout(() => inp.focus(), 50);
+  renderCmdK();
+}
+function closeCmdK() {
+  document.getElementById('cmdk-backdrop').classList.remove('open');
+}
+function renderCmdK() {
+  const q = (document.getElementById('cmdk-search').value || '').trim().toLowerCase();
+  const items = [];
+  // Customers
+  for (const c of (state.customers || [])) {
+    if (!q || c.name.toLowerCase().includes(q)) {
+      items.push({
+        section: 'customer', icon: '◈',
+        label: c.name,
+        hint: '余额 ' + fmt(customerBalance(c)),
+        action: () => { closeCmdK(); switchView('customers'); openCustomer(c.id); }
+      });
+    }
+  }
+  // Views
+  const views = [
+    { name: 'dashboard', label: '仪表盘', icon: '◉' },
+    { name: 'supply', label: '每日供货', icon: '📦' },
+    { name: 'daily', label: '出货交易', icon: '▦' },
+    { name: 'customers', label: '客户账本', icon: '◈' },
+    { name: 'monthly', label: '月度汇总', icon: '▩' },
+    { name: 'ai', label: 'AI 经营建议', icon: '✦' },
+    { name: 'settings', label: '参数设置', icon: '⚙' }
+  ];
+  for (const v of views) {
+    if (!q || v.label.toLowerCase().includes(q) || v.name.toLowerCase().includes(q)) {
+      items.push({
+        section: 'view', icon: v.icon, label: v.label, hint: '页面',
+        action: () => { closeCmdK(); switchView(v.name); }
+      });
+    }
+  }
+  // Quick actions
+  const actions = [
+    { label: '新建客户', icon: '＋', action: () => { closeCmdK(); switchView('customers'); openCustomerModal(); } },
+    { label: '新增今日供货', icon: '📦', action: () => { closeCmdK(); switchView('supply'); openSupplyEditor(null); } },
+    { label: '导出 JSON 备份', icon: '⇣', action: () => { closeCmdK(); exportJson(); } }
+  ];
+  for (const a of actions) {
+    if (!q || a.label.toLowerCase().includes(q)) {
+      items.push({ section: 'action', icon: a.icon, label: a.label, hint: '动作', action: a.action });
+    }
+  }
+  cmdkResults = items;
+  cmdkActiveIdx = Math.max(0, Math.min(cmdkActiveIdx, items.length - 1));
+  const list = document.getElementById('cmdk-list');
+  if (!items.length) {
+    list.innerHTML = '<div class="cmdk-empty">没找到匹配 — 试试客户名 / "出货" / "供货" / "新建" 等关键词</div>';
+    return;
+  }
+  let lastSection = '';
+  const sectionLabels = { customer: '客户', view: '页面', action: '动作' };
+  list.innerHTML = items.map((it, i) => {
+    let sectionHtml = '';
+    if (it.section !== lastSection) {
+      sectionHtml = `<div class="cmdk-section-label">${sectionLabels[it.section] || ''}</div>`;
+      lastSection = it.section;
+    }
+    return sectionHtml + `<div class="cmdk-item ${i === cmdkActiveIdx ? 'active' : ''}" data-idx="${i}" onmouseenter="cmdkActiveIdx=${i};renderCmdK()" onclick="cmdkResults[${i}].action()">
+      <span class="cmdk-icon">${it.icon}</span>
+      <span class="cmdk-label">${escapeHtml(it.label)}</span>
+      <span class="cmdk-hint">${escapeHtml(it.hint || '')}</span>
+    </div>`;
+  }).join('');
+  // Scroll active into view
+  const active = list.querySelector('.cmdk-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+function cmdKKeydown(ev) {
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); cmdkActiveIdx = Math.min(cmdkResults.length - 1, cmdkActiveIdx + 1); renderCmdK(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); cmdkActiveIdx = Math.max(0, cmdkActiveIdx - 1); renderCmdK(); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); const r = cmdkResults[cmdkActiveIdx]; if (r) r.action(); }
+  else if (ev.key === 'Escape') { ev.preventDefault(); closeCmdK(); }
+}
+
+// === 🧠 Smart Alerts (Today's Todo) ===
+function renderSmartAlerts() {
+  const card = document.getElementById('alerts-card');
+  const list = document.getElementById('alerts-list');
+  const cnt = document.getElementById('alerts-count');
+  if (!card || !list) return;
+  const alerts = [];
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const sellPrice = state.params.sellPrice || 265;
+
+  // 1. Customers with low balance (< 5 pallets worth)
+  for (const c of (state.customers || [])) {
+    const bal = customerBalance(c);
+    if (bal < 0) {
+      alerts.push({
+        priority: 1, color: 'red', icon: '!',
+        title: `${c.name} 已透支 ${fmt(-bal)}`,
+        sub: '建议立刻催款或停止出货',
+        action: () => openCustomer(c.id),
+        actionLabel: '查看客户 →'
+      });
+    } else if (bal > 0 && bal < sellPrice * 5) {
+      const canBuy = Math.floor(bal / sellPrice);
+      alerts.push({
+        priority: 2, color: 'amber', icon: '⚠',
+        title: `${c.name} 余额只够买 ${canBuy} 托盘`,
+        sub: `当前余额 ${fmt(bal)} · 建议提醒客户续预付`,
+        action: () => openCustomer(c.id),
+        actionLabel: '查看客户 →'
+      });
+    }
+  }
+
+  // 2. Inactive customers (> 14 days since last activity)
+  for (const c of (state.customers || [])) {
+    if (!c.ledger || !c.ledger.length) continue;
+    const lastDate = c.ledger.map(e => e.date).filter(Boolean).sort().slice(-1)[0];
+    if (!lastDate) continue;
+    const daysSince = Math.floor((today.getTime() - new Date(lastDate + 'T12:00:00').getTime()) / 86400000);
+    if (daysSince >= 14 && daysSince < 60) {
+      alerts.push({
+        priority: 3, color: 'amber', icon: '⏱',
+        title: `${c.name} 已 ${daysSince} 天没活动`,
+        sub: `最后一次:${lastDate} · 要不要发个消息看看?`,
+        action: () => openCustomer(c.id),
+        actionLabel: '查看客户 →'
+      });
+    } else if (daysSince >= 60) {
+      alerts.push({
+        priority: 4, color: 'red', icon: '✖',
+        title: `${c.name} 已 ${daysSince} 天没活动 — 可能流失`,
+        sub: `最后一次:${lastDate} · 建议主动联系`,
+        action: () => openCustomer(c.id),
+        actionLabel: '查看客户 →'
+      });
+    }
+  }
+
+  // 3. Emma truck debt warning
+  if (typeof emmaTruckDebt === 'function') {
+    const debt = emmaTruckDebt();
+    if (debt >= 3) {
+      alerts.push({
+        priority: 2, color: 'amber', icon: '⇆',
+        title: `欠 Emma ${debt} 车 AMAZON`,
+        sub: '建议尽快还几车 / 跟 Emma 商量结算方式',
+        action: () => switchView('supply'),
+        actionLabel: '去供货 →'
+      });
+    }
+  }
+
+  // 4. This week swap bonus (positive insight)
+  const wkMon = weekStartOf(todayStr);
+  let weekSwapBonus = 0, weekSwapPallets = 0;
+  for (const r of allPickups()) {
+    if (r.isSwap && weekStartOf(r.date) === wkMon) {
+      const prem = r.swapPremium != null ? r.swapPremium : swapTtPremium();
+      weekSwapBonus += (r.pallets || 0) * prem;
+      weekSwapPallets += (r.pallets || 0);
+    }
+  }
+  if (weekSwapBonus > 0) {
+    alerts.push({
+      priority: 5, color: 'green', icon: '🔁',
+      title: `本周 Swap TT 加成已赚 ${fmt(weekSwapBonus)}`,
+      sub: `${weekSwapPallets} 托盘 × £${swapTtPremium()} · 干得不错`,
+      action: null
+    });
+  }
+
+  // 5. Month-end forecast (smart projection)
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const daysInMonth = monthEnd.getDate();
+  const dayOfMonth = today.getDate();
+  if (dayOfMonth >= 5 && dayOfMonth < daysInMonth - 1) {  // skip first 4 days and last day
+    let mProfit = 0;
+    const ymStr = todayStr.slice(0, 7);
+    for (const r of allPickups()) {
+      if (r.date && r.date.startsWith(ymStr)) {
+        mProfit += pickupMetrics(r).profit;
+      }
+    }
+    const projected = mProfit / dayOfMonth * daysInMonth;
+    if (projected > 0) {
+      alerts.push({
+        priority: 6, color: 'cyan', icon: '📈',
+        title: `按本月节奏,月底预计利润 ${fmt(projected)}`,
+        sub: `已过 ${dayOfMonth}/${daysInMonth} 天,目前 ${fmt(mProfit)} · 趋势线性外推`,
+        action: null
+      });
+    }
+  }
+
+  // 6. Outstanding invoices (overdue + unpaid summary)
+  if (typeof invoiceOutstanding === 'function') {
+    const overdueCount = (typeof invoiceCount === 'function') ? invoiceCount('overdue') : 0;
+    if (overdueCount > 0) {
+      alerts.push({
+        priority: 1, color: 'red', icon: '!',
+        title: `${overdueCount} 张发票已逾期`,
+        sub: `总额 ${fmt(invoiceOutstanding())} · 该催收了`,
+        action: null
+      });
+    }
+  }
+
+  // Sort by priority
+  alerts.sort((a, b) => a.priority - b.priority);
+
+  if (!alerts.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  cnt.textContent = alerts.length + ' 项';
+  list.innerHTML = alerts.map((a, i) => {
+    const actionable = !!a.action;
+    const onclick = actionable ? `onclick="window._smartAlerts[${i}].action()"` : '';
+    const actionTxt = a.actionLabel || (actionable ? '点击查看 →' : '');
+    return `<div class="alert-item ${actionable ? 'actionable' : ''}" ${onclick}>
+      <div class="alert-icon ${a.color}">${a.icon}</div>
+      <div class="alert-text">
+        <div class="alert-title">${escapeHtml(a.title)}</div>
+        <div class="alert-sub">${escapeHtml(a.sub || '')}</div>
+      </div>
+      ${actionable ? `<span class="alert-action">${escapeHtml(actionTxt)}</span>` : ''}
+    </div>`;
+  }).join('');
+  window._smartAlerts = alerts;  // expose for onclick
 }
 
 // Cycle pallet type on an existing pickup entry (TT → AMAZON → Mixed → TT)
@@ -5380,7 +5839,7 @@ function switchView(name) {
   if (name === 'customers') closeCustomerDetail();
   // When entering supply view, render its charts (only here, to avoid flicker)
   if (name === 'supply' && typeof renderSupply === 'function') renderSupply();
-  if (name === 'dashboard' && typeof renderCharts === 'function') { renderCharts(); if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory(); }
+  if (name === 'dashboard' && typeof renderCharts === 'function') { renderCharts(); if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory(); if (typeof renderSmartAlerts === 'function') renderSmartAlerts(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -5394,7 +5853,7 @@ function renderAll() {
   renderSettings();
   renderInsights();
   // Only render dashboard charts when on dashboard — prevents flicker
-  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); }
+  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); renderSmartAlerts(); }
   // Only render supply view when it's the active tab — prevents chart flicker
   if (currentViewName === 'supply' && typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
@@ -6054,12 +6513,24 @@ document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.n
 });
 
 document.addEventListener('keydown', e => {
+  // ⌘K / Ctrl+K — global command palette
+  if (e.key === 'k' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (currentUser) openCmdK();
+    return;
+  }
+  // Customer prev/next with arrow keys (only when on customer detail and not in an input)
+  if (currentCustomer && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'SELECT') {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); switchToAdjacentCustomer(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); switchToAdjacentCustomer(1); return; }
+  }
   if (e.key === 'c' && (e.ctrlKey || e.metaKey) === false && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     if (currentUser) toggleCalc();
   }
   if (e.key === 'Escape') {
     document.getElementById('calc-panel').classList.remove('open');
     closeCustomerModal();
+    closeCmdK();
   }
 });
 
