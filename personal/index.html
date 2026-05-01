@@ -1457,32 +1457,27 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
 
           <!-- ===== Weekly Statements (Customer-facing & Self) ===== -->
-          <div class="row mt-6" style="align-items:center;">
-            <div class="grow">
+          <div class="row mt-6" style="align-items:start;flex-wrap:wrap;gap:14px;">
+            <div class="grow" style="min-width:240px;">
               <div class="card-title">周度明细 <span class="badge">两份视图</span></div>
-              <div class="page-sub">客人版:导出给客人看(£30/托 我的利润 + £10/托 Hugo + Swap 加成);我的版:实际数字(£51/托 + £7 Hugo + £2 V + Swap 加成)</div>
+              <div class="page-sub">客人版只算我的费用(托盘款客人已预付,跟系统里的预付款是另一笔账)</div>
             </div>
-            <div class="row" style="gap:6px;">
+            <div class="row" style="gap:6px;flex-wrap:wrap;">
               <button class="btn ghost sm active" onclick="setBreakdownTab('client')" id="bd-tab-client">📄 客人版</button>
               <button class="btn ghost sm" onclick="setBreakdownTab('self')" id="bd-tab-self">🔒 我的版</button>
             </div>
           </div>
           <div id="breakdown-pane-client">
-            <div class="row mt-2" style="align-items:center;">
-              <div class="grow"><div class="page-sub" style="font-size:11px;">这一份给客人看,包含每周的 TT/AMAZON 托盘数 · 单价分解(£30 我 + £10 Hugo)· Swap TT 加价 · 客人本周应付总额</div></div>
-              <button class="btn sm" onclick="exportClientBreakdown()">🖨 导出 PDF</button>
-            </div>
+            <div class="page-sub mt-2" style="font-size:11px;">客人版 · 显示客人本周需要另外付给我的钱:每托 <b>£30 我</b> + <b>£10 Hugo</b> + Swap TT 额外 <b>£30</b>。点最右边 🖨 导出某一周给客人。</div>
             <div class="table-wrap mt-2">
               <table>
-                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>明细</th><th>本周应付</th></tr></thead>
+                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>费用明细</th><th>客人应付</th><th>导出</th></tr></thead>
                 <tbody id="bd-client-body"></tbody>
               </table>
             </div>
           </div>
           <div id="breakdown-pane-self" class="hide">
-            <div class="row mt-2" style="align-items:center;">
-              <div class="grow"><div class="page-sub" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托</div></div>
-            </div>
+            <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托</div>
             <div class="table-wrap mt-2">
               <table>
                 <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>£51 利润</th><th>Hugo £7</th><th>V £2</th><th>Swap +£30</th><th>本周净利</th></tr></thead>
@@ -2512,9 +2507,21 @@ function renderCustomerDetail() {
     const swapTag = (e.type === 'pickup' && e.isSwap)
       ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(244,114,182,0.18);color:var(--pink);">🔁 SWAP</span>'
       : '';
+    // Pickup type badge (clickable to change). Old entries default to "Mixed" / "未分类".
+    let typeBadge = '';
+    if (e.type === 'pickup') {
+      const tp = e.palletType || (e.isSwap ? 'TT' : 'Mixed');
+      const typeStyles = {
+        TT:     'background:rgba(67,56,202,0.30);color:#a5b4fc;border:1px solid rgba(99,102,241,0.5);',
+        AMAZON: 'background:rgba(103,232,249,0.18);color:#67e8f9;border:1px solid rgba(34,211,238,0.4);',
+        Mixed:  'background:rgba(251,191,36,0.18);color:var(--amber);border:1px solid rgba(251,191,36,0.4);'
+      };
+      const tpLabel = tp === 'AMAZON' ? 'AMZ' : (tp === 'Mixed' ? '?' : tp);
+      typeBadge = ` <span class="badge" title="点击修改类型" style="font-size:9px;padding:2px 6px;cursor:pointer;font-weight:700;${typeStyles[tp] || typeStyles.Mixed}" onclick="cyclePalletType('${e.id}')">${tpLabel}</span>`;
+    }
     return { html: `<tr>
       <td>${e.date}</td>
-      <td><span class="badge-type ${cls}">${label}</span>${swapTag}</td>
+      <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}</td>
       <td>${e.pallets || '-'}</td>
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
@@ -2904,6 +2911,20 @@ function updateLedgerForm() {
     togglePickupRows(false);
   }
   updateLedgerPreview();
+}
+
+// Cycle pallet type on an existing pickup entry (TT → AMAZON → Mixed → TT)
+function cyclePalletType(entryId) {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const e = (c.ledger || []).find(x => x.id === entryId);
+  if (!e || e.type !== 'pickup') return;
+  if (e.isSwap) { flash('Swap TT 自动锁定为 TT 类型,无法修改'); return; }
+  const cur = e.palletType || 'Mixed';
+  const next = cur === 'TT' ? 'AMAZON' : (cur === 'AMAZON' ? 'Mixed' : 'TT');
+  e.palletType = next;
+  save(); renderAll();
 }
 
 // Swap-TT premium per pallet (defaults to £30, configurable via state.params.swapPremium)
@@ -5446,6 +5467,14 @@ function customerWeeklyBreakdown(customer) {
   return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
 }
 
+// Compute what the customer owes me FOR THIS WEEK (separate from prepay-for-pallets).
+// = pallets × £30 (my fee) + pallets × £10 (Hugo) + swap_pallets × £30 (swap surcharge)
+function clientWeekTotal(w) {
+  return w.totalPallets * CLIENT_PROFIT_PER_PALLET
+       + w.totalPallets * CLIENT_HUGO_PER_PALLET
+       + w.swapPallets * 30;
+}
+
 // Render the client-facing breakdown (public markup story)
 function renderClientBreakdown(customer) {
   const tb = document.getElementById('bd-client-body');
@@ -5453,7 +5482,7 @@ function renderClientBreakdown(customer) {
   if (!customer) { tb.innerHTML = ''; return; }
   const weeks = customerWeeklyBreakdown(customer);
   if (!weeks.length) {
-    tb.innerHTML = `<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
     return;
   }
   const reversed = [...weeks].reverse();
@@ -5461,15 +5490,10 @@ function renderClientBreakdown(customer) {
   tb.innerHTML = reversed.map(w => {
     const wkNum = isoWeekNum(w.week);
     const isCurrent = w.week === todayWk;
-    // Customer-facing math: every pallet = £30 (Michael) + £10 (Hugo) breakdown shown,
-    // plus £30 surcharge per swap pallet. Total = w.totalAmount (matches their prepay deduction).
     const baseProfit = w.totalPallets * CLIENT_PROFIT_PER_PALLET;
     const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
     const swapSurchargeTotal = w.swapPallets * 30;
-    const summary = [];
-    if (w.ttTrucks) summary.push(`<span style="color:#a5b4fc;font-weight:700;">TT</span> ${w.ttTrucks} 车/${w.ttPallets} 托`);
-    if (w.amzTrucks) summary.push(`<span style="color:#67e8f9;font-weight:700;">AMZ</span> ${w.amzTrucks} 车/${w.amzPallets} 托`);
-    if (w.mixTrucks) summary.push(`<span class="dim">混合</span> ${w.mixTrucks} 车/${w.mixPallets} 托`);
+    const weekTotal = clientWeekTotal(w);
 
     const swapCell = w.swapPallets > 0
       ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${w.swapTrucks} 车 / ${w.swapPallets} 托</span>`
@@ -5481,14 +5505,20 @@ function renderClientBreakdown(customer) {
       w.swapPallets > 0 ? `<div style="font-size:11px;color:var(--pink);">+ ${w.swapPallets} 托 × £30 (Swap TT) = ${fmt(swapSurchargeTotal)}</div>` : ''
     ].filter(Boolean).join('');
 
+    // Mixed/Other warning: if there are unclassified pickups, hint to the user
+    const mixedNotice = w.mixTrucks > 0
+      ? `<div style="font-size:10px;color:var(--amber);margin-top:4px;">⚠ ${w.mixTrucks} 车 ${w.mixPallets} 托未分类(老数据,可不影响金额)</div>`
+      : '';
+
     return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
       <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
       <td class="dim">${weekLabelShort(w.week)}</td>
-      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b></td>
+      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b>${mixedNotice}</td>
       <td><b>${w.amzTrucks} 车 / ${w.amzPallets} 托</b></td>
       <td>${swapCell}</td>
       <td>${detailLines}</td>
-      <td class="pos"><b style="font-size:14px;">${fmt(w.totalAmount)}</b></td>
+      <td class="pos"><b style="font-size:14px;">${fmt(weekTotal)}</b></td>
+      <td><button class="btn sm" title="导出这一周的对账给客人" onclick="exportClientBreakdown('${w.week}')">🖨</button></td>
     </tr>`;
   }).join('');
 }
@@ -5551,13 +5581,15 @@ function renderSelfBreakdown(customer) {
   }
 }
 
-// Export the client-facing weekly breakdown as a printable HTML document.
-function exportClientBreakdown() {
+// Export the client-facing breakdown for ONE specific week (Monday YYYY-MM-DD).
+function exportClientBreakdown(weekMon) {
   if (!currentCustomer) { alert('先选一个客户'); return; }
+  if (!weekMon) { alert('请指定要导出的周'); return; }
   const c = state.customers.find(x => x.id === currentCustomer);
   if (!c) return;
-  const weeks = customerWeeklyBreakdown(c);
-  if (!weeks.length) { alert('该客户暂无取货记录'); return; }
+  const allWeeks = customerWeeklyBreakdown(c);
+  const weeks = allWeeks.filter(w => w.week === weekMon);
+  if (!weeks.length) { alert('该周暂无取货记录'); return; }
 
   const company = state.company || {};
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -5569,13 +5601,15 @@ function exportClientBreakdown() {
     return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
   };
 
-  // Compute grand totals
-  let grandTotal = 0, grandPallets = 0, grandTT = 0, grandAMZ = 0, grandSwap = 0;
+  // Compute grand totals — use FEE-ONLY math (separate from prepay)
+  let grandTotal = 0, grandPallets = 0, grandTT = 0, grandAMZ = 0, grandMix = 0, grandSwap = 0, grandTrucks = 0;
   weeks.forEach(w => {
-    grandTotal += w.totalAmount;
+    grandTotal += clientWeekTotal(w);
     grandPallets += w.totalPallets;
+    grandTrucks += w.totalTrucks;
     grandTT += w.ttPallets;
     grandAMZ += w.amzPallets;
+    grandMix += w.mixPallets;
     grandSwap += w.swapPallets;
   });
 
@@ -5595,6 +5629,7 @@ function exportClientBreakdown() {
     const mixLine = w.mixTrucks > 0 ? `<div><span style="color:#64748b;">Other:</span> ${w.mixTrucks} truck${w.mixTrucks===1?'':'s'} &middot; ${w.mixPallets} pallets</div>` : '';
     const swapLine = w.swapPallets > 0 ? `<div style="color:#b91c1c;font-weight:700;margin-top:4px;">🔁 Swap TT: ${w.swapTrucks} truck${w.swapTrucks===1?'':'s'} &middot; ${w.swapPallets} pallets (+£30 each)</div>` : '';
 
+    const weekTotal = clientWeekTotal(w);
     return `<tr>
       <td class="period-col">
         <div class="period-range">${wkRange}</div>
@@ -5606,7 +5641,7 @@ function exportClientBreakdown() {
         <div class="line">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} <span class="muted">(Hugo)</span> = ${money(hugoTotal)}</div>
         ${w.swapPallets > 0 ? `<div class="line" style="color:#b91c1c;">${w.swapPallets} × £30 <span class="muted">(swap surcharge)</span> = ${money(swapSurcharge)}</div>` : ''}
       </td>
-      <td class="num total"><b>${money(w.totalAmount)}</b></td>
+      <td class="num total"><b>${money(weekTotal)}</b></td>
     </tr>`;
   }).join('');
 
@@ -5614,7 +5649,7 @@ function exportClientBreakdown() {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Weekly Pallet Statement &mdash; ${esc(c.name)}</title>
+<title>Weekly Statement &mdash; ${esc(c.name)} &mdash; W${isoWeekNum(weeks[0].week)} ${weeks[0].week.slice(0,4)}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -5739,14 +5774,18 @@ function exportClientBreakdown() {
       </div>
     </div>
     <div class="meta-block">
-      <div class="label">Period</div>
-      <div class="primary">${weeks.length} weeks</div>
-      <div class="lines">${fmtDate(weeks[0].week)} → ${fmtDate(weeks[weeks.length-1].week)}</div>
+      <div class="label">Week</div>
+      <div class="primary">${(() => {
+        const m = new Date(weeks[0].week + 'T12:00:00');
+        const s = new Date(m); s.setDate(s.getDate() + 6);
+        return `${fmtDate(weeks[0].week)} – ${fmtDate(s.toISOString().slice(0,10))}`;
+      })()}</div>
+      <div class="lines">Week ${isoWeekNum(weeks[0].week)} of ${weeks[0].week.slice(0, 4)}</div>
     </div>
     <div class="meta-block" style="text-align:right;">
-      <div class="label">Total Pallets</div>
-      <div class="primary">${grandPallets} pallets</div>
-      <div class="lines">TT ${grandTT} &middot; AMZ ${grandAMZ}${grandSwap > 0 ? ' &middot; Swap ' + grandSwap : ''}</div>
+      <div class="label">Pallets This Week</div>
+      <div class="primary">${grandPallets} pallets &middot; ${grandTrucks} truck${grandTrucks===1?'':'s'}</div>
+      <div class="lines">${grandTT > 0 ? 'TT ' + grandTT : ''}${grandAMZ > 0 ? (grandTT > 0 ? ' &middot; ' : '') + 'AMAZON ' + grandAMZ : ''}${grandMix > 0 ? ((grandTT > 0 || grandAMZ > 0) ? ' &middot; ' : '') + 'Other ' + grandMix : ''}${grandSwap > 0 ? ' &middot; Swap ' + grandSwap : ''}</div>
     </div>
   </div>
 
@@ -5769,10 +5808,10 @@ function exportClientBreakdown() {
     </div>
   </div>
 
-  ${grandSwap > 0 ? `<div class="pricing-note"><b>🔁 Swap TT Pallets:</b> ${grandSwap} pallets across all weeks. These were special pallets we secured for you, with a £30/pallet surcharge applied.</div>` : ''}
+  <div class="pricing-note"><b>📌 Note:</b> This statement covers <b>my fee, Hugo's fee${grandSwap > 0 ? ', and a £30/pallet surcharge for ' + grandSwap + ' Swap TT pallet' + (grandSwap===1?'':'s') : ''}</b> for this week. The pallets themselves were already prepaid — this is a separate weekly bill.</div>
 
   <div class="tx-wrap">
-    <div class="tx-title">Weekly Breakdown</div>
+    <div class="tx-title">This Week's Breakdown</div>
     <table>
       <thead>
         <tr>
@@ -5785,7 +5824,7 @@ function exportClientBreakdown() {
       <tbody>
         ${rowsHtml}
         <tr class="grand">
-          <td colspan="3">GRAND TOTAL · ${weeks.length} weeks · ${grandPallets} pallets</td>
+          <td colspan="3">TOTAL DUE · ${grandPallets} pallets &middot; ${grandTrucks} truck${grandTrucks===1?'':'s'}</td>
           <td class="num total">${money(grandTotal)}</td>
         </tr>
       </tbody>
@@ -5793,7 +5832,7 @@ function exportClientBreakdown() {
   </div>
 
   <div class="bottom">
-    <div>${esc(c.name)} &nbsp;·&nbsp; ${weeks.length} weeks &nbsp;·&nbsp; ${grandPallets} pallets &nbsp;·&nbsp; Generated ${new Date().toISOString().slice(0, 10)}</div>
+    <div>${esc(c.name)} &nbsp;·&nbsp; ${grandPallets} pallets &nbsp;·&nbsp; Generated ${new Date().toISOString().slice(0, 10)}</div>
     <div class="thanks">Thank you for your business.</div>
   </div>
 </div>
