@@ -632,6 +632,98 @@ select option { background: var(--bg-2); color: var(--text); }
 /* Hide utility for dynamic ledger form rows */
 .row-hidden { display: none !important; }
 
+/* === Monthly History Cards === */
+.month-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.month-card {
+  position: relative;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(0, 229, 255, 0.04) 100%);
+  border: 1px solid rgba(139, 150, 255, 0.18);
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.month-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple), var(--pink));
+  opacity: 0.6;
+}
+.month-card::after {
+  content: '';
+  position: absolute; right: -24px; top: -24px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.18), transparent 65%);
+  pointer-events: none;
+}
+.month-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 229, 255, 0.15);
+}
+.month-card-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  margin-bottom: 14px; position: relative; z-index: 1;
+}
+.month-card-title {
+  font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.3px;
+}
+.month-card-trend {
+  font-size: 11px; font-weight: 700; padding: 4px 10px;
+  border-radius: 999px; letter-spacing: 0.3px;
+}
+.month-card-profit {
+  font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1;
+  background: linear-gradient(135deg, #22D3A5, #00E5FF);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.month-card-profit-label {
+  font-size: 11px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-top: 4px; font-weight: 600;
+}
+.month-card-stats {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px dashed rgba(139, 150, 255, 0.16);
+}
+.month-card-stat .stat-label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+}
+.month-card-stat .stat-value {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  margin-top: 3px; font-variant-numeric: tabular-nums;
+}
+.month-card-stat .stat-sub {
+  font-size: 10.5px; color: var(--text-dim); margin-top: 2px;
+}
+.month-card-supply {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: rgba(5, 6, 15, 0.4);
+  border-radius: 10px;
+  border: 1px solid rgba(139, 150, 255, 0.08);
+}
+.month-card-swap {
+  margin-top: 12px;
+  padding: 9px 12px;
+  background: linear-gradient(90deg, rgba(244, 114, 182, 0.12), rgba(244, 114, 182, 0.04));
+  border: 1px dashed rgba(244, 114, 182, 0.4);
+  border-radius: 10px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--pink); font-weight: 700;
+}
+.month-card-swap b { font-size: 14px; }
+
 /* === Quick Quote Card === */
 .quote-card {
   margin-top: 24px;
@@ -1066,6 +1158,22 @@ select option { background: var(--bg-2); color: var(--text); }
           <div class="card-title">利润累计趋势</div>
           <div class="chart-box"><canvas id="chart-cumprofit"></canvas></div>
         </div>
+      </div>
+
+      <!-- ===== Monthly History Cards ===== -->
+      <div class="card mt-6">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">月度历史 <span class="badge" id="mh-count">0 月</span></div>
+            <div class="page-sub">每月汇总:出货 / 进货 / 利润 / Swap 加成 · 不含本月(本月在最上面 KPI 已显示)</div>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm active" onclick="setMonthHistoryView('6')" id="mh-btn-6">近 6 月</button>
+            <button class="btn ghost sm" onclick="setMonthHistoryView('12')" id="mh-btn-12">近 12 月</button>
+            <button class="btn ghost sm" onclick="setMonthHistoryView('all')" id="mh-btn-all">全部</button>
+          </div>
+        </div>
+        <div class="month-history-grid" id="month-history-grid"></div>
       </div>
     </section>
 
@@ -5185,7 +5293,7 @@ function switchView(name) {
   if (name === 'customers') closeCustomerDetail();
   // When entering supply view, render its charts (only here, to avoid flicker)
   if (name === 'supply' && typeof renderSupply === 'function') renderSupply();
-  if (name === 'dashboard' && typeof renderCharts === 'function') renderCharts();
+  if (name === 'dashboard' && typeof renderCharts === 'function') { renderCharts(); if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -5199,7 +5307,7 @@ function renderAll() {
   renderSettings();
   renderInsights();
   // Only render dashboard charts when on dashboard — prevents flicker
-  if (currentViewName === 'dashboard') renderCharts();
+  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); }
   // Only render supply view when it's the active tab — prevents chart flicker
   if (currentViewName === 'supply' && typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
@@ -5218,6 +5326,146 @@ function setWeeklyView(n) {
   if (btn) btn.classList.add('active');
   renderWeekly();
 }
+// === Monthly History Cards (dashboard, bottom) ===
+let monthHistoryLimit = 6;  // 0 = all
+function setMonthHistoryView(v) {
+  monthHistoryLimit = (v === 'all') ? 0 : parseInt(v, 10) || 6;
+  ['6','12','all'].forEach(k => {
+    const el = document.getElementById('mh-btn-' + k);
+    if (el) el.classList.remove('active');
+  });
+  const btn = document.getElementById('mh-btn-' + (v || '6'));
+  if (btn) btn.classList.add('active');
+  renderMonthlyHistory();
+}
+
+function renderMonthlyHistory() {
+  const grid = document.getElementById('month-history-grid');
+  const cnt = document.getElementById('mh-count');
+  if (!grid) return;
+
+  // Aggregate by month
+  const map = {};
+  const monthOf = (d) => (d || '').slice(0, 7);
+
+  // Customer pickups → revenue, profit, pallets, swap, customers
+  for (const r of allPickups()) {
+    const ym = monthOf(r.date);
+    if (!ym) continue;
+    if (!map[ym]) map[ym] = {
+      ym, pallets: 0, revenue: 0, cost: 0, fee: 0, profit: 0,
+      swapBonus: 0, swapPallets: 0, customers: new Set(), tickets: 0,
+      supplyTrucks: 0, supplyPallets: 0, supplyTT: 0, supplyAMZ: 0,
+      supplyTTPallets: 0, supplyAMZPallets: 0
+    };
+    const m = pickupMetrics(r);
+    map[ym].pallets += r.pallets;
+    map[ym].revenue += m.revenue;
+    map[ym].cost += m.cost;
+    map[ym].fee += m.fee;
+    map[ym].profit += m.profit;
+    if (r.isSwap) {
+      const prem = r.swapPremium != null ? r.swapPremium : swapTtPremium();
+      map[ym].swapBonus += (r.pallets || 0) * prem;
+      map[ym].swapPallets += (r.pallets || 0);
+    }
+    if (r.customerName) map[ym].customers.add(r.customerName);
+    map[ym].tickets++;
+  }
+
+  // Daily supply → trucks & types
+  for (const day of (state.dailySupply || [])) {
+    const ym = monthOf(day.date);
+    if (!ym) continue;
+    if (!map[ym]) map[ym] = {
+      ym, pallets: 0, revenue: 0, cost: 0, fee: 0, profit: 0,
+      swapBonus: 0, swapPallets: 0, customers: new Set(), tickets: 0,
+      supplyTrucks: 0, supplyPallets: 0, supplyTT: 0, supplyAMZ: 0,
+      supplyTTPallets: 0, supplyAMZPallets: 0
+    };
+    for (const tr of (day.trucks || [])) {
+      map[ym].supplyTrucks++;
+      map[ym].supplyPallets += (tr.pallets || 0);
+      if (tr.type === 'TT') { map[ym].supplyTT++; map[ym].supplyTTPallets += (tr.pallets || 0); }
+      else if (tr.type === 'AMAZON') { map[ym].supplyAMZ++; map[ym].supplyAMZPallets += (tr.pallets || 0); }
+    }
+  }
+
+  // Sort by month desc, exclude current month (it's shown in top KPIs)
+  const currentYM = new Date().toISOString().slice(0, 7);
+  let history = Object.values(map)
+    .filter(m => m.ym !== currentYM)
+    .sort((a, b) => b.ym.localeCompare(a.ym));
+
+  if (cnt) cnt.textContent = history.length + ' 月';
+
+  if (!history.length) {
+    grid.innerHTML = `<div class="dim" style="grid-column:1/-1;text-align:center;padding:40px;border:1px dashed rgba(139,150,255,0.15);border-radius:14px;">
+      还没有上个月或更早的历史数据 — 等到下个月会自动出现这个月的卡片
+    </div>`;
+    return;
+  }
+
+  // Apply limit
+  if (monthHistoryLimit > 0) history = history.slice(0, monthHistoryLimit);
+
+  grid.innerHTML = history.map((m, i) => {
+    const next = history[i + 1];  // older month for trend comparison
+    const profitTrend = (next && next.profit !== 0) ? ((m.profit - next.profit) / Math.abs(next.profit) * 100) : null;
+    const trendBg = profitTrend == null ? 'rgba(148,163,196,0.15)' : (profitTrend >= 0 ? 'rgba(34,211,165,0.15)' : 'rgba(251,113,133,0.15)');
+    const trendColor = profitTrend == null ? 'var(--text-dim)' : (profitTrend >= 0 ? 'var(--green)' : 'var(--rose)');
+    const trendTxt = profitTrend == null ? '—' : ((profitTrend >= 0 ? '↑ +' : '↓ ') + Math.abs(profitTrend).toFixed(1) + '%');
+
+    const monthLabel = `${m.ym.slice(0,4)} 年 ${parseInt(m.ym.slice(5,7),10)} 月`;
+    const customerCount = m.customers.size || 0;
+    const hasSupply = m.supplyTrucks > 0;
+    const hasSales = m.tickets > 0;
+
+    return `
+      <div class="month-card">
+        <div class="month-card-head">
+          <div class="month-card-title">${monthLabel}</div>
+          <span class="month-card-trend" style="background:${trendBg};color:${trendColor};">${trendTxt}</span>
+        </div>
+        <div class="month-card-profit">${fmt(m.profit)}</div>
+        <div class="month-card-profit-label">净利润</div>
+
+        <div class="month-card-stats">
+          <div class="month-card-stat">
+            <div class="stat-label">出货 → 客户</div>
+            <div class="stat-value">${m.pallets} 托</div>
+            <div class="stat-sub">${m.tickets} 单 · ${customerCount} 客户</div>
+          </div>
+          <div class="month-card-stat">
+            <div class="stat-label">营收</div>
+            <div class="stat-value">${fmt(m.revenue + m.fee)}</div>
+            <div class="stat-sub">成本 ${fmt(m.cost)}</div>
+          </div>
+          ${hasSupply ? `
+          <div class="month-card-supply">
+            <div class="stat-label" style="margin-bottom:6px;">供货商进货</div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;font-variant-numeric:tabular-nums;">
+              <span style="font-size:14px;font-weight:700;color:var(--text);">${m.supplyTrucks} 车 · ${m.supplyPallets} 托</span>
+            </div>
+            <div style="display:flex;gap:14px;margin-top:6px;font-size:11px;">
+              <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#4338ca;vertical-align:middle;margin-right:5px;"></span><b style="color:#a5b4fc;">TT</b> ${m.supplyTT} 车 · ${m.supplyTTPallets} 托</span>
+              <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#67e8f9;vertical-align:middle;margin-right:5px;"></span><b style="color:#67e8f9;">AMZ</b> ${m.supplyAMZ} 车 · ${m.supplyAMZPallets} 托</span>
+            </div>
+          </div>
+          ` : ''}
+        </div>
+        ${m.swapBonus > 0 ? `
+        <div class="month-card-swap">
+          <span>🔁 Swap TT 加成 · ${m.swapPallets} 托</span>
+          <b>${fmt(m.swapBonus)}</b>
+        </div>
+        ` : ''}
+        ${(!hasSales && !hasSupply) ? '<div class="dim" style="text-align:center;padding:8px 0;font-size:11px;">本月无活动</div>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
 function renderCustomerWeekly(c) {
   const tb = document.getElementById('cust-weekly-body');
   const perpEl = document.getElementById('cw-perp');
