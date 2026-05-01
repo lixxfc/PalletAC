@@ -729,6 +729,74 @@ select option { background: var(--bg-2); color: var(--text); }
 .customer-switch button:hover { color: var(--cyan); border-color: rgba(0, 229, 255, 0.4); }
 .customer-switch .pos-text { font-size: 11px; color: var(--text-dim); padding: 0 4px; }
 
+/* === Roomy breakdown table (周度明细) === */
+.breakdown-table table { border-collapse: separate; border-spacing: 0; }
+.breakdown-table thead th {
+  font-size: 10.5px; padding: 14px 16px;
+  letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text-dim); font-weight: 700;
+  border-bottom: 1.5px solid rgba(139, 150, 255, 0.2);
+}
+.breakdown-table tbody td {
+  padding: 18px 16px; vertical-align: top;
+  border-bottom: 1px solid rgba(139, 150, 255, 0.08);
+  line-height: 1.55;
+}
+.breakdown-table tbody tr:hover td { background: rgba(0, 229, 255, 0.03); }
+.breakdown-table tbody tr.is-current td { background: rgba(0, 229, 255, 0.06); }
+.breakdown-table tfoot td {
+  padding: 16px; font-weight: 700; font-size: 13px;
+  border-top: 2px solid rgba(0, 229, 255, 0.4);
+  background: rgba(0, 229, 255, 0.04);
+}
+.bd-week-tag { font-size: 14px; font-weight: 800; color: var(--text); }
+.bd-week-tag .badge { font-size: 9px; margin-left: 6px; vertical-align: middle; }
+.bd-date { font-size: 12px; color: var(--text-dim); }
+.bd-pallet-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
+.bd-pallet-row + .bd-pallet-row { margin-top: 2px; }
+.bd-pallet-row .dot {
+  width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+}
+.bd-pallet-row .dot.tt    { background: #4338ca; }
+.bd-pallet-row .dot.amz   { background: #67e8f9; }
+.bd-pallet-row .dot.swap  { background: #f472b6; }
+.bd-pallet-row .dot.mix   { background: #94a3b8; }
+.bd-pallet-row .label { font-weight: 700; color: var(--text); width: 32px; }
+.bd-pallet-row .label.tt    { color: #a5b4fc; }
+.bd-pallet-row .label.amz   { color: #67e8f9; }
+.bd-pallet-row .label.swap  { color: var(--pink); }
+.bd-pallet-row .label.mix   { color: var(--text-dim); }
+.bd-pallet-row .val { color: var(--text); font-variant-numeric: tabular-nums; }
+.bd-charge-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; padding: 2px 0; }
+.bd-charge-row .k { color: var(--text-dim); }
+.bd-charge-row .v { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+.bd-charge-row.swap .v { color: var(--pink); }
+.bd-charge-row.muted .v { color: var(--text-dim); font-weight: 500; }
+.bd-total {
+  font-size: 18px; font-weight: 800; letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #22D3A5, #00E5FF);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+.bd-total-foot {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.3px;
+  background: linear-gradient(135deg, #22D3A5, #00E5FF);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-variant-numeric: tabular-nums;
+}
+.bd-export-btn {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: rgba(0, 229, 255, 0.08); color: var(--cyan);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  display: inline-grid; place-items: center;
+  cursor: pointer; font-size: 16px;
+  transition: all 0.15s ease;
+}
+.bd-export-btn:hover {
+  background: rgba(0, 229, 255, 0.18); transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 229, 255, 0.18);
+}
+
 /* Anomaly flag */
 .anomaly-flag {
   display: inline-block; margin-left: 6px;
@@ -1592,18 +1660,35 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
           <div id="breakdown-pane-client">
             <div class="page-sub mt-2" style="font-size:11px;">客人版 · 显示客人本周需要另外付给我的钱:每托 <b>£30 我</b> + <b>£10 Hugo</b> + Swap TT 额外 <b>£30</b>。点最右边 🖨 导出某一周给客人。</div>
-            <div class="table-wrap mt-2">
+            <div class="table-wrap mt-4 breakdown-table">
               <table>
-                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>费用明细</th><th>客人应付</th><th>导出</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th style="width:90px;">周次</th>
+                    <th style="width:140px;">日期</th>
+                    <th>托盘明细</th>
+                    <th>费用明细</th>
+                    <th style="width:140px;text-align:right;">本周应付</th>
+                    <th style="width:80px;text-align:center;">导出</th>
+                  </tr>
+                </thead>
                 <tbody id="bd-client-body"></tbody>
               </table>
             </div>
           </div>
           <div id="breakdown-pane-self" class="hide">
             <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托</div>
-            <div class="table-wrap mt-2">
+            <div class="table-wrap mt-4 breakdown-table">
               <table>
-                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>£51 利润</th><th>Hugo £7</th><th>V £2</th><th>Swap +£30</th><th>本周净利</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th style="width:90px;">周次</th>
+                    <th style="width:140px;">日期</th>
+                    <th>托盘明细</th>
+                    <th>收入明细</th>
+                    <th style="width:140px;text-align:right;">本周净利</th>
+                  </tr>
+                </thead>
                 <tbody id="bd-self-body"></tbody>
                 <tfoot id="bd-self-foot"></tfoot>
               </table>
@@ -5941,7 +6026,7 @@ function renderClientBreakdown(customer) {
   if (!customer) { tb.innerHTML = ''; return; }
   const weeks = customerWeeklyBreakdown(customer);
   if (!weeks.length) {
-    tb.innerHTML = `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="6" class="dim" style="text-align:center;padding:40px;">该客户暂无取货记录</td></tr>`;
     return;
   }
   const reversed = [...weeks].reverse();
@@ -5954,30 +6039,28 @@ function renderClientBreakdown(customer) {
     const swapSurchargeTotal = w.swapPallets * 30;
     const weekTotal = clientWeekTotal(w);
 
-    const swapCell = w.swapPallets > 0
-      ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${w.swapTrucks} 车 / ${w.swapPallets} 托</span>`
-      : '<span class="dim">—</span>';
+    // Pallet breakdown — multi-line with colored dots
+    const palletRows = [];
+    if (w.ttTrucks > 0)  palletRows.push(`<div class="bd-pallet-row"><span class="dot tt"></span><span class="label tt">TT</span><span class="val">${w.ttTrucks} 车 / ${w.ttPallets} 托</span></div>`);
+    if (w.amzTrucks > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot amz"></span><span class="label amz">AMZ</span><span class="val">${w.amzTrucks} 车 / ${w.amzPallets} 托</span></div>`);
+    if (w.swapPallets > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot swap"></span><span class="label swap">🔁</span><span class="val">${w.swapTrucks} 车 / ${w.swapPallets} 托 Swap</span></div>`);
+    if (w.mixTrucks > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot mix"></span><span class="label mix">未分类</span><span class="val">${w.mixTrucks} 车 / ${w.mixPallets} 托</span></div>`);
+    if (!palletRows.length) palletRows.push(`<div class="dim">—</div>`);
 
-    const detailLines = [
-      `<div style="font-size:11px;color:var(--text-dim);">${w.totalPallets} 托 × £${CLIENT_PROFIT_PER_PALLET}(我) = ${fmt(baseProfit)}</div>`,
-      `<div style="font-size:11px;color:var(--text-dim);">${w.totalPallets} 托 × £${CLIENT_HUGO_PER_PALLET}(Hugo) = ${fmt(hugoTotal)}</div>`,
-      w.swapPallets > 0 ? `<div style="font-size:11px;color:var(--pink);">+ ${w.swapPallets} 托 × £30 (Swap TT) = ${fmt(swapSurchargeTotal)}</div>` : ''
+    // Charge breakdown
+    const chargeRows = [
+      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} (我)</span><span class="v">${fmt(baseProfit)}</span></div>`,
+      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} (Hugo)</span><span class="v">${fmt(hugoTotal)}</span></div>`,
+      w.swapPallets > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £30 (Swap)</span><span class="v">${fmt(swapSurchargeTotal)}</span></div>` : ''
     ].filter(Boolean).join('');
 
-    // Mixed/Other warning: if there are unclassified pickups, hint to the user
-    const mixedNotice = w.mixTrucks > 0
-      ? `<div style="font-size:10px;color:var(--amber);margin-top:4px;">⚠ ${w.mixTrucks} 车 ${w.mixPallets} 托未分类(老数据,可不影响金额)</div>`
-      : '';
-
-    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
-      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
-      <td class="dim">${weekLabelShort(w.week)}</td>
-      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b>${mixedNotice}</td>
-      <td><b>${w.amzTrucks} 车 / ${w.amzPallets} 托</b></td>
-      <td>${swapCell}</td>
-      <td>${detailLines}</td>
-      <td class="pos"><b style="font-size:14px;">${fmt(weekTotal)}</b></td>
-      <td><button class="btn sm" title="导出这一周的对账给客人" onclick="exportClientBreakdown('${w.week}')">🖨</button></td>
+    return `<tr class="${isCurrent ? 'is-current' : ''}">
+      <td><div class="bd-week-tag">W${wkNum}${isCurrent ? ' <span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">本周</span>' : ''}</div></td>
+      <td><div class="bd-date">${weekLabelShort(w.week)}</div></td>
+      <td>${palletRows.join('')}</td>
+      <td>${chargeRows}</td>
+      <td style="text-align:right;"><div class="bd-total">${fmt(weekTotal)}</div></td>
+      <td style="text-align:center;"><button class="bd-export-btn" title="导出这一周的对账给客人" onclick="exportClientBreakdown('${w.week}')">🖨</button></td>
     </tr>`;
   }).join('');
 }
@@ -5990,7 +6073,7 @@ function renderSelfBreakdown(customer) {
   if (!customer) { tb.innerHTML = ''; if (tf) tf.innerHTML = ''; return; }
   const weeks = customerWeeklyBreakdown(customer);
   if (!weeks.length) {
-    tb.innerHTML = `<tr><td colspan="10" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="5" class="dim" style="text-align:center;padding:40px;">该客户暂无取货记录</td></tr>`;
     if (tf) tf.innerHTML = '';
     return;
   }
@@ -5998,7 +6081,7 @@ function renderSelfBreakdown(customer) {
   const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
 
   // Aggregate totals across ALL weeks for footer
-  let totProfit = 0, totHugo = 0, totV = 0, totSwap = 0, totNet = 0;
+  let totProfit = 0, totHugo = 0, totV = 0, totSwap = 0, totNet = 0, totPallets = 0, totSwapPallets = 0;
 
   tb.innerHTML = reversed.map(w => {
     const wkNum = isoWeekNum(w.week);
@@ -6007,35 +6090,47 @@ function renderSelfBreakdown(customer) {
     const hugo7    = w.totalPallets * SELF_HUGO_PER_PALLET;
     const v2       = w.totalPallets * SELF_V_PER_PALLET;
     const swapBonus = w.swapPallets * 30;
-    const weekNet  = profit51 + swapBonus;   // your net = base profit + swap bonus
+    const weekNet  = profit51 + swapBonus;
     totProfit += profit51; totHugo += hugo7; totV += v2; totSwap += swapBonus; totNet += weekNet;
+    totPallets += w.totalPallets; totSwapPallets += w.swapPallets;
 
-    const swapCell = w.swapPallets > 0
-      ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${w.swapTrucks} 车 / ${w.swapPallets} 托</span>`
-      : '<span class="dim">—</span>';
+    // Pallet breakdown — multi-line with colored dots
+    const palletRows = [];
+    if (w.ttTrucks > 0)  palletRows.push(`<div class="bd-pallet-row"><span class="dot tt"></span><span class="label tt">TT</span><span class="val">${w.ttTrucks} 车 / ${w.ttPallets} 托</span></div>`);
+    if (w.amzTrucks > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot amz"></span><span class="label amz">AMZ</span><span class="val">${w.amzTrucks} 车 / ${w.amzPallets} 托</span></div>`);
+    if (w.swapPallets > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot swap"></span><span class="label swap">🔁</span><span class="val">${w.swapTrucks} 车 / ${w.swapPallets} 托 Swap</span></div>`);
+    if (w.mixTrucks > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot mix"></span><span class="label mix">未分类</span><span class="val">${w.mixTrucks} 车 / ${w.mixPallets} 托</span></div>`);
+    if (!palletRows.length) palletRows.push(`<div class="dim">—</div>`);
 
-    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
-      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
-      <td class="dim">${weekLabelShort(w.week)}</td>
-      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b></td>
-      <td><b>${w.amzTrucks} 车 / ${w.amzPallets} 托</b></td>
-      <td>${swapCell}</td>
-      <td>${fmt(profit51)}</td>
-      <td class="dim">${fmt(hugo7)}</td>
-      <td class="dim">${fmt(v2)}</td>
-      <td class="${swapBonus > 0 ? '' : 'dim'}" style="${swapBonus > 0 ? 'color:var(--pink);font-weight:700;' : ''}">${swapBonus > 0 ? '+' + fmt(swapBonus) : '—'}</td>
-      <td class="pos"><b style="font-size:14px;">${fmt(weekNet)}</b></td>
+    // Income breakdown — base profit, Hugo, V, Swap bonus
+    const chargeRows = [
+      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${SELF_PROFIT_PER_PALLET} 净利</span><span class="v">${fmt(profit51)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${SELF_HUGO_PER_PALLET} Hugo</span><span class="v">${fmt(hugo7)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${SELF_V_PER_PALLET} V</span><span class="v">${fmt(v2)}</span></div>`,
+      swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £30 Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : ''
+    ].filter(Boolean).join('');
+
+    return `<tr class="${isCurrent ? 'is-current' : ''}">
+      <td><div class="bd-week-tag">W${wkNum}${isCurrent ? ' <span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">本周</span>' : ''}</div></td>
+      <td><div class="bd-date">${weekLabelShort(w.week)}</div></td>
+      <td>${palletRows.join('')}</td>
+      <td>${chargeRows}</td>
+      <td style="text-align:right;"><div class="bd-total">${fmt(weekNet)}</div></td>
     </tr>`;
   }).join('');
 
   if (tf) {
-    tf.innerHTML = `<tr style="background:rgba(0,229,255,0.04);">
-      <td colspan="5"><b>合计(该客户全部历史)</b></td>
-      <td><b>${fmt(totProfit)}</b></td>
-      <td class="dim">${fmt(totHugo)}</td>
-      <td class="dim">${fmt(totV)}</td>
-      <td style="color:var(--pink);font-weight:700;">${totSwap > 0 ? '+' + fmt(totSwap) : '—'}</td>
-      <td class="pos"><b style="font-size:15px;">${fmt(totNet)}</b></td>
+    const totalRows = [
+      `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${SELF_PROFIT_PER_PALLET} 净利</span><span class="v">${fmt(totProfit)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${SELF_HUGO_PER_PALLET} Hugo</span><span class="v">${fmt(totHugo)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${SELF_V_PER_PALLET} V</span><span class="v">${fmt(totV)}</span></div>`,
+      totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £30 Swap</span><span class="v">${fmt(totSwap)}</span></div>` : ''
+    ].filter(Boolean).join('');
+    tf.innerHTML = `<tr>
+      <td colspan="2"><div class="bd-week-tag">合计</div><div class="bd-date">该客户全部历史</div></td>
+      <td><div class="bd-pallet-row" style="font-weight:700;color:var(--text);">${totPallets} 托 · ${weeks.length} 周</div></td>
+      <td>${totalRows}</td>
+      <td style="text-align:right;"><div class="bd-total-foot">${fmt(totNet)}</div></td>
     </tr>`;
   }
 }
@@ -6112,87 +6207,95 @@ function exportClientBreakdown(weekMon) {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --ink: #0a0e1a; --ink-2: #1e293b; --muted: #64748b; --line: #e2e8f0; --line-soft: #f1f5f9; --bg: #fafbfc; --accent: #0f4c75; --accent-soft: #e8f1f8; --paper: #fff; }
+  :root { --ink: #0a0e1a; --ink-2: #1e293b; --muted: #64748b; --mute-2: #94a3b8; --line: #e2e8f0; --line-soft: #f1f5f9; --bg: #fafbfc; --accent: #0f4c75; --accent-soft: #eaf2fa; --paper: #fff; }
   html, body { background: var(--bg); }
-  body { font-family: 'Inter', sans-serif; color: var(--ink); font-size: 13px; line-height: 1.55; padding: 32px 16px; -webkit-font-smoothing: antialiased; }
-  .paper { max-width: 880px; margin: 0 auto; background: var(--paper); border-radius: 8px; box-shadow: 0 10px 40px rgba(10,14,26,0.08); overflow: hidden; }
-  .header { padding: 36px 48px 28px; background: linear-gradient(135deg, var(--accent), #1a6ca8); color: #fff; position: relative; }
-  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; }
-  .co-name { font-family: 'Playfair Display', Georgia, serif; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; }
-  .co-lines { margin-top: 8px; font-size: 11.5px; color: rgba(255,255,255,0.85); line-height: 1.7; }
-  .doc-title { text-align: right; }
-  .doc-title .label { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.7); }
-  .doc-title h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 900; margin-top: 2px; }
-  .doc-title .date { margin-top: 6px; font-size: 11px; color: rgba(255,255,255,0.85); }
+  body { font-family: 'Inter', sans-serif; color: var(--ink); font-size: 13px; line-height: 1.6; padding: 40px 20px; -webkit-font-smoothing: antialiased; font-feature-settings: 'tnum' on, 'ss01' on; }
+  .paper { max-width: 880px; margin: 0 auto; background: var(--paper); border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 20px 60px rgba(10,14,26,0.10); overflow: hidden; }
+  .header { padding: 56px 64px 48px; background: linear-gradient(135deg, var(--accent), #1a6ca8); color: #fff; position: relative; overflow: hidden; }
+  .header::after { content: ''; position: absolute; right: -100px; top: -100px; width: 280px; height: 280px; border-radius: 50%; background: rgba(255,255,255,0.05); }
+  .header::before { content: ''; position: absolute; right: 80px; bottom: -60px; width: 160px; height: 160px; border-radius: 50%; background: rgba(255,255,255,0.04); }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; position: relative; z-index: 1; }
+  .co-name { font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.1; }
+  .co-lines { margin-top: 14px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.85; }
+  .doc-title { text-align: right; flex-shrink: 0; }
+  .doc-title .label { font-size: 10.5px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: rgba(255,255,255,0.65); }
+  .doc-title h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 44px; font-weight: 900; margin-top: 4px; letter-spacing: -1px; line-height: 1; }
+  .doc-title .date { margin-top: 14px; font-size: 11.5px; color: rgba(255,255,255,0.85); letter-spacing: 0.5px; }
 
-  .meta { padding: 24px 48px 0; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 24px; }
-  .meta-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-  .meta-block .primary { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
-  .meta-block .lines { font-size: 11.5px; color: var(--ink-2); line-height: 1.6; }
+  .meta { padding: 40px 64px 0; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 36px; }
+  .meta-block .label { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--mute-2); margin-bottom: 10px; }
+  .meta-block .primary { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.3; }
+  .meta-block .lines { font-size: 12px; color: var(--ink-2); line-height: 1.75; }
 
-  .summary { margin: 24px 48px 0; padding: 18px 22px; background: var(--accent-soft); border-radius: 6px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr; gap: 18px; }
-  .sum-item .label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-  .sum-item .value { font-size: 16px; font-weight: 700; color: var(--ink); }
-  .sum-item.due { text-align: right; padding-left: 20px; border-left: 1px solid rgba(15,76,117,0.2); }
+  .summary { margin: 36px 64px 0; padding: 28px 32px; background: var(--accent-soft); border-radius: 12px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr; gap: 28px; align-items: center; }
+  .sum-item .label { font-size: 9.5px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .sum-item .value { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -0.2px; }
+  .sum-item.due { text-align: right; padding-left: 28px; border-left: 1px solid rgba(15,76,117,0.18); }
   .sum-item.due .label { color: var(--accent); font-weight: 800; }
-  .sum-item.due .value { font-size: 26px; color: var(--accent); }
+  .sum-item.due .value { font-size: 32px; color: var(--accent); letter-spacing: -0.8px; line-height: 1; }
 
-  .pricing-note { padding: 14px 48px; background: #fef9c3; border-top: 2px solid #fbbf24; border-bottom: 1px solid var(--line); font-size: 11.5px; color: #713f12; }
+  .pricing-note { padding: 18px 64px; background: #fef9c3; border-top: 2px solid #fbbf24; border-bottom: 1px solid var(--line); font-size: 12px; color: #713f12; line-height: 1.65; }
   .pricing-note b { color: #854d0e; }
 
-  .tx-wrap { padding: 22px 48px 8px; }
-  .tx-title { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  .tx-wrap { padding: 36px 64px 8px; }
+  .tx-title { font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
   table { width: 100%; border-collapse: collapse; }
-  thead th { text-align: left; padding: 8px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
+  thead th { text-align: left; padding: 12px 8px; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
   thead th.num { text-align: right; }
-  tbody td { padding: 12px 8px; border-bottom: 1px solid var(--line-soft); font-size: 12px; vertical-align: top; }
+  tbody td { padding: 22px 8px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; vertical-align: top; line-height: 1.7; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  td.total { font-size: 14px; font-weight: 700; color: var(--accent); }
-  td .line { margin-bottom: 2px; font-size: 11.5px; color: var(--ink-2); }
+  td.total { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; }
+  td .line { margin-bottom: 4px; font-size: 12px; color: var(--ink-2); }
   td .line .muted { color: var(--muted); font-size: 10.5px; }
-  td.period-col .period-range { font-weight: 700; color: var(--ink); }
-  td.period-col .period-meta { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
-  td.breakdown-col div { margin-bottom: 3px; font-size: 11.5px; color: var(--ink-2); }
-  tr.grand td { background: var(--ink); color: #fff !important; padding: 12px 8px; font-size: 14px; font-weight: 700; }
-  tr.grand td.total { font-size: 18px; }
+  td.period-col .period-range { font-weight: 700; color: var(--ink); font-size: 13.5px; line-height: 1.4; }
+  td.period-col .period-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  td.breakdown-col div { margin-bottom: 5px; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+  tr.grand td { background: var(--ink); color: #fff !important; padding: 22px 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+  tr.grand td.total { font-size: 22px; letter-spacing: -0.3px; }
 
-  .bottom { padding: 16px 48px; background: var(--ink); color: rgba(255,255,255,0.7); font-size: 11px; display: flex; justify-content: space-between; }
-  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 13px; font-style: italic; }
+  .bottom { padding: 24px 64px; background: var(--ink); color: rgba(255,255,255,0.65); font-size: 11px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.3px; }
+  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 14px; font-style: italic; font-weight: 400; }
 
   .btn-bar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 100; }
   .btn-bar button { padding: 10px 18px; background: var(--ink); color: #fff; border: 0; border-radius: 999px; cursor: pointer; font: 600 12px Inter; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
   .btn-bar button.alt { background: #fff; color: var(--ink); border: 1px solid var(--line); }
 
   @media print {
-    @page { size: A4; margin: 6mm 8mm; }
-    body { background: #fff !important; padding: 0 !important; font-size: 10px !important; }
+    @page { size: A4; margin: 10mm 12mm; }
+    body { background: #fff !important; padding: 0 !important; font-size: 11px !important; }
     .btn-bar { display: none !important; }
-    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; }
+    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; page-break-inside: avoid !important; }
     .header, .summary, .pricing-note, tr.grand td, .bottom { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    .header { padding: 14px 20px 10px !important; }
-    .co-name { font-size: 17px !important; }
-    .co-lines { font-size: 9px !important; }
-    .doc-title h1 { font-size: 22px !important; }
-    .doc-title .label { font-size: 8.5px !important; }
-    .meta { padding: 10px 20px 0 !important; gap: 14px !important; }
-    .meta-block .label { font-size: 8.5px !important; }
-    .meta-block .primary { font-size: 11px !important; }
-    .meta-block .lines { font-size: 9px !important; }
-    .summary { margin: 10px 20px 0 !important; padding: 8px 12px !important; }
-    .sum-item .label { font-size: 8px !important; }
-    .sum-item .value { font-size: 12px !important; }
-    .sum-item.due .value { font-size: 17px !important; }
-    .pricing-note { padding: 8px 20px !important; font-size: 9.5px !important; }
-    .tx-wrap { padding: 8px 20px 0 !important; }
-    .tx-title { font-size: 8.5px !important; margin-bottom: 5px !important; padding-bottom: 4px !important; }
-    thead th { padding: 5px 6px !important; font-size: 8px !important; }
-    tbody td { padding: 4px 6px !important; font-size: 9.5px !important; }
-    td .line { font-size: 9px !important; }
-    td.total { font-size: 11px !important; }
-    tr.grand td { padding: 6px 6px !important; font-size: 11px !important; }
-    tr.grand td.total { font-size: 14px !important; }
-    .bottom { padding: 7px 20px !important; font-size: 8.5px !important; }
-    .bottom .thanks { font-size: 10px !important; }
+    .header { padding: 22px 32px 18px !important; }
+    .header::before, .header::after { display: none !important; }
+    .co-name { font-size: 21px !important; }
+    .co-lines { font-size: 10px !important; margin-top: 8px !important; line-height: 1.65 !important; }
+    .doc-title h1 { font-size: 30px !important; margin-top: 2px !important; }
+    .doc-title .label { font-size: 9px !important; letter-spacing: 3px !important; }
+    .doc-title .date { font-size: 10px !important; margin-top: 8px !important; }
+    .meta { padding: 18px 32px 0 !important; gap: 20px !important; }
+    .meta-block .label { font-size: 9px !important; margin-bottom: 5px !important; }
+    .meta-block .primary { font-size: 13px !important; margin-bottom: 3px !important; }
+    .meta-block .lines { font-size: 10.5px !important; line-height: 1.6 !important; }
+    .summary { margin: 18px 32px 0 !important; padding: 14px 20px !important; gap: 16px !important; border-radius: 8px !important; }
+    .sum-item .label { font-size: 8.5px !important; margin-bottom: 4px !important; }
+    .sum-item .value { font-size: 13px !important; }
+    .sum-item.due .value { font-size: 22px !important; }
+    .sum-item.due { padding-left: 18px !important; }
+    .pricing-note { padding: 12px 32px !important; font-size: 10px !important; line-height: 1.55 !important; }
+    .tx-wrap { padding: 18px 32px 0 !important; }
+    .tx-title { font-size: 9.5px !important; margin-bottom: 10px !important; padding-bottom: 7px !important; }
+    thead th { padding: 8px 6px !important; font-size: 9px !important; }
+    tbody td { padding: 12px 6px !important; font-size: 10.5px !important; line-height: 1.55 !important; }
+    td .line { font-size: 10px !important; margin-bottom: 3px !important; }
+    td .line .muted { font-size: 9px !important; }
+    td.period-col .period-range { font-size: 11.5px !important; }
+    td.period-col .period-meta { font-size: 9.5px !important; }
+    td.total { font-size: 14px !important; }
+    tr.grand td { padding: 12px 6px !important; font-size: 12px !important; }
+    tr.grand td.total { font-size: 17px !important; }
+    .bottom { padding: 14px 32px !important; font-size: 9.5px !important; }
+    .bottom .thanks { font-size: 12px !important; }
   }
 </style>
 </head>
