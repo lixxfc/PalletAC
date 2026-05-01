@@ -1307,6 +1307,13 @@ select option { background: var(--bg-2); color: var(--text); }
             </select>
           </div>
           <div class="form-row"><label>托盘数</label><input type="number" id="d-pallets" placeholder="24" min="1" oninput="updatePickupPreview()"></div>
+          <div class="form-row"><label>类型</label>
+            <select id="d-type">
+              <option value="TT">TT</option>
+              <option value="AMAZON">AMAZON</option>
+              <option value="Mixed">混合</option>
+            </select>
+          </div>
           <div class="form-row"><label>车次（可选）</label><input type="text" id="d-truck" placeholder="T-001"></div>
           <div class="form-row" style="grid-column: 1/-1;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(244,114,182,0.06);border:1px dashed rgba(244,114,182,0.3);border-radius:10px;">
@@ -1414,6 +1421,13 @@ select option { background: var(--bg-2); color: var(--text); }
             <div class="form-row" id="lg-amount-row"><label id="lg-amount-label">金额 £</label><input type="number" id="lg-amount" placeholder="0" oninput="updateLedgerPreview()"></div>
             <div class="form-row row-hidden" id="lg-pallets-row"><label>托盘数</label><input type="number" id="lg-pallets" placeholder="24" min="1" oninput="updateLedgerPreview()"></div>
             <div class="form-row row-hidden" id="lg-truck-row"><label>车次（可选）</label><input type="text" id="lg-truck" placeholder="T-001"></div>
+            <div class="form-row row-hidden" id="lg-type-row"><label>类型</label>
+              <select id="lg-type-select">
+                <option value="TT">TT</option>
+                <option value="AMAZON">AMAZON</option>
+                <option value="Mixed">混合</option>
+              </select>
+            </div>
             <div class="form-row row-hidden" id="lg-swap-row" style="grid-column: 1/-1;">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(244,114,182,0.06);border:1px dashed rgba(244,114,182,0.3);border-radius:10px;">
                 <input type="checkbox" id="lg-swap" oninput="updateLedgerPreview()">
@@ -1440,6 +1454,42 @@ select option { background: var(--bg-2); color: var(--text); }
               <thead><tr><th>周次</th><th>日期范围</th><th>托盘</th><th>取货次数</th><th>营收</th><th>利润</th></tr></thead>
               <tbody id="cust-weekly-body"></tbody>
             </table>
+          </div>
+
+          <!-- ===== Weekly Statements (Customer-facing & Self) ===== -->
+          <div class="row mt-6" style="align-items:center;">
+            <div class="grow">
+              <div class="card-title">周度明细 <span class="badge">两份视图</span></div>
+              <div class="page-sub">客人版:导出给客人看(£30/托 我的利润 + £10/托 Hugo + Swap 加成);我的版:实际数字(£51/托 + £7 Hugo + £2 V + Swap 加成)</div>
+            </div>
+            <div class="row" style="gap:6px;">
+              <button class="btn ghost sm active" onclick="setBreakdownTab('client')" id="bd-tab-client">📄 客人版</button>
+              <button class="btn ghost sm" onclick="setBreakdownTab('self')" id="bd-tab-self">🔒 我的版</button>
+            </div>
+          </div>
+          <div id="breakdown-pane-client">
+            <div class="row mt-2" style="align-items:center;">
+              <div class="grow"><div class="page-sub" style="font-size:11px;">这一份给客人看,包含每周的 TT/AMAZON 托盘数 · 单价分解(£30 我 + £10 Hugo)· Swap TT 加价 · 客人本周应付总额</div></div>
+              <button class="btn sm" onclick="exportClientBreakdown()">🖨 导出 PDF</button>
+            </div>
+            <div class="table-wrap mt-2">
+              <table>
+                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>明细</th><th>本周应付</th></tr></thead>
+                <tbody id="bd-client-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="breakdown-pane-self" class="hide">
+            <div class="row mt-2" style="align-items:center;">
+              <div class="grow"><div class="page-sub" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托</div></div>
+            </div>
+            <div class="table-wrap mt-2">
+              <table>
+                <thead><tr><th>周次</th><th>日期范围</th><th>TT 车/托</th><th>AMZ 车/托</th><th>Swap TT</th><th>£51 利润</th><th>Hugo £7</th><th>V £2</th><th>Swap +£30</th><th>本周净利</th></tr></thead>
+                <tbody id="bd-self-body"></tbody>
+                <tfoot id="bd-self-foot"></tfoot>
+              </table>
+            </div>
           </div>
 
           <div class="row mt-6" style="align-items:center;">
@@ -2003,7 +2053,8 @@ function allPickups() {
         customerName: c.name,
         isSwap: !!e.isSwap,
         unitPrice: e.unitPrice,
-        swapPremium: e.swapPremium
+        swapPremium: e.swapPremium,
+        palletType: e.palletType || (e.isSwap ? 'TT' : 'Mixed')
       });
     }
   }
@@ -2443,6 +2494,9 @@ function renderCustomerDetail() {
   updateQuickQuote();
   // Render this customer's weekly profit table
   renderCustomerWeekly(c);
+  // Render the two weekly breakdowns (client-facing + self)
+  renderClientBreakdown(c);
+  renderSelfBreakdown(c);
   // Render invoice history
   renderCustomerInvoices(c);
 
@@ -2668,12 +2722,14 @@ function addPickup() {
   const isSwap = !!(swapEl && swapEl.checked);
   const unitPrice = effectiveUnitPrice(isSwap);
   const amount = pallets * unitPrice;
+  const palletType = (document.getElementById('d-type') ? document.getElementById('d-type').value : 'TT') || 'TT';
   c.ledger.push({
     id: crypto.randomUUID(),
     date, type: 'pickup', amount,
     unitPrice,
     isSwap,
     swapPremium: isSwap ? swapTtPremium() : 0,
+    palletType: isSwap ? 'TT' : palletType,    // swap is always TT
     pallets, truck, note
   });
   // Reset form (keep customer selected for rapid entry)
@@ -2681,6 +2737,7 @@ function addPickup() {
   document.getElementById('d-truck').value = '';
   document.getElementById('d-notes').value = '';
   if (swapEl) swapEl.checked = false;
+  if (document.getElementById('d-type')) document.getElementById('d-type').value = 'TT';
   save(); renderAll();
   flash('已记录：' + c.name + ' × ' + pallets + ' 托盘' + (isSwap ? ' 🔁 Swap TT' : ''));
 }
@@ -2808,36 +2865,43 @@ function updateLedgerForm() {
   const palletsRow = document.getElementById('lg-pallets-row');
   const truckRow = document.getElementById('lg-truck-row');
   const swapRow = document.getElementById('lg-swap-row');
+  const typeRow = document.getElementById('lg-type-row');
   const amountLbl = document.getElementById('lg-amount-label');
   const amountInp = document.getElementById('lg-amount');
 
+  const showPickupExtras = (t === 'pickup');
+  const togglePickupRows = (show) => {
+    if (show) {
+      palletsRow.classList.remove('row-hidden');
+      truckRow.classList.remove('row-hidden');
+      if (swapRow) swapRow.classList.remove('row-hidden');
+      if (typeRow) typeRow.classList.remove('row-hidden');
+    } else {
+      palletsRow.classList.add('row-hidden');
+      truckRow.classList.add('row-hidden');
+      if (swapRow) swapRow.classList.add('row-hidden');
+      if (typeRow) typeRow.classList.add('row-hidden');
+    }
+  };
+
   if (t === 'pickup') {
-    // Pickup: pallets + truck + swap shown, amount auto-computed and read-only
     amountRow.classList.add('row-hidden');
-    palletsRow.classList.remove('row-hidden');
-    truckRow.classList.remove('row-hidden');
-    if (swapRow) swapRow.classList.remove('row-hidden');
+    togglePickupRows(true);
   } else if (t === 'deposit') {
     amountLbl.textContent = '金额 £ (预付入账)';
     amountInp.placeholder = '例如 10000';
     amountRow.classList.remove('row-hidden');
-    palletsRow.classList.add('row-hidden');
-    truckRow.classList.add('row-hidden');
-    if (swapRow) swapRow.classList.add('row-hidden');
+    togglePickupRows(false);
   } else if (t === 'refund') {
     amountLbl.textContent = '金额 £ (退款)';
     amountInp.placeholder = '例如 500';
     amountRow.classList.remove('row-hidden');
-    palletsRow.classList.add('row-hidden');
-    truckRow.classList.add('row-hidden');
-    if (swapRow) swapRow.classList.add('row-hidden');
+    togglePickupRows(false);
   } else if (t === 'adjust') {
     amountLbl.textContent = '金额 £ (+ 为加 / - 为减)';
     amountInp.placeholder = '例如 -50 或 120';
     amountRow.classList.remove('row-hidden');
-    palletsRow.classList.add('row-hidden');
-    truckRow.classList.add('row-hidden');
-    if (swapRow) swapRow.classList.add('row-hidden');
+    togglePickupRows(false);
   }
   updateLedgerPreview();
 }
@@ -2911,12 +2975,14 @@ function addLedger() {
     const swapEl = document.getElementById('lg-swap');
     const isSwap = !!(swapEl && swapEl.checked);
     const unitPrice = effectiveUnitPrice(isSwap);
+    const palletType = (document.getElementById('lg-type-select') ? document.getElementById('lg-type-select').value : 'TT') || 'TT';
     entry = {
       id: crypto.randomUUID(), date, type: 'pickup',
       amount: pallets * unitPrice,
       unitPrice,                     // store for posterity (in case sellPrice changes later)
       isSwap,                        // tagged: this came from Emma's swap
       swapPremium: isSwap ? swapTtPremium() : 0,  // snapshot of premium at time of save
+      palletType: isSwap ? 'TT' : palletType,
       pallets, truck, note
     };
   } else if (type === 'deposit') {
@@ -5326,6 +5392,421 @@ function setWeeklyView(n) {
   if (btn) btn.classList.add('active');
   renderWeekly();
 }
+// ============================================================
+// CUSTOMER WEEKLY BREAKDOWN — 2 views (Client-facing / Self)
+// Public-facing markup story: £30 Michael + £10 Hugo + £30 swap surcharge
+// Self-facing real numbers: £51 profit + £7 Hugo + £2 V + £30 swap bonus
+// ============================================================
+const CLIENT_PROFIT_PER_PALLET = 30;   // 给客人说的"我的利润" / 托
+const CLIENT_HUGO_PER_PALLET = 10;     // 给客人说的"Hugo 费用" / 托
+const SELF_PROFIT_PER_PALLET = 51;     // 实际每托盘净利(=sellPrice+myFee-buyPrice)
+const SELF_HUGO_PER_PALLET = 7;        // 实际 Hugo
+const SELF_V_PER_PALLET = 2;           // 实际 V
+
+let currentBreakdownTab = 'client';
+function setBreakdownTab(tab) {
+  currentBreakdownTab = tab;
+  document.getElementById('bd-tab-client').classList.toggle('active', tab === 'client');
+  document.getElementById('bd-tab-self').classList.toggle('active', tab === 'self');
+  document.getElementById('breakdown-pane-client').classList.toggle('hide', tab !== 'client');
+  document.getElementById('breakdown-pane-self').classList.toggle('hide', tab !== 'self');
+}
+
+// Aggregate this customer's pickups by week, with type/swap breakdown.
+// Returns array of weeks (oldest → newest) with rich totals.
+function customerWeeklyBreakdown(customer) {
+  if (!customer) return [];
+  const map = {};
+  for (const e of (customer.ledger || [])) {
+    if (e.type !== 'pickup') continue;
+    const wk = weekStartOf(e.date);
+    if (!wk) continue;
+    if (!map[wk]) map[wk] = {
+      week: wk,
+      ttPallets: 0, ttTrucks: 0,
+      amzPallets: 0, amzTrucks: 0,
+      mixPallets: 0, mixTrucks: 0,
+      swapPallets: 0, swapTrucks: 0,
+      totalPallets: 0, totalTrucks: 0,
+      totalAmount: 0,                  // sum of customer balance deductions for the week
+      entries: []
+    };
+    const tp = e.palletType || (e.isSwap ? 'TT' : 'Mixed');
+    const isSwap = !!e.isSwap;
+    const pallets = e.pallets || 0;
+    map[wk].totalPallets += pallets;
+    map[wk].totalTrucks++;
+    map[wk].totalAmount += (e.amount || 0);
+    if (isSwap) { map[wk].swapPallets += pallets; map[wk].swapTrucks++; }
+    if (tp === 'TT') { map[wk].ttPallets += pallets; map[wk].ttTrucks++; }
+    else if (tp === 'AMAZON') { map[wk].amzPallets += pallets; map[wk].amzTrucks++; }
+    else { map[wk].mixPallets += pallets; map[wk].mixTrucks++; }
+    map[wk].entries.push({ id: e.id, date: e.date, pallets, palletType: tp, isSwap, amount: e.amount });
+  }
+  return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
+}
+
+// Render the client-facing breakdown (public markup story)
+function renderClientBreakdown(customer) {
+  const tb = document.getElementById('bd-client-body');
+  if (!tb) return;
+  if (!customer) { tb.innerHTML = ''; return; }
+  const weeks = customerWeeklyBreakdown(customer);
+  if (!weeks.length) {
+    tb.innerHTML = `<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    return;
+  }
+  const reversed = [...weeks].reverse();
+  const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
+  tb.innerHTML = reversed.map(w => {
+    const wkNum = isoWeekNum(w.week);
+    const isCurrent = w.week === todayWk;
+    // Customer-facing math: every pallet = £30 (Michael) + £10 (Hugo) breakdown shown,
+    // plus £30 surcharge per swap pallet. Total = w.totalAmount (matches their prepay deduction).
+    const baseProfit = w.totalPallets * CLIENT_PROFIT_PER_PALLET;
+    const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
+    const swapSurchargeTotal = w.swapPallets * 30;
+    const summary = [];
+    if (w.ttTrucks) summary.push(`<span style="color:#a5b4fc;font-weight:700;">TT</span> ${w.ttTrucks} 车/${w.ttPallets} 托`);
+    if (w.amzTrucks) summary.push(`<span style="color:#67e8f9;font-weight:700;">AMZ</span> ${w.amzTrucks} 车/${w.amzPallets} 托`);
+    if (w.mixTrucks) summary.push(`<span class="dim">混合</span> ${w.mixTrucks} 车/${w.mixPallets} 托`);
+
+    const swapCell = w.swapPallets > 0
+      ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${w.swapTrucks} 车 / ${w.swapPallets} 托</span>`
+      : '<span class="dim">—</span>';
+
+    const detailLines = [
+      `<div style="font-size:11px;color:var(--text-dim);">${w.totalPallets} 托 × £${CLIENT_PROFIT_PER_PALLET}(我) = ${fmt(baseProfit)}</div>`,
+      `<div style="font-size:11px;color:var(--text-dim);">${w.totalPallets} 托 × £${CLIENT_HUGO_PER_PALLET}(Hugo) = ${fmt(hugoTotal)}</div>`,
+      w.swapPallets > 0 ? `<div style="font-size:11px;color:var(--pink);">+ ${w.swapPallets} 托 × £30 (Swap TT) = ${fmt(swapSurchargeTotal)}</div>` : ''
+    ].filter(Boolean).join('');
+
+    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
+      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
+      <td class="dim">${weekLabelShort(w.week)}</td>
+      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b></td>
+      <td><b>${w.amzTrucks} 车 / ${w.amzPallets} 托</b></td>
+      <td>${swapCell}</td>
+      <td>${detailLines}</td>
+      <td class="pos"><b style="font-size:14px;">${fmt(w.totalAmount)}</b></td>
+    </tr>`;
+  }).join('');
+}
+
+// Render the SELF-facing breakdown (real numbers)
+function renderSelfBreakdown(customer) {
+  const tb = document.getElementById('bd-self-body');
+  const tf = document.getElementById('bd-self-foot');
+  if (!tb) return;
+  if (!customer) { tb.innerHTML = ''; if (tf) tf.innerHTML = ''; return; }
+  const weeks = customerWeeklyBreakdown(customer);
+  if (!weeks.length) {
+    tb.innerHTML = `<tr><td colspan="10" class="dim" style="text-align:center;padding:30px;">该客户暂无取货记录</td></tr>`;
+    if (tf) tf.innerHTML = '';
+    return;
+  }
+  const reversed = [...weeks].reverse();
+  const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
+
+  // Aggregate totals across ALL weeks for footer
+  let totProfit = 0, totHugo = 0, totV = 0, totSwap = 0, totNet = 0;
+
+  tb.innerHTML = reversed.map(w => {
+    const wkNum = isoWeekNum(w.week);
+    const isCurrent = w.week === todayWk;
+    const profit51 = w.totalPallets * SELF_PROFIT_PER_PALLET;
+    const hugo7    = w.totalPallets * SELF_HUGO_PER_PALLET;
+    const v2       = w.totalPallets * SELF_V_PER_PALLET;
+    const swapBonus = w.swapPallets * 30;
+    const weekNet  = profit51 + swapBonus;   // your net = base profit + swap bonus
+    totProfit += profit51; totHugo += hugo7; totV += v2; totSwap += swapBonus; totNet += weekNet;
+
+    const swapCell = w.swapPallets > 0
+      ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${w.swapTrucks} 车 / ${w.swapPallets} 托</span>`
+      : '<span class="dim">—</span>';
+
+    return `<tr ${isCurrent ? 'style="background:rgba(0,229,255,0.06);"' : ''}>
+      <td><b>W${wkNum}</b>${isCurrent ? ' <span class="badge" style="font-size:9px;">本周</span>' : ''}</td>
+      <td class="dim">${weekLabelShort(w.week)}</td>
+      <td><b>${w.ttTrucks} 车 / ${w.ttPallets} 托</b></td>
+      <td><b>${w.amzTrucks} 车 / ${w.amzPallets} 托</b></td>
+      <td>${swapCell}</td>
+      <td>${fmt(profit51)}</td>
+      <td class="dim">${fmt(hugo7)}</td>
+      <td class="dim">${fmt(v2)}</td>
+      <td class="${swapBonus > 0 ? '' : 'dim'}" style="${swapBonus > 0 ? 'color:var(--pink);font-weight:700;' : ''}">${swapBonus > 0 ? '+' + fmt(swapBonus) : '—'}</td>
+      <td class="pos"><b style="font-size:14px;">${fmt(weekNet)}</b></td>
+    </tr>`;
+  }).join('');
+
+  if (tf) {
+    tf.innerHTML = `<tr style="background:rgba(0,229,255,0.04);">
+      <td colspan="5"><b>合计(该客户全部历史)</b></td>
+      <td><b>${fmt(totProfit)}</b></td>
+      <td class="dim">${fmt(totHugo)}</td>
+      <td class="dim">${fmt(totV)}</td>
+      <td style="color:var(--pink);font-weight:700;">${totSwap > 0 ? '+' + fmt(totSwap) : '—'}</td>
+      <td class="pos"><b style="font-size:15px;">${fmt(totNet)}</b></td>
+    </tr>`;
+  }
+}
+
+// Export the client-facing weekly breakdown as a printable HTML document.
+function exportClientBreakdown() {
+  if (!currentCustomer) { alert('先选一个客户'); return; }
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const weeks = customerWeeklyBreakdown(c);
+  if (!weeks.length) { alert('该客户暂无取货记录'); return; }
+
+  const company = state.company || {};
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round(v * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+
+  // Compute grand totals
+  let grandTotal = 0, grandPallets = 0, grandTT = 0, grandAMZ = 0, grandSwap = 0;
+  weeks.forEach(w => {
+    grandTotal += w.totalAmount;
+    grandPallets += w.totalPallets;
+    grandTT += w.ttPallets;
+    grandAMZ += w.amzPallets;
+    grandSwap += w.swapPallets;
+  });
+
+  const reversed = [...weeks].reverse();
+  const rowsHtml = reversed.map(w => {
+    const wkRange = (() => {
+      const m = new Date(w.week + 'T12:00:00');
+      const s = new Date(m); s.setDate(s.getDate() + 6);
+      return `${fmtDate(w.week)} – ${fmtDate(s.toISOString().slice(0,10))}`;
+    })();
+    const baseProfit = w.totalPallets * CLIENT_PROFIT_PER_PALLET;
+    const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
+    const swapSurcharge = w.swapPallets * 30;
+
+    const ttLine = w.ttTrucks > 0 ? `<div><span style="color:#3730a3;font-weight:700;">TT:</span> ${w.ttTrucks} truck${w.ttTrucks===1?'':'s'} &middot; ${w.ttPallets} pallets</div>` : '';
+    const amzLine = w.amzTrucks > 0 ? `<div><span style="color:#0e7490;font-weight:700;">AMAZON:</span> ${w.amzTrucks} truck${w.amzTrucks===1?'':'s'} &middot; ${w.amzPallets} pallets</div>` : '';
+    const mixLine = w.mixTrucks > 0 ? `<div><span style="color:#64748b;">Other:</span> ${w.mixTrucks} truck${w.mixTrucks===1?'':'s'} &middot; ${w.mixPallets} pallets</div>` : '';
+    const swapLine = w.swapPallets > 0 ? `<div style="color:#b91c1c;font-weight:700;margin-top:4px;">🔁 Swap TT: ${w.swapTrucks} truck${w.swapTrucks===1?'':'s'} &middot; ${w.swapPallets} pallets (+£30 each)</div>` : '';
+
+    return `<tr>
+      <td class="period-col">
+        <div class="period-range">${wkRange}</div>
+        <div class="period-meta">${w.totalTrucks} truck${w.totalTrucks===1?'':'s'} &middot; ${w.totalPallets} pallets</div>
+      </td>
+      <td class="breakdown-col">${ttLine}${amzLine}${mixLine}${swapLine}</td>
+      <td class="num">
+        <div class="line">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} <span class="muted">(my fee)</span> = ${money(baseProfit)}</div>
+        <div class="line">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} <span class="muted">(Hugo)</span> = ${money(hugoTotal)}</div>
+        ${w.swapPallets > 0 ? `<div class="line" style="color:#b91c1c;">${w.swapPallets} × £30 <span class="muted">(swap surcharge)</span> = ${money(swapSurcharge)}</div>` : ''}
+      </td>
+      <td class="num total"><b>${money(w.totalAmount)}</b></td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Weekly Pallet Statement &mdash; ${esc(c.name)}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --ink: #0a0e1a; --ink-2: #1e293b; --muted: #64748b; --line: #e2e8f0; --line-soft: #f1f5f9; --bg: #fafbfc; --accent: #0f4c75; --accent-soft: #e8f1f8; --paper: #fff; }
+  html, body { background: var(--bg); }
+  body { font-family: 'Inter', sans-serif; color: var(--ink); font-size: 13px; line-height: 1.55; padding: 32px 16px; -webkit-font-smoothing: antialiased; }
+  .paper { max-width: 880px; margin: 0 auto; background: var(--paper); border-radius: 8px; box-shadow: 0 10px 40px rgba(10,14,26,0.08); overflow: hidden; }
+  .header { padding: 36px 48px 28px; background: linear-gradient(135deg, var(--accent), #1a6ca8); color: #fff; position: relative; }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; }
+  .co-name { font-family: 'Playfair Display', Georgia, serif; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; }
+  .co-lines { margin-top: 8px; font-size: 11.5px; color: rgba(255,255,255,0.85); line-height: 1.7; }
+  .doc-title { text-align: right; }
+  .doc-title .label { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+  .doc-title h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 900; margin-top: 2px; }
+  .doc-title .date { margin-top: 6px; font-size: 11px; color: rgba(255,255,255,0.85); }
+
+  .meta { padding: 24px 48px 0; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 24px; }
+  .meta-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .meta-block .primary { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .meta-block .lines { font-size: 11.5px; color: var(--ink-2); line-height: 1.6; }
+
+  .summary { margin: 24px 48px 0; padding: 18px 22px; background: var(--accent-soft); border-radius: 6px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr; gap: 18px; }
+  .sum-item .label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .sum-item .value { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .sum-item.due { text-align: right; padding-left: 20px; border-left: 1px solid rgba(15,76,117,0.2); }
+  .sum-item.due .label { color: var(--accent); font-weight: 800; }
+  .sum-item.due .value { font-size: 26px; color: var(--accent); }
+
+  .pricing-note { padding: 14px 48px; background: #fef9c3; border-top: 2px solid #fbbf24; border-bottom: 1px solid var(--line); font-size: 11.5px; color: #713f12; }
+  .pricing-note b { color: #854d0e; }
+
+  .tx-wrap { padding: 22px 48px 8px; }
+  .tx-title { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { text-align: left; padding: 8px; font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
+  thead th.num { text-align: right; }
+  tbody td { padding: 12px 8px; border-bottom: 1px solid var(--line-soft); font-size: 12px; vertical-align: top; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.total { font-size: 14px; font-weight: 700; color: var(--accent); }
+  td .line { margin-bottom: 2px; font-size: 11.5px; color: var(--ink-2); }
+  td .line .muted { color: var(--muted); font-size: 10.5px; }
+  td.period-col .period-range { font-weight: 700; color: var(--ink); }
+  td.period-col .period-meta { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+  td.breakdown-col div { margin-bottom: 3px; font-size: 11.5px; color: var(--ink-2); }
+  tr.grand td { background: var(--ink); color: #fff !important; padding: 12px 8px; font-size: 14px; font-weight: 700; }
+  tr.grand td.total { font-size: 18px; }
+
+  .bottom { padding: 16px 48px; background: var(--ink); color: rgba(255,255,255,0.7); font-size: 11px; display: flex; justify-content: space-between; }
+  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 13px; font-style: italic; }
+
+  .btn-bar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 100; }
+  .btn-bar button { padding: 10px 18px; background: var(--ink); color: #fff; border: 0; border-radius: 999px; cursor: pointer; font: 600 12px Inter; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+  .btn-bar button.alt { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+  @media print {
+    @page { size: A4; margin: 6mm 8mm; }
+    body { background: #fff !important; padding: 0 !important; font-size: 10px !important; }
+    .btn-bar { display: none !important; }
+    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; }
+    .header, .summary, .pricing-note, tr.grand td, .bottom { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .header { padding: 14px 20px 10px !important; }
+    .co-name { font-size: 17px !important; }
+    .co-lines { font-size: 9px !important; }
+    .doc-title h1 { font-size: 22px !important; }
+    .doc-title .label { font-size: 8.5px !important; }
+    .meta { padding: 10px 20px 0 !important; gap: 14px !important; }
+    .meta-block .label { font-size: 8.5px !important; }
+    .meta-block .primary { font-size: 11px !important; }
+    .meta-block .lines { font-size: 9px !important; }
+    .summary { margin: 10px 20px 0 !important; padding: 8px 12px !important; }
+    .sum-item .label { font-size: 8px !important; }
+    .sum-item .value { font-size: 12px !important; }
+    .sum-item.due .value { font-size: 17px !important; }
+    .pricing-note { padding: 8px 20px !important; font-size: 9.5px !important; }
+    .tx-wrap { padding: 8px 20px 0 !important; }
+    .tx-title { font-size: 8.5px !important; margin-bottom: 5px !important; padding-bottom: 4px !important; }
+    thead th { padding: 5px 6px !important; font-size: 8px !important; }
+    tbody td { padding: 4px 6px !important; font-size: 9.5px !important; }
+    td .line { font-size: 9px !important; }
+    td.total { font-size: 11px !important; }
+    tr.grand td { padding: 6px 6px !important; font-size: 11px !important; }
+    tr.grand td.total { font-size: 14px !important; }
+    .bottom { padding: 7px 20px !important; font-size: 8.5px !important; }
+    .bottom .thanks { font-size: 10px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="btn-bar">
+  <button onclick="window.print()">Download / Print PDF</button>
+  <button class="alt" onclick="window.close()">Close</button>
+</div>
+<div class="paper">
+  <div class="header">
+    <div class="header-inner">
+      <div>
+        <div class="co-name">${esc(company.name || 'Your Company')}</div>
+        <div class="co-lines">
+          ${company.address ? esc(company.address) : ''}${company.postcode ? ', ' + esc(company.postcode) : ''}
+          ${company.phone ? '<br>Tel: ' + esc(company.phone) : ''}
+          ${company.email ? '<br>' + esc(company.email) : ''}
+          ${(company.companyNo || company.vatNo) ? '<br><span style="opacity:0.7;font-size:10.5px;">' + (company.companyNo ? 'Company No. ' + esc(company.companyNo) : '') + (company.companyNo && company.vatNo ? ' &nbsp;·&nbsp; ' : '') + (company.vatNo ? 'VAT ' + esc(company.vatNo) : '') + '</span>' : ''}
+        </div>
+      </div>
+      <div class="doc-title">
+        <div class="label">Weekly Pallet</div>
+        <h1>Statement</h1>
+        <div class="date">Issued ${fmtDate(new Date().toISOString().slice(0, 10))}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="meta-block">
+      <div class="label">Customer</div>
+      <div class="primary">${esc(c.name)}</div>
+      <div class="lines">
+        ${c.address ? esc(c.address) + '<br>' : ''}
+        ${c.postcode ? esc(c.postcode) + '<br>' : ''}
+        ${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}
+        ${c.companyNo ? 'Company No. ' + esc(c.companyNo) : ''}
+      </div>
+    </div>
+    <div class="meta-block">
+      <div class="label">Period</div>
+      <div class="primary">${weeks.length} weeks</div>
+      <div class="lines">${fmtDate(weeks[0].week)} → ${fmtDate(weeks[weeks.length-1].week)}</div>
+    </div>
+    <div class="meta-block" style="text-align:right;">
+      <div class="label">Total Pallets</div>
+      <div class="primary">${grandPallets} pallets</div>
+      <div class="lines">TT ${grandTT} &middot; AMZ ${grandAMZ}${grandSwap > 0 ? ' &middot; Swap ' + grandSwap : ''}</div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="sum-item">
+      <div class="label">My Fee</div>
+      <div class="value">£${CLIENT_PROFIT_PER_PALLET} / pallet</div>
+    </div>
+    <div class="sum-item">
+      <div class="label">Hugo's Fee</div>
+      <div class="value">£${CLIENT_HUGO_PER_PALLET} / pallet</div>
+    </div>
+    <div class="sum-item">
+      <div class="label">Swap TT Surcharge</div>
+      <div class="value">+£30 / pallet</div>
+    </div>
+    <div class="sum-item due">
+      <div class="label">Grand Total</div>
+      <div class="value">${money(grandTotal)}</div>
+    </div>
+  </div>
+
+  ${grandSwap > 0 ? `<div class="pricing-note"><b>🔁 Swap TT Pallets:</b> ${grandSwap} pallets across all weeks. These were special pallets we secured for you, with a £30/pallet surcharge applied.</div>` : ''}
+
+  <div class="tx-wrap">
+    <div class="tx-title">Weekly Breakdown</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 22%;">Week</th>
+          <th>Pallet Breakdown</th>
+          <th class="num" style="width: 32%;">Charges</th>
+          <th class="num" style="width: 14%;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+        <tr class="grand">
+          <td colspan="3">GRAND TOTAL · ${weeks.length} weeks · ${grandPallets} pallets</td>
+          <td class="num total">${money(grandTotal)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bottom">
+    <div>${esc(c.name)} &nbsp;·&nbsp; ${weeks.length} weeks &nbsp;·&nbsp; ${grandPallets} pallets &nbsp;·&nbsp; Generated ${new Date().toISOString().slice(0, 10)}</div>
+    <div class="thanks">Thank you for your business.</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口后再试'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 // === Monthly History Cards (dashboard, bottom) ===
 let monthHistoryLimit = 6;  // 0 = all
 function setMonthHistoryView(v) {
