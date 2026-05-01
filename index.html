@@ -757,6 +757,89 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
   .quote-input-wrap input { width: 100%; }
 }
 
+/* === Monthly History Cards === */
+.month-history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+.month-card {
+  position: relative;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(0, 229, 255, 0.04) 100%);
+  border: 1px solid rgba(139, 150, 255, 0.18);
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.month-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple), var(--pink));
+  opacity: 0.6;
+}
+.month-card::after {
+  content: '';
+  position: absolute; right: -24px; top: -24px;
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.18), transparent 65%);
+  pointer-events: none;
+}
+.month-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 229, 255, 0.15);
+}
+.month-card-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  margin-bottom: 14px; position: relative; z-index: 1;
+}
+.month-card-title {
+  font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: 0.3px;
+}
+.month-card-trend {
+  font-size: 11px; font-weight: 700; padding: 4px 10px;
+  border-radius: 999px; letter-spacing: 0.3px;
+}
+.month-card-headline {
+  font-size: 30px; font-weight: 800; letter-spacing: -0.5px; line-height: 1;
+  background: linear-gradient(135deg, #22D3A5, #00E5FF);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.month-card-headline-label {
+  font-size: 11px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-top: 4px; font-weight: 600;
+}
+.month-card-stats {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px dashed rgba(139, 150, 255, 0.16);
+}
+.month-card-stat .stat-label {
+  font-size: 10px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600;
+}
+.month-card-stat .stat-value {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  margin-top: 3px; font-variant-numeric: tabular-nums;
+}
+.month-card-stat .stat-sub {
+  font-size: 10.5px; color: var(--text-dim); margin-top: 2px;
+}
+.month-card-typebreak {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: rgba(5, 6, 15, 0.4);
+  border-radius: 10px;
+  border: 1px solid rgba(139, 150, 255, 0.08);
+}
+.btn.ghost.active { background: rgba(0, 229, 255, 0.12); border-color: rgba(0, 229, 255, 0.45); color: var(--cyan); }
+
 /* Mobile nav */
 .mobile-nav {
   display: none;
@@ -916,6 +999,22 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="chart-box"><canvas id="chart-cumspend"></canvas></div>
         </div>
       </div>
+
+      <!-- ===== Monthly History Cards ===== -->
+      <div class="card mt-6">
+        <div class="row" style="align-items:center;">
+          <div class="grow">
+            <div class="card-title">月度历史 <span class="badge" id="mh-count">0 月</span></div>
+            <div class="page-sub">每月汇总:取货数 / 类型分布 / 转账金额 / Hugo 提成 · 不含本月</div>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm active" onclick="setMonthHistoryView('6')" id="mh-btn-6">近 6 月</button>
+            <button class="btn ghost sm" onclick="setMonthHistoryView('12')" id="mh-btn-12">近 12 月</button>
+            <button class="btn ghost sm" onclick="setMonthHistoryView('all')" id="mh-btn-all">全部</button>
+          </div>
+        </div>
+        <div class="month-history-grid" id="month-history-grid"></div>
+      </div>
     </section>
 
     <!-- ===== Transfer ===== -->
@@ -962,6 +1061,13 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div class="form-grid">
           <div class="form-row"><label>日期</label><input type="date" id="p-date"></div>
           <div class="form-row"><label>托盘数</label><input type="number" id="p-pallets" placeholder="24" min="1" oninput="updatePickupPreview()"></div>
+          <div class="form-row"><label>类型</label>
+            <select id="p-type">
+              <option value="TT">TT</option>
+              <option value="AMAZON">AMAZON</option>
+              <option value="Mixed">混合</option>
+            </select>
+          </div>
           <div class="form-row"><label>车次（可选）</label><input type="text" id="p-truck" placeholder="T-001"></div>
           <div class="form-row" style="grid-column:1/-1;"><label>备注（可选）</label><input type="text" id="p-note" placeholder="备注"></div>
         </div>
@@ -974,7 +1080,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div class="card-title">全部取货 <span class="badge" id="pickup-count">0 条</span></div>
         <div class="table-wrap mt-4">
           <table>
-            <thead><tr><th>日期</th><th>加的人</th><th>托盘</th><th>车次</th><th>花费</th><th>Hugo 提成</th><th>备注</th><th></th></tr></thead>
+            <thead><tr><th>日期</th><th>加的人</th><th>类型</th><th>托盘</th><th>车次</th><th>花费</th><th>Hugo 提成</th><th>备注</th><th></th></tr></thead>
             <tbody id="pickup-body"></tbody>
           </table>
         </div>
@@ -1510,9 +1616,16 @@ function renderPickups() {
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
       : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
     const commission = (r.pallets || 0) * rate;
+    const tp = r.palletType || 'Mixed';
+    const typeBadge = tp === 'TT'
+      ? '<span class="badge" style="background:rgba(67,56,202,0.30);color:#a5b4fc;font-weight:700;border:1px solid rgba(99,102,241,0.5);">TT</span>'
+      : tp === 'AMAZON'
+      ? '<span class="badge" style="background:rgba(103,232,249,0.18);color:#67e8f9;font-weight:700;border:1px solid rgba(34,211,238,0.4);">AMZ</span>'
+      : '<span class="badge" style="background:rgba(148,163,196,0.15);color:var(--text-dim);">混合</span>';
     return `<tr${cls}>
       <td>${r.date}</td>
       ${creatorCell(r)}
+      <td>${typeBadge}</td>
       <td><b>${r.pallets}</b></td>
       <td class="dim">${escapeHtml(r.truck || '-')}</td>
       <td class="neg">-${fmt(r.amount)}</td>
@@ -1521,7 +1634,7 @@ function renderPickups() {
       <td>${btn}</td>
     </tr>`;
   }).join('');
-  document.getElementById('pickup-body').innerHTML = body || `<tr><td colspan="8" class="dim" style="text-align:center;padding:40px;">暂无取货</td></tr>`;
+  document.getElementById('pickup-body').innerHTML = body || `<tr><td colspan="9" class="dim" style="text-align:center;padding:40px;">暂无取货</td></tr>`;
   updatePickupPreview();
 }
 
@@ -2288,12 +2401,14 @@ function addPickup() {
   const pallets = parseInt(document.getElementById('p-pallets').value);
   const truck = document.getElementById('p-truck').value.trim();
   const note = document.getElementById('p-note').value.trim();
+  const palletType = (document.getElementById('p-type') ? document.getElementById('p-type').value : 'Mixed') || 'Mixed';
   if (!date) { alert('请选择日期'); return; }
   if (!pallets || pallets <= 0) { alert('托盘数必须 > 0'); return; }
   state.events.push({
     id: crypto.randomUUID(),
     date, type: 'pickup',
     pallets,
+    palletType,                                    // TT / AMAZON / Mixed
     amount: pallets * state.params.buyPrice,
     truck, note,
     createdBy: currentEmail(),
@@ -2301,6 +2416,7 @@ function addPickup() {
   });
   document.getElementById('p-pallets').value = '';
   document.getElementById('p-truck').value = '';
+  if (document.getElementById('p-type')) document.getElementById('p-type').value = 'TT';
   document.getElementById('p-note').value = '';
   save(); renderAll();
   flash('已记录取货 ' + pallets + ' 托盘');
@@ -2535,8 +2651,142 @@ function renderAll() {
   renderSettings();
   renderInsights();
   renderCharts();
+  if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory();
   // Refresh quick quote so balance and unit price stay in sync
   if (typeof updateEmmaQuote === 'function') updateEmmaQuote();
+}
+
+// === Monthly History Cards (partnership dashboard, bottom) ===
+let monthHistoryLimit = 6;
+function setMonthHistoryView(v) {
+  monthHistoryLimit = (v === 'all') ? 0 : parseInt(v, 10) || 6;
+  ['6','12','all'].forEach(k => {
+    const el = document.getElementById('mh-btn-' + k);
+    if (el) el.classList.remove('active');
+  });
+  const btn = document.getElementById('mh-btn-' + (v || '6'));
+  if (btn) btn.classList.add('active');
+  renderMonthlyHistory();
+}
+
+function renderMonthlyHistory() {
+  const grid = document.getElementById('month-history-grid');
+  const cnt = document.getElementById('mh-count');
+  if (!grid) return;
+
+  const map = {};
+  const monthOf = (d) => (d || '').slice(0, 7);
+  const ensureBucket = (ym) => {
+    if (!map[ym]) map[ym] = {
+      ym,
+      pickupCount: 0, pallets: 0, spent: 0,
+      ttPallets: 0, ttCount: 0,
+      amzPallets: 0, amzCount: 0,
+      mixPallets: 0, mixCount: 0,
+      transferCount: 0, transferred: 0,
+      hugoCommission: 0
+    };
+    return map[ym];
+  };
+
+  const rate = hugoRate();
+
+  // Pickups (active only — exclude soft-deleted)
+  for (const r of getPickupsAll()) {
+    if (r.deleted) continue;
+    const ym = monthOf(r.date); if (!ym) continue;
+    const b = ensureBucket(ym);
+    b.pickupCount++;
+    b.pallets += (r.pallets || 0);
+    b.spent += (r.amount || 0);
+    b.hugoCommission += (r.pallets || 0) * rate;
+    const tp = r.palletType || 'Mixed';
+    if (tp === 'TT') { b.ttPallets += (r.pallets || 0); b.ttCount++; }
+    else if (tp === 'AMAZON') { b.amzPallets += (r.pallets || 0); b.amzCount++; }
+    else { b.mixPallets += (r.pallets || 0); b.mixCount++; }
+  }
+
+  // Transfers (active only)
+  for (const r of getTransfersAll()) {
+    if (r.deleted) continue;
+    const ym = monthOf(r.date); if (!ym) continue;
+    const b = ensureBucket(ym);
+    b.transferCount++;
+    b.transferred += (r.amount || 0);
+  }
+
+  // Sort desc, exclude current month
+  const currentYM = new Date().toISOString().slice(0, 7);
+  let history = Object.values(map)
+    .filter(m => m.ym !== currentYM)
+    .sort((a, b) => b.ym.localeCompare(a.ym));
+
+  if (cnt) cnt.textContent = history.length + ' 月';
+
+  if (!history.length) {
+    grid.innerHTML = `<div class="dim" style="grid-column:1/-1;text-align:center;padding:40px;border:1px dashed rgba(139,150,255,0.15);border-radius:14px;">
+      还没有上个月或更早的历史数据 — 等到下个月会自动出现这个月的卡片
+    </div>`;
+    return;
+  }
+
+  if (monthHistoryLimit > 0) history = history.slice(0, monthHistoryLimit);
+
+  grid.innerHTML = history.map((m, i) => {
+    const next = history[i + 1];
+    // Headline = net flow into Emma's account this month (transferred − pickup spend)
+    const netFlow = m.transferred - m.spent;
+    const trend = (next && next.transferred !== 0) ? ((m.transferred - next.transferred) / Math.abs(next.transferred) * 100) : null;
+    const trendBg = trend == null ? 'rgba(148,163,196,0.15)' : (trend >= 0 ? 'rgba(34,211,165,0.15)' : 'rgba(251,113,133,0.15)');
+    const trendColor = trend == null ? 'var(--text-dim)' : (trend >= 0 ? 'var(--green)' : 'var(--rose)');
+    const trendTxt = trend == null ? '—' : ((trend >= 0 ? '↑ +' : '↓ ') + Math.abs(trend).toFixed(1) + '%');
+
+    const monthLabel = `${m.ym.slice(0,4)} 年 ${parseInt(m.ym.slice(5,7),10)} 月`;
+    const totalTrucks = m.pickupCount;
+
+    return `
+      <div class="month-card">
+        <div class="month-card-head">
+          <div class="month-card-title">${monthLabel}</div>
+          <span class="month-card-trend" style="background:${trendBg};color:${trendColor};">${trendTxt}</span>
+        </div>
+        <div class="month-card-headline">${fmt(m.transferred)}</div>
+        <div class="month-card-headline-label">本月转账给 Emma</div>
+
+        <div class="month-card-stats">
+          <div class="month-card-stat">
+            <div class="stat-label">取货</div>
+            <div class="stat-value">${m.pallets} 托</div>
+            <div class="stat-sub">${totalTrucks} 车 · 花费 ${fmt(m.spent)}</div>
+          </div>
+          <div class="month-card-stat">
+            <div class="stat-label">Hugo 提成</div>
+            <div class="stat-value">${fmt(m.hugoCommission)}</div>
+            <div class="stat-sub">${m.pallets} × £${rate}</div>
+          </div>
+
+          ${totalTrucks > 0 ? `
+          <div class="month-card-typebreak">
+            <div class="stat-label" style="margin-bottom:6px;">取货类型分布</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;">
+              ${m.ttCount > 0 ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#4338ca;vertical-align:middle;margin-right:5px;"></span><b style="color:#a5b4fc;">TT</b> ${m.ttCount} 车 · ${m.ttPallets} 托</span>` : ''}
+              ${m.amzCount > 0 ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#67e8f9;vertical-align:middle;margin-right:5px;"></span><b style="color:#67e8f9;">AMZ</b> ${m.amzCount} 车 · ${m.amzPallets} 托</span>` : ''}
+              ${m.mixCount > 0 ? `<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#94a3b8;vertical-align:middle;margin-right:5px;"></span><b style="color:#94a3b8;">混合</b> ${m.mixCount} 车 · ${m.mixPallets} 托</span>` : ''}
+              ${(m.ttCount + m.amzCount + m.mixCount) === 0 ? '<span class="dim">无</span>' : ''}
+            </div>
+          </div>
+          ` : ''}
+
+          <div class="month-card-stat" style="grid-column:1/-1;padding:8px 12px;background:rgba(5,6,15,0.3);border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">本月净流入 Emma</span>
+            <b style="font-size:13px;color:${netFlow >= 0 ? 'var(--green)' : 'var(--rose)'};">${netFlow >= 0 ? '+' : ''}${fmt(netFlow)}</b>
+          </div>
+        </div>
+
+        ${(m.pickupCount === 0 && m.transferCount === 0) ? '<div class="dim" style="text-align:center;padding:8px 0;font-size:11px;">本月无活动</div>' : ''}
+      </div>
+    `;
+  }).join('');
 }
 
 // ===== INIT =====
