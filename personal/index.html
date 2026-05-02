@@ -1421,6 +1421,7 @@ select option { background: var(--bg-2); color: var(--text); }
                 <th>AMZ 托盘</th>
                 <th>合计 / 车数</th>
                 <th>Swap</th>
+                <th style="width:90px;text-align:center;">操作</th>
               </tr>
             </thead>
             <tbody id="sup-week-table"></tbody>
@@ -5365,6 +5366,11 @@ function renderSupplyWeekTable(weekMon) {
     const isWeekend = (dd.getDay() === 0 || dd.getDay() === 6);
     const rowStyle = isToday ? 'background:rgba(251,191,36,0.06);' : (isWeekend ? 'opacity:0.5;' : '');
     const swapBadge = swap > 0 ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${swap} 车</span>` : '<span class="dim">—</span>';
+    // Action button: ✎ edit (if day has a record) OR ＋ add (if no record yet)
+    const actionBtn = day
+      ? `<button class="btn sm ghost" title="编辑这一天的供货记录" onclick="openSupplyEditor('${day.id}')">✎ 改</button>`
+      : `<button class="btn sm ghost" title="新增这一天的供货记录" onclick="openSupplyEditorForDate('${d}')" style="opacity:0.7;">＋</button>`;
+
     return `<tr style="${rowStyle}">
       <td><b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}</td>
       <td class="dim">${d}</td>
@@ -5373,6 +5379,7 @@ function renderSupplyWeekTable(weekMon) {
       <td><b style="color:${amz > 0 ? '#67e8f9' : 'var(--text-dim)'};">${amz}</b></td>
       <td>${tt + amz} 托 <span class="dim">/ ${trucks} 车</span></td>
       <td>${swapBadge}</td>
+      <td style="text-align:center;">${actionBtn}</td>
     </tr>`;
   }).join('');
   if (tf) {
@@ -5382,8 +5389,23 @@ function renderSupplyWeekTable(weekMon) {
       <td><b style="color:#67e8f9;font-size:14px;">${totAMZ}</b></td>
       <td><b>${totTT + totAMZ} 托 / ${totTrucks} 车</b></td>
       <td>${totSwap > 0 ? '<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ' + totSwap + ' 车</span>' : '<span class="dim">无</span>'}</td>
+      <td></td>
     </tr>`;
   }
+}
+
+// Open the supply editor pre-filled to a specific date (for "+ Add" button on no-record rows)
+function openSupplyEditorForDate(dateStr) {
+  openSupplyEditor(null);
+  // After modal opens, override the date field
+  setTimeout(() => {
+    const dEl = document.getElementById('sup-date');
+    if (dEl) {
+      dEl.value = dateStr;
+      // Trigger auto-compute owner based on rotation
+      if (typeof autoComputeSupplyOwner === 'function') autoComputeSupplyOwner();
+    }
+  }, 50);
 }
 
 function renderSupplyLast8Weeks() {
