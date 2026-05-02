@@ -2185,6 +2185,13 @@ async function loadUserData() {
       if (!state.params) state.params = { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2 };
       if (!state.customers) state.customers = [];
       migrateDailyToLedger();
+      // Auto-consolidate any duplicate daily-supply records (one-time cleanup, idempotent)
+      try {
+        if (typeof consolidateDailySupplyDuplicates === 'function') {
+          const merged = consolidateDailySupplyDuplicates();
+          if (merged > 0) await saveUserDataNow();  // persist the cleanup
+        }
+      } catch (e) { console.warn('[supply] consolidate skipped:', e); }
     } else {
       // First-time user: start with empty state (no test data)
       state = emptyState();
@@ -4945,6 +4952,36 @@ function printInvoice(id) {
 // ============================================================
 function ensureSupplyArray() { if (!Array.isArray(state.dailySupply)) state.dailySupply = []; }
 
+// Merge multiple supply records that share the same date into one record.
+// Returns count of records that were merged away.
+function consolidateDailySupplyDuplicates() {
+  ensureSupplyArray();
+  const byDate = {};
+  let mergedCount = 0;
+  for (const day of state.dailySupply) {
+    if (!day.date) continue;
+    if (!byDate[day.date]) {
+      byDate[day.date] = day;
+    } else {
+      // Merge this day's trucks into the existing primary record
+      const primary = byDate[day.date];
+      primary.trucks = (primary.trucks || []).concat(day.trucks || []);
+      // Append note (preserve both if different)
+      if (day.note && day.note !== primary.note) {
+        primary.note = (primary.note ? primary.note + ' · ' : '') + day.note;
+      }
+      // Mark this duplicate for removal
+      day._toRemove = true;
+      mergedCount++;
+    }
+  }
+  if (mergedCount > 0) {
+    state.dailySupply = state.dailySupply.filter(d => !d._toRemove);
+    console.log(`[supply] Merged ${mergedCount} duplicate day record(s)`);
+  }
+  return mergedCount;
+}
+
 function ensureRotation() {
   if (!state.rotation) {
     // Default: reference Monday = next normal week (May 4, 2026), Michael = Mon/Wed/Fri, weekly alternating
@@ -5267,8 +5304,9 @@ function renderSupplyWeekChart(weekMon) {
   const ttData = [], amzData = [], ttSwap = [], amzSwap = [], ttTrucks = [], amzTrucks = [];
   for (const d of days) {
     let tt = 0, amz = 0, ttS = 0, amzS = 0, ttT = 0, amzT = 0;
-    const day = state.dailySupply.find(x => x.date === d);
-    if (day) {
+    // Aggregate across ALL day records with this date (handles duplicates safely)
+    const matchingDays = state.dailySupply.filter(x => x.date === d);
+    for (const day of matchingDays) {
       for (const tr of (day.trucks || [])) {
         if (tr.type === 'TT') { tt += (tr.pallets || 0); ttT++; if (tr.swapped) ttS += (tr.pallets || 0); }
         else if (tr.type === 'AMAZON') { amz += (tr.pallets || 0); amzT++; if (tr.swapped) amzS += (tr.pallets || 0); }
@@ -5347,11 +5385,13 @@ function renderSupplyWeekTable(weekMon) {
   tb.innerHTML = days.map(d => {
     const dd = new Date(d + 'T12:00:00');
     const dayLabel = dayNames[dd.getDay()];
-    const day = state.dailySupply.find(x => x.date === d);
+    // Aggregate across ALL day records with this date (handles legacy duplicates)
+    const matchingDays = state.dailySupply.filter(x => x.date === d);
+    const day = matchingDays[0] || null;  // primary record (for edit button + owner)
     let tt = 0, amz = 0, trucks = 0, swap = 0;
     let owner = day ? day.pickupBy : rotationPickupBy(d);
-    if (day) {
-      for (const tr of (day.trucks || [])) {
+    for (const dx of matchingDays) {
+      for (const tr of (dx.trucks || [])) {
         trucks++;
         if (tr.type === 'TT') tt += (tr.pallets || 0);
         else if (tr.type === 'AMAZON') amz += (tr.pallets || 0);
@@ -5424,9 +5464,12 @@ function renderSupplyLast8Weeks() {
     const days = weekDaysOf(wm);
     let pallets = 0, trucks = 0;
     for (const d of days) {
-      const day = state.dailySupply.find(x => x.date === d);
-      if (day) for (const tr of (day.trucks || [])) {
-        if (tr.type === type) { pallets += (tr.pallets || 0); trucks++; }
+      // Aggregate across ALL day records with this date (handles legacy duplicates)
+      const matchingDays = state.dailySupply.filter(x => x.date === d);
+      for (const day of matchingDays) {
+        for (const tr of (day.trucks || [])) {
+          if (tr.type === type) { pallets += (tr.pallets || 0); trucks++; }
+        }
       }
     }
     return { pallets, trucks };
@@ -5701,12 +5744,26 @@ function saveSupply() {
     day.note = note;
     day.updatedAt = new Date().toISOString();
   } else {
-    state.dailySupply.push({
-      id: crypto.randomUUID(),
-      date, pickupBy, manualOverride, trucks, note,
-      createdAt: new Date().toISOString()
-    });
+    // Check if a record already exists for this date — if so, MERGE into it
+    const existing = state.dailySupply.find(d => d.date === date && d.id !== editingSupplyId);
+    if (existing) {
+      const ok = confirm(`这个日期(${date})已经有一条记录(${(existing.trucks||[]).length} 辆车)。\n\n选 OK = 把这次的车合并到那条记录里(推荐)\n选 取消 = 不保存,你去编辑那条已有的记录`);
+      if (!ok) { return; }
+      existing.trucks = (existing.trucks || []).concat(trucks);
+      if (note && note !== existing.note) {
+        existing.note = (existing.note ? existing.note + ' · ' : '') + note;
+      }
+      existing.updatedAt = new Date().toISOString();
+    } else {
+      state.dailySupply.push({
+        id: crypto.randomUUID(),
+        date, pickupBy, manualOverride, trucks, note,
+        createdAt: new Date().toISOString()
+      });
+    }
   }
+  // Defensive: consolidate any lingering duplicates (no-op if none)
+  consolidateDailySupplyDuplicates();
   save(); renderAll();
   closeSupplyEditor();
   flash(editingSupplyId ? '供货记录已更新' : '供货记录已保存');
