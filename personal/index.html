@@ -729,6 +729,78 @@ select option { background: var(--bg-2); color: var(--text); }
 .customer-switch button:hover { color: var(--cyan); border-color: rgba(0, 229, 255, 0.4); }
 .customer-switch .pos-text { font-size: 11px; color: var(--text-dim); padding: 0 4px; }
 
+/* === AI Chat === */
+.ai-chat-card { padding: 20px 24px; }
+.ai-messages {
+  min-height: 240px; max-height: 480px; overflow-y: auto;
+  padding: 8px 4px; display: flex; flex-direction: column; gap: 14px;
+  scroll-behavior: smooth;
+}
+.ai-msg { max-width: 86%; display: flex; flex-direction: column; gap: 6px; }
+.ai-msg.user { align-self: flex-end; align-items: flex-end; }
+.ai-msg.assistant { align-self: flex-start; align-items: flex-start; }
+.ai-msg.system { align-self: center; max-width: 100%; }
+.ai-msg-bubble {
+  padding: 12px 16px; border-radius: 14px;
+  font-size: 13.5px; line-height: 1.7;
+  white-space: pre-wrap; word-wrap: break-word;
+}
+.ai-msg.user .ai-msg-bubble {
+  background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(139,92,246,0.18));
+  color: var(--text); border: 1px solid rgba(0,229,255,0.25);
+}
+.ai-msg.assistant .ai-msg-bubble {
+  background: rgba(5,6,15,0.5); color: var(--text);
+  border: 1px solid rgba(139,150,255,0.15);
+}
+.ai-msg.system .ai-msg-bubble {
+  background: rgba(251,191,36,0.08); color: var(--amber);
+  border: 1px dashed rgba(251,191,36,0.3); font-size: 12px;
+  font-style: italic;
+}
+.ai-msg-meta { font-size: 10px; color: var(--text-dim); padding: 0 6px; }
+.ai-suggestions { padding: 12px 0; border-top: 1px dashed rgba(139,150,255,0.15); margin-top: 16px; }
+.ai-sug-label { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; font-weight: 600; }
+.ai-sug-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ai-sug {
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  background: rgba(0,229,255,0.06); color: var(--cyan);
+  border: 1px solid rgba(0,229,255,0.2);
+  font-size: 11.5px; font-family: inherit; font-weight: 500;
+  transition: all 0.15s ease;
+}
+.ai-sug:hover { background: rgba(0,229,255,0.14); transform: translateY(-1px); }
+.ai-input-row {
+  display: flex; gap: 10px; margin-top: 12px;
+  padding-top: 14px; border-top: 1px solid rgba(139,150,255,0.1);
+}
+.ai-input-row textarea {
+  flex: 1; padding: 12px 14px; resize: vertical;
+  background: rgba(5,6,15,0.5); border: 1px solid rgba(139,150,255,0.2);
+  border-radius: 10px; color: var(--text); font-family: inherit;
+  font-size: 13px; line-height: 1.55; min-height: 50px;
+}
+.ai-input-row textarea:focus {
+  outline: none; border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0,229,255,0.1);
+}
+.ai-input-row .btn { align-self: stretch; }
+.ai-thinking { display: inline-flex; gap: 4px; padding: 8px 0; }
+.ai-thinking span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--cyan); opacity: 0.5;
+  animation: ai-pulse 1.4s ease-in-out infinite;
+}
+.ai-thinking span:nth-child(2) { animation-delay: 0.2s; }
+.ai-thinking span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ai-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
+.ai-rules-fallback summary::-webkit-details-marker { display: none; }
+.ai-rules-fallback summary::before { content: '▸ '; color: var(--text-dim); font-size: 11px; margin-right: 4px; }
+.ai-rules-fallback[open] summary::before { content: '▾ '; }
+
 /* === Roomy breakdown table (周度明细) === */
 .breakdown-table table { border-collapse: separate; border-spacing: 0; }
 .breakdown-table thead th {
@@ -1735,26 +1807,51 @@ select option { background: var(--bg-2); color: var(--text); }
     <section class="view" data-view="ai">
       <div class="page-head">
         <div>
-          <h1 class="page-title"><span class="gradient">AI</span> 经营建议</h1>
-          <div class="page-sub">自动扫描 + 深度分析，帮你找到利润最大化的路径</div>
+          <h1 class="page-title"><span class="gradient">AI</span> 经营顾问</h1>
+          <div class="page-sub">真正的 Claude · 看得到你全部业务数据 · 你想问什么就问什么</div>
+        </div>
+        <div class="row" style="gap:6px;">
+          <button class="btn ghost sm" onclick="aiClearChat()" title="清空对话">↻ 清空</button>
+          <button class="btn ghost sm" onclick="aiOpenSettings()" title="API 设置">⚙ API</button>
         </div>
       </div>
 
-      <div class="ai-grid">
-        <div class="ai-card hero">
-          <div class="ai-hero-title"><span class="gradient">深度分析</span></div>
-          <div class="ai-hero-desc">基于你全部业务数据，给出定制化的利润提升策略、风险提示和下一步行动。</div>
-          <button class="btn primary" onclick="runAI()" id="ai-run-btn">✦ 让 AI 深度分析</button>
-          <div class="ai-output empty mt-4" id="ai-output">点上方按钮开始分析…</div>
-          <div class="page-sub mt-4" style="font-size: 11px;">注：GitHub Pages 版本使用规则算法分析。想接入真正的 AI 可以后续配置。</div>
-        </div>
-
-        <div class="ai-card">
-          <div class="card-title">规则自动扫描</div>
-          <div class="page-sub mb-4">余额、利润率、客户集中度、装载效率、环比增长</div>
-          <div id="insights-box"></div>
+      <div id="ai-no-key" class="card mb-4 hide">
+        <div class="card-title">🔑 还没设置 API Key</div>
+        <div class="page-sub mt-2">需要 Anthropic API key 才能用真 AI。<a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--cyan);">点这里去 console.anthropic.com 创建</a> → 复制后粘到设置里。</div>
+        <div class="row mt-4">
+          <button class="btn primary" onclick="aiOpenSettings()">设置 API Key</button>
         </div>
       </div>
+
+      <div id="ai-chat-wrap">
+        <div class="card ai-chat-card">
+          <div id="ai-messages" class="ai-messages"></div>
+          <div class="ai-suggestions" id="ai-suggestions">
+            <div class="ai-sug-label">💡 试试问:</div>
+            <div class="ai-sug-list">
+              <button class="ai-sug" onclick="aiSendQuick('我哪个客户最赚钱?为什么?')">哪个客户最赚?</button>
+              <button class="ai-sug" onclick="aiSendQuick('本月利润比上月怎么样?如果差,可能什么原因?')">本月 vs 上月</button>
+              <button class="ai-sug" onclick="aiSendQuick('看下我的客户,有谁要催款?哪个有流失风险?')">谁要催款</button>
+              <button class="ai-sug" onclick="aiSendQuick('总结一下这周的业务情况,3 句话以内。')">本周一句话</button>
+              <button class="ai-sug" onclick="aiSendQuick('给我下周 3 条具体行动建议。')">下周该做什么</button>
+              <button class="ai-sug" onclick="aiSendQuick('Swap TT 这周表现如何?有没有可以多接的空间?')">Swap 怎么样</button>
+            </div>
+          </div>
+          <div class="ai-input-row">
+            <textarea id="ai-input" rows="2" placeholder="问 AI 任何业务问题(Enter 发送, Shift+Enter 换行)" onkeydown="aiInputKey(event)"></textarea>
+            <button class="btn primary" id="ai-send-btn" onclick="aiSend()">✦ 发送</button>
+          </div>
+          <div class="page-sub" style="font-size:10px;margin-top:8px;">每次对话 AI 会读你最新的客户、流水、参数、Swap 等数据 · 不会把你的数据保存到 Claude 服务器之外</div>
+        </div>
+
+        <details class="ai-rules-fallback mt-4">
+          <summary class="card-title" style="cursor:pointer;">📊 规则自动扫描(辅助)</summary>
+          <div class="page-sub mt-2">基于规则的快速诊断,不需要 AI</div>
+          <div id="insights-box" class="mt-4"></div>
+        </details>
+      </div>
+    </section>
     </section>
 
     <!-- Settings -->
@@ -2002,6 +2099,39 @@ select option { background: var(--bg-2); color: var(--text); }
       <button class="btn ghost sm" onclick="setStatementRange('all')">全部</button>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="generateStatement()">生成对账单</button></div>
+  </div>
+</div>
+
+<!-- AI Settings Modal -->
+<div class="modal-backdrop" id="ai-settings-modal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head">
+      <div class="modal-title">🤖 AI 设置(Anthropic Claude)</div>
+      <button class="modal-close" onclick="aiCloseSettings()">×</button>
+    </div>
+    <div class="page-sub mb-4">API Key 加密存在你的私人 Supabase 里(`personal_data` 表,只有你能读)。Emma / Hugo / 别人都看不到。</div>
+    <div class="form-grid">
+      <div class="form-row" style="grid-column:1/-1;"><label>Anthropic API Key</label>
+        <input type="password" id="ai-api-key" placeholder="sk-ant-api03-...">
+      </div>
+      <div class="form-row" style="grid-column:1/-1;"><label>模型</label>
+        <select id="ai-model-select">
+          <option value="claude-sonnet-4-6">Sonnet 4.6 — 推荐 ⭐(智能 + 快 + 便宜,$3/$15 per Mtok)</option>
+          <option value="claude-opus-4-6">Opus 4.6 — 顶级(最强但贵,$15/$75 per Mtok)</option>
+          <option value="claude-haiku-4-5-20251001">Haiku 4.5 — 极快极便宜(适合简单问)</option>
+        </select>
+      </div>
+    </div>
+    <div class="page-sub" style="font-size:11px;margin-top:8px;line-height:1.7;">
+      💡 第一次用建议选 Sonnet,大部分问题都答得很好,$10 credit 可以问几百次。<br>
+      💡 想要最深刻的洞察(比如长篇业务分析)再切到 Opus。
+    </div>
+    <div class="row mt-4" style="gap:8px;">
+      <button class="btn primary" onclick="aiSaveSettings()">保存</button>
+      <button class="btn ghost" onclick="aiTestConnection()">测试连接</button>
+      <button class="btn ghost danger" onclick="aiDeleteKey()" style="margin-left:auto;">删除 Key</button>
+    </div>
+    <div id="ai-settings-msg" class="page-sub mt-4" style="display:none;"></div>
   </div>
 </div>
 
@@ -3189,7 +3319,7 @@ function repeatLedgerEntry(entryId) {
   const lgSwap = document.getElementById('lg-swap');
   if (lgSwap) lgSwap.checked = !!e.isSwap;
   const lgTypeSelect = document.getElementById('lg-type-select');
-  if (lgTypeSelect) lgTypeSelect.value = e.palletType || (e.isSwap ? 'TT' : 'TT');
+  if (lgTypeSelect) lgTypeSelect.value = e.palletType || (e.isSwap ? 'TT' : 'Mixed');
   updateLedgerPreview();
   flash('已填好,确认后点"+ 添加流水"');
   // Scroll to the form
@@ -5909,55 +6039,334 @@ function renderInsights() {
   `).join('');
 }
 
-async function runAI() {
-  const btn = document.getElementById('ai-run-btn');
-  const out = document.getElementById('ai-output');
-  btn.disabled = true; btn.textContent = '分析中…';
-  out.classList.remove('empty');
+// ============================================================
+// AI INTEGRATION — real Claude API
+// API key + model are stored in state.params.ai (RLS-protected)
+// All calls go from browser → api.anthropic.com directly
+// ============================================================
+const AI_DEFAULT_MODEL = 'claude-sonnet-4-6';
 
-  const t = totals();
-  const agg = monthlyAgg();
-  const ins = analyzeRules();
-
-  // Build a comprehensive analysis from rules + data
-  const lines = [];
-  lines.push('【核心亮点】');
-  if (t.mProfit > 0) lines.push(`本月利润 ${fmt(t.mProfit)}，托盘 ${t.mPallets} 个。`);
-  if (agg.length >= 2) {
-    const last = agg[agg.length - 1]; const prev = agg[agg.length - 2];
-    const g = (last.profit - prev.profit) / (prev.profit || 1) * 100;
-    lines.push(`环比${g >= 0 ? '增长' : '下降'} ${Math.abs(g).toFixed(1)}%。`);
-  }
-  lines.push(`每托盘净利 £${perPalletProfit()}，利润率 ${(perPalletProfit()/(state.params.sellPrice+state.params.myFee)*100).toFixed(1)}%。`);
-
-  lines.push('\n【三个最该改进的动作】');
-  const warn = ins.filter(i => i.type === 'warn' || i.type === 'bad').slice(0, 3);
-  if (warn.length) {
-    warn.forEach((i, idx) => lines.push(`${idx + 1}. ${i.title}：${i.text}`));
-  } else {
-    const perP = perPalletProfit();
-    lines.push(`1. 提升装载率到 26：每车多 £${2 * perP}，一月多赚约 £${2 * perP * 22}。`);
-    lines.push(`2. 开发 1 个新客户：分散风险 + 增加日订单。`);
-    lines.push(`3. 和 SSS 谈批发折扣：降 £5/托盘，年化提升利润 £${5 * 24 * 26 * 12}。`);
-  }
-
-  lines.push('\n【风险提示】');
-  const bads = ins.filter(i => i.type === 'bad');
-  if (bads.length) bads.forEach(i => lines.push(`⚠ ${i.title}：${i.text}`));
-  else lines.push('⚠ 单一客户集中度：如果某个客户占比过高，失去该客户影响巨大。');
-  lines.push('⚠ 现金流管理：客户预付款是别人的钱，不要当作利润花掉。');
-
-  lines.push('\n【下周目标】');
-  const avg7 = allPickups().sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
-  const avgP = avg7.length ? avg7.reduce((s, r) => s + r.pallets, 0) / avg7.length : 24;
-  const targetP = Math.ceil(avgP) + 1;
-  lines.push(`目标每日托盘 ${targetP}，周利润目标 £${Math.round(targetP * 6 * perPalletProfit()).toLocaleString()}。`);
-  lines.push(`保持 ${state.customers.length} 位客户余额都在 £${state.params.sellPrice * 10} 以上。`);
-
-  await new Promise(r => setTimeout(r, 600));
-  out.textContent = lines.join('\n');
-  btn.disabled = false; btn.textContent = '✦ 重新分析';
+function aiGetSettings() {
+  return (state.params && state.params.ai) || { apiKey: '', model: AI_DEFAULT_MODEL };
 }
+function aiHasKey() {
+  const s = aiGetSettings();
+  return !!(s.apiKey && s.apiKey.startsWith('sk-ant-'));
+}
+
+function aiOpenSettings() {
+  const s = aiGetSettings();
+  document.getElementById('ai-api-key').value = s.apiKey || '';
+  document.getElementById('ai-model-select').value = s.model || AI_DEFAULT_MODEL;
+  document.getElementById('ai-settings-msg').style.display = 'none';
+  document.getElementById('ai-settings-modal').classList.add('open');
+}
+function aiCloseSettings() {
+  document.getElementById('ai-settings-modal').classList.remove('open');
+}
+function aiSaveSettings() {
+  const key = (document.getElementById('ai-api-key').value || '').trim();
+  const model = document.getElementById('ai-model-select').value || AI_DEFAULT_MODEL;
+  if (!state.params.ai) state.params.ai = {};
+  state.params.ai.apiKey = key;
+  state.params.ai.model = model;
+  save();
+  aiSettingsMsg('✓ 已保存(同步到 Supabase 你私人表)', 'green');
+  aiUpdateNoKeyBanner();
+}
+function aiDeleteKey() {
+  if (!confirm('删除 API key?(下次用 AI 时要重新粘贴)')) return;
+  if (!state.params.ai) state.params.ai = {};
+  state.params.ai.apiKey = '';
+  document.getElementById('ai-api-key').value = '';
+  save();
+  aiSettingsMsg('已删除', 'amber');
+  aiUpdateNoKeyBanner();
+}
+function aiSettingsMsg(txt, color) {
+  const el = document.getElementById('ai-settings-msg');
+  el.style.display = '';
+  el.textContent = txt;
+  el.style.color = color === 'green' ? 'var(--green)' : (color === 'red' ? 'var(--rose)' : 'var(--amber)');
+}
+async function aiTestConnection() {
+  const key = (document.getElementById('ai-api-key').value || '').trim();
+  if (!key) { aiSettingsMsg('请先填 API key', 'red'); return; }
+  const model = document.getElementById('ai-model-select').value || AI_DEFAULT_MODEL;
+  aiSettingsMsg('连接中…', 'amber');
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 32,
+        messages: [{ role: 'user', content: 'Say "OK" if you can hear me.' }]
+      })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      aiSettingsMsg('❌ 连接失败:' + (res.status) + ' — ' + err.slice(0, 200), 'red');
+      return;
+    }
+    const data = await res.json();
+    const msg = (data.content && data.content[0] && data.content[0].text) || '(空响应)';
+    aiSettingsMsg('✓ 连接成功! Claude 说: "' + msg.trim() + '"', 'green');
+  } catch (err) {
+    aiSettingsMsg('❌ 错误:' + err.message, 'red');
+  }
+}
+
+function aiUpdateNoKeyBanner() {
+  const banner = document.getElementById('ai-no-key');
+  const wrap = document.getElementById('ai-chat-wrap');
+  if (!banner || !wrap) return;
+  if (aiHasKey()) {
+    banner.classList.add('hide');
+    wrap.classList.remove('hide');
+  } else {
+    banner.classList.remove('hide');
+    wrap.classList.add('hide');
+  }
+}
+
+// === Build business context that AI sees on every question ===
+function aiBuildBusinessContext() {
+  const today = new Date().toISOString().slice(0, 10);
+  const t = totals();
+  const wk = (typeof thisWeekTotals === 'function') ? thisWeekTotals() : null;
+  const ym = today.slice(0, 7);
+  const monthAgg = monthlyAgg();
+  const lastMonth = monthAgg[monthAgg.length - 2];
+  const thisMonth = monthAgg[monthAgg.length - 1];
+
+  // Customer summary
+  const customerSummary = (state.customers || []).map(c => {
+    const bal = customerBalance(c);
+    const pallets = customerTotalPallets(c);
+    const lastPickup = (c.ledger || []).filter(e => e.type === 'pickup').sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+    const daysSinceLast = lastPickup ? Math.floor((Date.now() - new Date(lastPickup.date + 'T12:00:00').getTime()) / 86400000) : null;
+    return {
+      name: c.name,
+      currentBalance: Math.round(bal),
+      totalPalletsTaken: pallets,
+      profitContributed: Math.round(customerProfit(c)),
+      lastPickupDate: lastPickup ? lastPickup.date : null,
+      daysSinceLastPickup: daysSinceLast,
+      address: c.address || null,
+      vatNo: c.vatNo || null,
+      hasSwapTT: (c.ledger || []).some(e => e.isSwap)
+    };
+  });
+
+  // This week breakdown
+  const wkMon = weekStartOf(today);
+  let wkTT = 0, wkAMZ = 0, wkSwap = 0, wkSwapBonus = 0, wkRevenue = 0;
+  for (const r of allPickups()) {
+    if (weekStartOf(r.date) !== wkMon) continue;
+    const pt = r.palletType || (r.isSwap ? 'TT' : 'Mixed');
+    if (pt === 'TT') wkTT += r.pallets;
+    else if (pt === 'AMAZON') wkAMZ += r.pallets;
+    if (r.isSwap) {
+      wkSwap += r.pallets;
+      wkSwapBonus += r.pallets * (r.swapPremium || swapTtPremium());
+    }
+    wkRevenue += r.amount || 0;
+  }
+
+  // Daily supply this week
+  const supplyThisWeek = (state.dailySupply || []).filter(d => weekStartOf(d.date) === wkMon).map(d => ({
+    date: d.date,
+    pickupBy: d.pickupBy,
+    trucks: (d.trucks || []).map(t => ({ type: t.type, pallets: t.pallets, swapped: !!t.swapped }))
+  }));
+
+  const debt = (typeof emmaTruckDebt === 'function') ? emmaTruckDebt() : 0;
+
+  return {
+    todayDate: today,
+    parameters: {
+      buyPrice: state.params.buyPrice,
+      sellPrice: state.params.sellPrice,
+      myFee: state.params.myFee,
+      hugoFee: state.params.hugoFee,
+      vFee: state.params.vFee,
+      swapPremium: state.params.swapPremium,
+      perPalletProfit: perPalletProfit(),
+      swapTtBonusPerPallet: swapTtPremium()
+    },
+    cumulative: {
+      totalPallets: t.pallets,
+      totalProfit: Math.round(t.profit),
+      totalRevenue: Math.round(t.revenue + t.fee),
+      totalCost: Math.round(t.cost)
+    },
+    thisMonth: thisMonth ? {
+      pallets: thisMonth.pallets,
+      profit: Math.round(thisMonth.profit),
+      revenue: Math.round(thisMonth.revenue + thisMonth.fee)
+    } : null,
+    lastMonth: lastMonth ? {
+      pallets: lastMonth.pallets,
+      profit: Math.round(lastMonth.profit)
+    } : null,
+    thisWeek: {
+      weekStartMon: wkMon,
+      profit: wk ? Math.round(wk.profit) : 0,
+      pallets: wk ? wk.pallets : 0,
+      ttPallets: wkTT,
+      amzPallets: wkAMZ,
+      swapPallets: wkSwap,
+      swapBonus: Math.round(wkSwapBonus),
+      revenue: Math.round(wkRevenue)
+    },
+    customers: customerSummary,
+    customerCount: customerSummary.length,
+    emmaTruckDebt: debt,  // positive = Michael owes Emma N AMAZON trucks
+    supplyThisWeek,
+    invoicesOutstanding: (typeof invoiceOutstanding === 'function') ? Math.round(invoiceOutstanding()) : 0,
+    invoicesUnpaidCount: (typeof invoiceCount === 'function') ? invoiceCount('unpaid') : 0,
+    invoicesOverdueCount: (typeof invoiceCount === 'function') ? invoiceCount('overdue') : 0
+  };
+}
+
+let aiChatHistory = [];  // [{ role: 'user'|'assistant', content: '...' }]
+
+function aiSystemPrompt() {
+  return `你是 Michael 的私人业务顾问 AI,他在英国做托盘批发(从 SSS 进货,卖给客户,还有合作伙伴 Emma 和中间人 Hugo)。
+
+【业务模型】
+- Michael 从 SSS 买托盘 (£${state.params.buyPrice}/托) → 卖给客户 (£${state.params.sellPrice}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
+- 客户先预付款给 Michael(进客户余额),取货时按 sellPrice 扣
+- 客户另外直接付 Hugo £${state.params.hugoFee || 7}/托 + V £${state.params.vFee || 2}/托(不进 Michael P&L)
+- 托盘有两种类型:TT 和 AMAZON
+- Michael 跟 Emma 轮流取货(轮换日制)。Emma 不喜欢 TT,Michael 客人喜欢 TT
+- "Swap TT":Emma 取货日的 TT 给 Michael,Michael 之后还 Emma 等量 AMAZON。Michael 把这种 swap-TT 卖给客户加价 £${swapTtPremium()}/托(纯利)
+- 给客人的对账解释只说"我利润 £30/托 + Hugo £10/托"(简化版本,不是真实数字)
+
+【你的角色】
+- 看 Michael 的真实业务数据(我会附在每条消息上),给具体、有数字的建议
+- 不要泛泛而谈,引用具体客户名字、具体数字
+- 中文回答,简洁直接,该用列表用列表,该给数字给数字
+- 如果数据不够支持判断,直接说"数据不够"
+- 不要复述他的数据(他自己看得到),要给洞察、对比、建议
+
+【数据保密】
+- 客户名字、金额、API key — 都不要对外提
+- 你看到的所有数据都是 Michael 私有的,Emma/Hugo 也看不到(这是他的私人账目)`;
+}
+
+async function aiSendMessage(userMessage) {
+  if (!aiHasKey()) { aiOpenSettings(); return; }
+  const settings = aiGetSettings();
+
+  aiChatHistory.push({ role: 'user', content: userMessage });
+  aiRenderMessages();
+  aiSetThinking(true);
+
+  try {
+    // Attach fresh business context as system prompt
+    const ctx = aiBuildBusinessContext();
+    const systemMessage = aiSystemPrompt() + `\n\n【当前业务数据快照(JSON)】\n` + JSON.stringify(ctx, null, 2);
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': settings.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: settings.model || AI_DEFAULT_MODEL,
+        max_tokens: 2048,
+        system: systemMessage,
+        messages: aiChatHistory.map(m => ({ role: m.role, content: m.content }))
+      })
+    });
+
+    if (!res.ok) {
+      const errTxt = await res.text();
+      let friendly = `API 错误 ${res.status}`;
+      try {
+        const errJson = JSON.parse(errTxt);
+        if (errJson.error && errJson.error.message) friendly += ': ' + errJson.error.message;
+      } catch (e) { friendly += ': ' + errTxt.slice(0, 200); }
+      aiChatHistory.push({ role: 'assistant', content: '⚠ ' + friendly + '\n\n(检查 API key 是否正确,或者是否还有 credit)' });
+    } else {
+      const data = await res.json();
+      const reply = (data.content && data.content[0] && data.content[0].text) || '(空响应)';
+      aiChatHistory.push({ role: 'assistant', content: reply });
+    }
+  } catch (err) {
+    aiChatHistory.push({ role: 'assistant', content: '⚠ 网络错误: ' + err.message });
+  } finally {
+    aiSetThinking(false);
+    aiRenderMessages();
+  }
+}
+
+function aiRenderMessages() {
+  const box = document.getElementById('ai-messages');
+  if (!box) return;
+  if (!aiChatHistory.length) {
+    box.innerHTML = `<div class="ai-msg system"><div class="ai-msg-bubble">👋 你好 Michael!我是你的 AI 业务顾问。问我任何关于客户、利润、Swap、趋势的问题。</div></div>`;
+    return;
+  }
+  box.innerHTML = aiChatHistory.map(m => {
+    const role = m.role;
+    const cls = role === 'user' ? 'user' : 'assistant';
+    const label = role === 'user' ? '你' : 'AI';
+    return `<div class="ai-msg ${cls}">
+      <div class="ai-msg-bubble">${escapeHtml(m.content)}</div>
+      <div class="ai-msg-meta">${label}</div>
+    </div>`;
+  }).join('') + (aiThinking ? `<div class="ai-msg assistant"><div class="ai-msg-bubble"><div class="ai-thinking"><span></span><span></span><span></span></div></div></div>` : '');
+  // Scroll to bottom
+  box.scrollTop = box.scrollHeight;
+}
+
+let aiThinking = false;
+function aiSetThinking(on) {
+  aiThinking = !!on;
+  const btn = document.getElementById('ai-send-btn');
+  if (btn) {
+    btn.disabled = aiThinking;
+    btn.textContent = aiThinking ? '思考中…' : '✦ 发送';
+  }
+  aiRenderMessages();
+}
+
+function aiSend() {
+  const inp = document.getElementById('ai-input');
+  if (!inp) return;
+  const txt = (inp.value || '').trim();
+  if (!txt) return;
+  inp.value = '';
+  aiSendMessage(txt);
+}
+function aiSendQuick(prompt) {
+  const inp = document.getElementById('ai-input');
+  if (inp) inp.value = '';
+  aiSendMessage(prompt);
+}
+function aiInputKey(ev) {
+  if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); aiSend(); }
+}
+function aiClearChat() {
+  if (aiChatHistory.length === 0) return;
+  if (!confirm('清空对话历史?')) return;
+  aiChatHistory = [];
+  aiRenderMessages();
+}
+
+// Legacy stub for any remaining caller
+async function runAI() { aiSendQuick('给我做一次完整的业务深度分析:本月表现、风险、和下周 3 个具体行动建议。'); }
 
 // ============ CALC ============
 function toggleCalc() { document.getElementById('calc-panel').classList.toggle('open'); setTimeout(() => document.getElementById('calc-input').focus(), 50); }
@@ -5999,7 +6408,11 @@ function switchView(name) {
   currentViewName = name;
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
   document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
-  if (name === 'ai') renderInsights();
+  if (name === 'ai') {
+    renderInsights();
+    if (typeof aiUpdateNoKeyBanner === 'function') aiUpdateNoKeyBanner();
+    if (typeof aiRenderMessages === 'function') aiRenderMessages();
+  }
   if (name === 'customers') closeCustomerDetail();
   // When entering supply view, render its charts (only here, to avoid flicker)
   if (name === 'supply' && typeof renderSupply === 'function') renderSupply();
@@ -6043,9 +6456,10 @@ function setWeeklyView(n) {
 // ============================================================
 const CLIENT_PROFIT_PER_PALLET = 30;   // 给客人说的"我的利润" / 托
 const CLIENT_HUGO_PER_PALLET = 10;     // 给客人说的"Hugo 费用" / 托
-const SELF_PROFIT_PER_PALLET = 51;     // 实际每托盘净利(=sellPrice+myFee-buyPrice)
-const SELF_HUGO_PER_PALLET = 7;        // 实际 Hugo
-const SELF_V_PER_PALLET = 2;           // 实际 V
+// SELF_* 改成读 live params,这样改设置后所有地方同步更新
+function selfProfitPerPallet() { return perPalletProfit(); }
+function selfHugoPerPallet()   { return state.params.hugoFee != null ? state.params.hugoFee : 7; }
+function selfVPerPallet()      { return state.params.vFee   != null ? state.params.vFee   : 2; }
 
 let currentBreakdownTab = 'client';
 function setBreakdownTab(tab) {
@@ -6091,11 +6505,11 @@ function customerWeeklyBreakdown(customer) {
 }
 
 // Compute what the customer owes me FOR THIS WEEK (separate from prepay-for-pallets).
-// = pallets × £30 (my fee) + pallets × £10 (Hugo) + swap_pallets × £30 (swap surcharge)
+// = pallets × £30 (my fee) + pallets × £10 (Hugo) + swap_pallets × current swapPremium
 function clientWeekTotal(w) {
   return w.totalPallets * CLIENT_PROFIT_PER_PALLET
        + w.totalPallets * CLIENT_HUGO_PER_PALLET
-       + w.swapPallets * 30;
+       + w.swapPallets * swapTtPremium();
 }
 
 // Render the client-facing breakdown (public markup story)
@@ -6115,7 +6529,8 @@ function renderClientBreakdown(customer) {
     const isCurrent = w.week === todayWk;
     const baseProfit = w.totalPallets * CLIENT_PROFIT_PER_PALLET;
     const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
-    const swapSurchargeTotal = w.swapPallets * 30;
+    const swapPrem = swapTtPremium();
+    const swapSurchargeTotal = w.swapPallets * swapPrem;
     const weekTotal = clientWeekTotal(w);
 
     // Pallet breakdown — multi-line with colored dots
@@ -6130,7 +6545,7 @@ function renderClientBreakdown(customer) {
     const chargeRows = [
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} (我)</span><span class="v">${fmt(baseProfit)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} (Hugo)</span><span class="v">${fmt(hugoTotal)}</span></div>`,
-      w.swapPallets > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £30 (Swap)</span><span class="v">${fmt(swapSurchargeTotal)}</span></div>` : ''
+      w.swapPallets > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapPrem} (Swap)</span><span class="v">${fmt(swapSurchargeTotal)}</span></div>` : ''
     ].filter(Boolean).join('');
 
     return `<tr class="${isCurrent ? 'is-current' : ''}">
@@ -6165,10 +6580,10 @@ function renderSelfBreakdown(customer) {
   tb.innerHTML = reversed.map(w => {
     const wkNum = isoWeekNum(w.week);
     const isCurrent = w.week === todayWk;
-    const profit51 = w.totalPallets * SELF_PROFIT_PER_PALLET;
-    const hugo7    = w.totalPallets * SELF_HUGO_PER_PALLET;
-    const v2       = w.totalPallets * SELF_V_PER_PALLET;
-    const swapBonus = w.swapPallets * 30;
+    const profit51 = w.totalPallets * selfProfitPerPallet();
+    const hugo7    = w.totalPallets * selfHugoPerPallet();
+    const v2       = w.totalPallets * selfVPerPallet();
+    const swapBonus = w.swapPallets * swapTtPremium();
     const weekNet  = profit51 + swapBonus;
     totProfit += profit51; totHugo += hugo7; totV += v2; totSwap += swapBonus; totNet += weekNet;
     totPallets += w.totalPallets; totSwapPallets += w.swapPallets;
@@ -6183,10 +6598,10 @@ function renderSelfBreakdown(customer) {
 
     // Income breakdown — base profit, Hugo, V, Swap bonus
     const chargeRows = [
-      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${SELF_PROFIT_PER_PALLET} 净利</span><span class="v">${fmt(profit51)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${SELF_HUGO_PER_PALLET} Hugo</span><span class="v">${fmt(hugo7)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${SELF_V_PER_PALLET} V</span><span class="v">${fmt(v2)}</span></div>`,
-      swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £30 Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : ''
+      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(profit51)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(hugo7)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V</span><span class="v">${fmt(v2)}</span></div>`,
+      swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : ''
     ].filter(Boolean).join('');
 
     return `<tr class="${isCurrent ? 'is-current' : ''}">
@@ -6200,10 +6615,10 @@ function renderSelfBreakdown(customer) {
 
   if (tf) {
     const totalRows = [
-      `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${SELF_PROFIT_PER_PALLET} 净利</span><span class="v">${fmt(totProfit)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${SELF_HUGO_PER_PALLET} Hugo</span><span class="v">${fmt(totHugo)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${SELF_V_PER_PALLET} V</span><span class="v">${fmt(totV)}</span></div>`,
-      totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £30 Swap</span><span class="v">${fmt(totSwap)}</span></div>` : ''
+      `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(totProfit)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(totHugo)}</span></div>`,
+      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V</span><span class="v">${fmt(totV)}</span></div>`,
+      totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : ''
     ].filter(Boolean).join('');
     tf.innerHTML = `<tr>
       <td colspan="2"><div class="bd-week-tag">合计</div><div class="bd-date">该客户全部历史</div></td>
@@ -6255,12 +6670,13 @@ function exportClientBreakdown(weekMon) {
     })();
     const baseProfit = w.totalPallets * CLIENT_PROFIT_PER_PALLET;
     const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
-    const swapSurcharge = w.swapPallets * 30;
+    const swapPrem   = swapTtPremium();
+    const swapSurcharge = w.swapPallets * swapPrem;
 
     const ttLine = w.ttTrucks > 0 ? `<div><span style="color:#3730a3;font-weight:700;">TT:</span> ${w.ttTrucks} truck${w.ttTrucks===1?'':'s'} &middot; ${w.ttPallets} pallets</div>` : '';
     const amzLine = w.amzTrucks > 0 ? `<div><span style="color:#0e7490;font-weight:700;">AMAZON:</span> ${w.amzTrucks} truck${w.amzTrucks===1?'':'s'} &middot; ${w.amzPallets} pallets</div>` : '';
     const mixLine = w.mixTrucks > 0 ? `<div><span style="color:#64748b;">Other:</span> ${w.mixTrucks} truck${w.mixTrucks===1?'':'s'} &middot; ${w.mixPallets} pallets</div>` : '';
-    const swapLine = w.swapPallets > 0 ? `<div style="color:#b91c1c;font-weight:700;margin-top:4px;">🔁 Swap TT: ${w.swapTrucks} truck${w.swapTrucks===1?'':'s'} &middot; ${w.swapPallets} pallets (+£30 each)</div>` : '';
+    const swapLine = w.swapPallets > 0 ? `<div style="color:#b91c1c;font-weight:700;margin-top:4px;">🔁 Swap TT: ${w.swapTrucks} truck${w.swapTrucks===1?'':'s'} &middot; ${w.swapPallets} pallets (+£${swapPrem} each)</div>` : '';
 
     const weekTotal = clientWeekTotal(w);
     return `<tr>
@@ -6272,7 +6688,7 @@ function exportClientBreakdown(weekMon) {
       <td class="num">
         <div class="line">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} <span class="muted">(my fee)</span> = ${money(baseProfit)}</div>
         <div class="line">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} <span class="muted">(Hugo)</span> = ${money(hugoTotal)}</div>
-        ${w.swapPallets > 0 ? `<div class="line" style="color:#b91c1c;">${w.swapPallets} × £30 <span class="muted">(swap surcharge)</span> = ${money(swapSurcharge)}</div>` : ''}
+        ${w.swapPallets > 0 ? `<div class="line" style="color:#b91c1c;">${w.swapPallets} × £${swapPrem} <span class="muted">(swap surcharge)</span> = ${money(swapSurcharge)}</div>` : ''}
       </td>
       <td class="num total"><b>${money(weekTotal)}</b></td>
     </tr>`;
@@ -6441,7 +6857,7 @@ function exportClientBreakdown(weekMon) {
     </div>
     <div class="sum-item">
       <div class="label">Swap TT Surcharge</div>
-      <div class="value">+£30 / pallet</div>
+      <div class="value">+£${swapTtPremium()} / pallet</div>
     </div>
     <div class="sum-item due">
       <div class="label">Grand Total</div>
