@@ -6113,6 +6113,15 @@ function openEmailSend(docType, docId) {
   document.getElementById('es-doc-label').textContent = docType === 'invoice' ? '发送发票邮件' : '发送收据邮件';
   document.getElementById('es-to').value = defaultTo;
   document.getElementById('es-subject').value = defaultSubject;
+  // Hint when customer has no email on file
+  const subEl = document.getElementById('es-sub');
+  if (subEl) {
+    if (!defaultTo) {
+      subEl.innerHTML = '⚠️ <b style="color:var(--amber);">该客户档案没填邮箱</b> — 这次手动输,然后去客户信息页面填上,以后就自动带出。 · 由 <b style="color:var(--cyan);">CYPP UK LTD</b> 发出 · <b style="color:var(--green);">不含银行信息</b>';
+    } else {
+      subEl.innerHTML = '✓ 已自动填入客户档案里的邮箱 · 由 <b style="color:var(--cyan);">CYPP UK LTD</b> 发出 · 客户回复直接到你 Gmail · <b style="color:var(--green);">不含银行信息</b>';
+    }
+  }
   document.getElementById('es-cc').value = '';
   document.getElementById('es-replyto-display').textContent = (currentUser && currentUser.email) || 'harreds.ceo@gmail.com';
   document.getElementById('es-content-summary').textContent = docType === 'invoice'
