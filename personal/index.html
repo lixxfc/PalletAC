@@ -1843,10 +1843,23 @@ select option { background: var(--bg-2); color: var(--text); }
 
           <div class="row mt-6" style="align-items:center;">
             <div class="grow">
-              <div class="card-title">发票历史 Invoices <span class="badge" id="cd-inv-count">0 张</span></div>
-              <div class="page-sub">所有发给该客户的发票 · 可标记付款 / 作废 / 重新打印</div>
+              <div class="card-title" style="color:var(--green);">收款历史 Receipts <span class="badge" id="cd-rec-count" style="background:rgba(34,211,165,0.18);color:var(--green);">0 张</span></div>
+              <div class="page-sub">客户预付时<b style="color:var(--green);">自动生成</b> · 可打印 / 改备注 / 作废 · <span class="dim">REC-DDMMYYYY-NNN</span></div>
             </div>
-            <button class="btn sm" onclick="openInvoiceEditor({customerId: currentCustomer})">＋ 新建 Invoice</button>
+          </div>
+          <div class="table-wrap mt-4" style="border-color:rgba(34,211,165,0.18);">
+            <table>
+              <thead><tr><th>收据号</th><th>日期</th><th>金额</th><th>说明</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="cust-receipt-body"></tbody>
+            </table>
+          </div>
+
+          <div class="row mt-6" style="align-items:center;">
+            <div class="grow">
+              <div class="card-title">发票历史 Invoices <span class="badge" id="cd-inv-count">0 张</span></div>
+              <div class="page-sub">客户取货时<b style="color:var(--cyan);">自动生成</b> · 可标记付款 / 作废 / 重新打印 · <span class="dim">INV-DDMMYYYY-NNN</span></div>
+            </div>
+            <button class="btn sm" onclick="openInvoiceEditor({customerId: currentCustomer})">＋ 手动新建</button>
           </div>
           <div class="table-wrap mt-4">
             <table>
@@ -2093,7 +2106,7 @@ select option { background: var(--bg-2); color: var(--text); }
     <div class="page-sub mb-4">所有字段都可以改 · 保存后会出现在客户的发票历史里 · 可一键打印 / 存为 PDF</div>
 
     <div class="form-grid">
-      <div class="form-row"><label>发票号</label><input type="text" id="inv-no" placeholder="INV-YYYYMMDD-XXX"></div>
+      <div class="form-row"><label>发票号</label><input type="text" id="inv-no" placeholder="INV-DDMMYYYY-XXX"></div>
       <div class="form-row"><label>开票日期</label><input type="date" id="inv-date" onchange="recomputeInvoiceDueDate()"></div>
       <div class="form-row"><label>付款条件</label>
         <select id="inv-terms" onchange="onTermsChange()">
@@ -2373,6 +2386,7 @@ function emptyState() {
     params: { buyPrice: 245, sellPrice: 265, myFee: 31, hugoFee: 7, vFee: 2, swapPremium: 30 },
     customers: [],
     invoices: [],
+    receipts: [],
     dailySupply: [],
     rotation: {
       refMonday: '2026-05-04',
@@ -2413,9 +2427,18 @@ async function loadUserData() {
           if (merged > 0) await saveUserDataNow();  // persist the cleanup
         }
       } catch (e) { console.warn('[supply] consolidate skipped:', e); }
+      // Migrate invoice/receipt numbering + backfill receipts for historical deposits
+      // (idempotent — safe on every load)
+      try {
+        if (typeof migrateInvoicesAndReceiptsToNewFormat === 'function') {
+          const r = migrateInvoicesAndReceiptsToNewFormat();
+          if (r.changed) await saveUserDataNow();
+        }
+      } catch (e) { console.warn('[migrate] invoice/receipt skipped:', e); }
     } else {
       // First-time user: start with empty state (no test data)
       state = emptyState();
+      ensureReceiptsArray();
       await saveUserDataNow();
     }
   } catch (err) {
@@ -3463,7 +3486,8 @@ function renderCustomerDetail() {
   // Render the two weekly breakdowns (client-facing + self)
   renderClientBreakdown(c);
   renderSelfBreakdown(c);
-  // Render invoice history
+  // Render receipt + invoice history
+  renderCustomerReceipts(c);
   renderCustomerInvoices(c);
   // Update prev/next customer position indicator
   if (typeof updateCustomerSwitcher === 'function') updateCustomerSwitcher();
@@ -3495,9 +3519,17 @@ function renderCustomerDetail() {
     // Anomaly flag: pallets > 3× this customer's median pickup
     const anomaly = (e.type === 'pickup') ? checkAnomaly(c, e) : null;
     const anomalyTag = anomaly ? ` <span class="anomaly-flag" title="${escapeHtml(anomaly)}">⚠</span>` : '';
+    // Doc lookup — show "view" link if an auto-invoice / auto-receipt is already linked
+    const linkedInv = (e.type === 'pickup') ? (state.invoices || []).find(i => i.linkedPickupId === e.id) : null;
+    const linkedRec = (e.type === 'deposit') ? (state.receipts || []).find(r => r.linkedDepositId === e.id) : null;
+    const docTag = linkedInv
+      ? ` <span class="badge" title="已生成发票 ${escapeHtml(linkedInv.number)}" style="font-size:9px;padding:2px 6px;background:rgba(0,229,255,0.12);color:var(--cyan);cursor:pointer;" onclick="editInvoice('${linkedInv.id}')">📄 ${escapeHtml(linkedInv.number)}</span>`
+      : (linkedRec
+        ? ` <span class="badge" title="已生成收据 ${escapeHtml(linkedRec.number)}" style="font-size:9px;padding:2px 6px;background:rgba(34,211,165,0.18);color:var(--green);cursor:pointer;" onclick="printReceipt('${linkedRec.id}')">🧾 ${escapeHtml(linkedRec.number)}</span>`
+        : '');
     return { html: `<tr>
       <td>${e.date}</td>
-      <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}</td>
+      <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}${docTag}</td>
       <td>${e.pallets || '-'}${anomalyTag}</td>
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
@@ -3505,7 +3537,7 @@ function renderCustomerDetail() {
       <td class="dim">${escapeHtml(e.note || '')}</td>
       <td style="white-space:nowrap;">
         ${e.type === 'pickup' ? `<button class="btn sm ghost" title="重复这一笔(填到下面新增表单,日期=今天)" onclick="repeatLedgerEntry('${e.id}')">↻</button> ` : ''}
-        ${e.type === 'pickup' ? `<button class="btn sm ghost" title="为这条取货生成发票" onclick="openInvoiceEditor({customerId: currentCustomer, fromPickup: '${e.id}'})">📄</button> ` : ''}
+        ${e.type === 'pickup' && !linkedInv ? `<button class="btn sm ghost" title="为这条取货生成发票" onclick="openInvoiceEditor({customerId: currentCustomer, fromPickup: '${e.id}'})">📄</button> ` : ''}
         <button class="btn sm danger" onclick="delLedger('${e.id}')">删</button>
       </td>
     </tr>`, id: e.id };
@@ -4305,6 +4337,24 @@ function addLedger() {
   }
   if (!entry) return;
   c.ledger.push(entry);
+
+  // === Auto-generate Receipt / Invoice ===
+  // Rule: only the form's deposit/pickup types trigger auto-docs.
+  //       'adjust' (which may end up as deposit/refund internally) does NOT generate.
+  //       'refund' is money OUT, not a receipt.
+  let autoDocMsg = '';
+  try {
+    if (type === 'deposit' && entry.type === 'deposit') {
+      const rec = generateReceiptForDeposit(c, entry, 'auto-deposit');
+      if (rec) autoDocMsg = ' · 已生成收据 ' + rec.number;
+    } else if (type === 'pickup' && entry.type === 'pickup') {
+      const inv = generateInvoiceForPickup(c, entry, 'auto-pickup');
+      if (inv) autoDocMsg = ' · 已生成发票 ' + inv.number;
+    }
+  } catch (err) {
+    console.warn('[auto-doc] generation failed:', err);
+  }
+
   document.getElementById('lg-amount').value = '';
   document.getElementById('lg-pallets').value = '';
   document.getElementById('lg-truck').value = '';
@@ -4312,7 +4362,7 @@ function addLedger() {
   const swapReset = document.getElementById('lg-swap');
   if (swapReset) swapReset.checked = false;
   save(); renderAll();
-  flash('已添加流水');
+  flash('已添加流水' + autoDocMsg);
 }
 function delLedger(id) {
   if (!confirm('删除这条流水？（如果是出货，交易记录会同步删除）')) return;
@@ -4996,13 +5046,20 @@ function ensureInvoicesArray() {
   if (!Array.isArray(state.invoices)) state.invoices = [];
 }
 
-function nextInvoiceNumber() {
+function nextInvoiceNumber(issueDate) {
   ensureInvoicesArray();
-  // Format: INV-YYYYMMDD-NNN  (NNN = 1-based count for that day, padded)
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const sameDay = state.invoices.filter(i => i.number && i.number.startsWith('INV-' + today + '-'));
+  // Format: INV-DDMMYYYY-NNN  (DDMMYYYY = issue date; NNN = 1-based count within that day)
+  // If issueDate is omitted/invalid, falls back to today.
+  const d = issueDate ? new Date(issueDate + 'T12:00:00') : new Date();
+  const safe = isNaN(d.getTime()) ? new Date() : d;
+  const dd = String(safe.getDate()).padStart(2, '0');
+  const mm = String(safe.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(safe.getFullYear());
+  const dateKey = dd + mm + yyyy;
+  const prefix = 'INV-' + dateKey + '-';
+  const sameDay = state.invoices.filter(i => i.number && i.number.startsWith(prefix));
   const seq = String(sameDay.length + 1).padStart(3, '0');
-  return `INV-${today}-${seq}`;
+  return prefix + seq;
 }
 
 function invoiceStatusOf(inv) {
@@ -5078,6 +5135,8 @@ function openInvoiceEditor(opts) {
         });
         inv.linkedPickupId = pickup.id;
         inv.issueDate = pickup.date || inv.issueDate;
+        // Regenerate number so it matches the actual issue date (pickup date)
+        inv.number = nextInvoiceNumber(inv.issueDate);
       }
     }
     // (b) Blank: just one empty line
@@ -5667,6 +5726,562 @@ function printInvoice(id) {
   <div class="bottom">
     <div>Invoice ${esc(inv.number)} &nbsp;·&nbsp; Issued ${fmtDate(inv.issueDate)} &nbsp;·&nbsp; Due ${fmtDate(inv.dueDate || inv.issueDate)}</div>
     <div class="thanks">Thank you for your business.</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口后再试'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+// ============================================================
+// RECEIPTS (收款单) — money received from customer (deposits)
+// Auto-generated when a 'deposit' ledger entry is added.
+// Format: REC-DDMMYYYY-NNN
+// ============================================================
+function ensureReceiptsArray() {
+  if (!Array.isArray(state.receipts)) state.receipts = [];
+}
+
+function nextReceiptNumber(receiptDate) {
+  ensureReceiptsArray();
+  // Format: REC-DDMMYYYY-NNN  (DDMMYYYY = payment receipt date)
+  const d = receiptDate ? new Date(receiptDate + 'T12:00:00') : new Date();
+  const safe = isNaN(d.getTime()) ? new Date() : d;
+  const dd = String(safe.getDate()).padStart(2, '0');
+  const mm = String(safe.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(safe.getFullYear());
+  const dateKey = dd + mm + yyyy;
+  const prefix = 'REC-' + dateKey + '-';
+  const sameDay = state.receipts.filter(r => r.number && r.number.startsWith(prefix));
+  const seq = String(sameDay.length + 1).padStart(3, '0');
+  return prefix + seq;
+}
+
+function receiptStatusOf(rec) {
+  if (rec && rec.status === 'cancelled') return 'cancelled';
+  return 'issued';
+}
+
+function customerReceipts(customerId) {
+  ensureReceiptsArray();
+  return state.receipts
+    .filter(r => r.customerId === customerId)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+// === Auto-generate receipt for a deposit entry (idempotent) ===
+function generateReceiptForDeposit(customer, depositEntry, sourceTag) {
+  ensureReceiptsArray();
+  if (!customer || !depositEntry) return null;
+  if (state.receipts.some(r => r.linkedDepositId === depositEntry.id)) return null;
+  const sellPrice = state.params.sellPrice || 265;
+  const palletsRef = sellPrice > 0 ? Math.floor((depositEntry.amount || 0) / sellPrice) : 0;
+  const co = state.company || {};
+  const rec = {
+    id: crypto.randomUUID(),
+    number: nextReceiptNumber(depositEntry.date),
+    customerId: customer.id,
+    linkedDepositId: depositEntry.id,
+    date: depositEntry.date,
+    amount: depositEntry.amount || 0,
+    method: 'bank',
+    note: depositEntry.note || '',
+    status: 'issued',
+    palletsRef,
+    unitPriceRef: sellPrice,
+    source: sourceTag || 'auto-deposit',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    customerSnapshot: {
+      name: customer.name || '', address: customer.address || '', postcode: customer.postcode || '',
+      phone: customer.phone || '', email: customer.email || '',
+      companyNo: customer.companyNo || '', vatNo: customer.vatNo || ''
+    },
+    companySnapshot: {
+      name: co.name || '', address: co.address || '', postcode: co.postcode || '',
+      phone: co.phone || '', email: co.email || '',
+      companyNo: co.companyNo || '', vatNo: co.vatNo || '',
+      bank: co.bank || ''
+    }
+  };
+  state.receipts.push(rec);
+  return rec;
+}
+
+// === Auto-generate invoice for a pickup entry (idempotent) ===
+function generateInvoiceForPickup(customer, pickupEntry, sourceTag) {
+  ensureInvoicesArray();
+  if (!customer || !pickupEntry) return null;
+  if (state.invoices.some(i => i.linkedPickupId === pickupEntry.id)) return null;
+  const isSwap = !!pickupEntry.isSwap;
+  const unitPrice = pickupEntry.unitPrice != null
+    ? pickupEntry.unitPrice
+    : (isSwap ? (state.params.sellPrice + swapTtPremium()) : state.params.sellPrice);
+  const desc = (isSwap ? 'Pallets (Swap TT)' : 'Pallets')
+             + (pickupEntry.palletType && !isSwap ? ' (' + pickupEntry.palletType + ')' : '')
+             + (pickupEntry.truck ? ' [Vehicle ' + pickupEntry.truck + ']' : '');
+  const subtotal = (pickupEntry.pallets || 0) * unitPrice;
+  const issueDate = pickupEntry.date || new Date().toISOString().slice(0, 10);
+  const dueDate = computeDueDate(issueDate, '7', 0);
+  const co = state.company || {};
+  const inv = {
+    id: crypto.randomUUID(),
+    number: nextInvoiceNumber(issueDate),
+    customerId: customer.id,
+    linkedPickupId: pickupEntry.id,
+    issueDate,
+    dueDate,
+    paymentTerms: '7',
+    customDays: '',
+    poNumber: '',
+    notes: 'Thank you for your business. Payment by bank transfer.',
+    lineItems: [{
+      description: desc,
+      qty: pickupEntry.pallets || 0,
+      unitPrice
+    }],
+    subtotal,
+    total: subtotal,
+    status: 'unpaid',
+    paidDate: null,
+    paidNote: null,
+    source: sourceTag || 'auto-pickup',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    customerSnapshot: {
+      name: customer.name || '', address: customer.address || '', postcode: customer.postcode || '',
+      phone: customer.phone || '', email: customer.email || '',
+      companyNo: customer.companyNo || '', vatNo: customer.vatNo || ''
+    },
+    companySnapshot: {
+      name: co.name || '', address: co.address || '', postcode: co.postcode || '',
+      phone: co.phone || '', email: co.email || '',
+      companyNo: co.companyNo || '', vatNo: co.vatNo || '',
+      bank: co.bank || ''
+    }
+  };
+  state.invoices.push(inv);
+  return inv;
+}
+
+// ============================================================
+// ONE-TIME MIGRATION (idempotent, safe to re-run)
+// 1) Renumbers existing invoices and receipts to INV/REC-DDMMYYYY-NNN
+//    based on each document's *date* (issueDate / receipt date), with
+//    sequence numbers assigned in chronological createdAt order.
+// 2) Backfills a Receipt for every historical 'deposit' ledger entry
+//    that doesn't already have one linked.
+// 3) Preserves data: original numbers stored on `oldNumber`. Nothing deleted.
+// ============================================================
+function _ddmmyyyyKey(iso) {
+  if (!iso) return null;
+  const parts = String(iso).split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts;
+  if (!y || !m || !d) return null;
+  return d + m + y;
+}
+
+function migrateInvoicesAndReceiptsToNewFormat() {
+  ensureInvoicesArray();
+  ensureReceiptsArray();
+  let renamedInv = 0, renamedRec = 0, createdRec = 0;
+
+  // ---------- 1. Renumber INVOICES by issueDate ----------
+  const invByDate = {};
+  for (const inv of state.invoices) {
+    const key = _ddmmyyyyKey(inv.issueDate);
+    if (!key) continue;
+    (invByDate[key] = invByDate[key] || []).push(inv);
+  }
+  for (const key of Object.keys(invByDate)) {
+    const list = invByDate[key];
+    list.sort((a, b) => {
+      const ca = a.createdAt || a.updatedAt || '';
+      const cb = b.createdAt || b.updatedAt || '';
+      if (ca !== cb) return ca.localeCompare(cb);
+      // Stable fallback: original sequence in number
+      const numA = (a.number || '').split('-').pop();
+      const numB = (b.number || '').split('-').pop();
+      return (parseInt(numA, 10) || 0) - (parseInt(numB, 10) || 0);
+    });
+    list.forEach((inv, idx) => {
+      const newNumber = 'INV-' + key + '-' + String(idx + 1).padStart(3, '0');
+      if (inv.number !== newNumber) {
+        if (!inv.oldNumber) inv.oldNumber = inv.number || '';
+        inv.number = newNumber;
+        renamedInv++;
+      }
+    });
+  }
+
+  // ---------- 2. Renumber EXISTING receipts by receipt date ----------
+  const recByDate = {};
+  for (const rec of state.receipts) {
+    const key = _ddmmyyyyKey(rec.date);
+    if (!key) continue;
+    (recByDate[key] = recByDate[key] || []).push(rec);
+  }
+  for (const key of Object.keys(recByDate)) {
+    const list = recByDate[key];
+    list.sort((a, b) => {
+      const ca = a.createdAt || a.updatedAt || '';
+      const cb = b.createdAt || b.updatedAt || '';
+      return ca.localeCompare(cb);
+    });
+    list.forEach((rec, idx) => {
+      const newNumber = 'REC-' + key + '-' + String(idx + 1).padStart(3, '0');
+      if (rec.number !== newNumber) {
+        if (!rec.oldNumber) rec.oldNumber = rec.number || '';
+        rec.number = newNumber;
+        renamedRec++;
+      }
+    });
+  }
+
+  // ---------- 3. Backfill RECEIPTS for all historical deposits ----------
+  // Collect deposits that don't yet have a linked receipt.
+  const linkedDepIds = new Set(state.receipts.map(r => r.linkedDepositId).filter(Boolean));
+  const pendingDeposits = [];
+  for (const c of state.customers || []) {
+    for (const e of c.ledger || []) {
+      if (e.type !== 'deposit') continue;
+      if (linkedDepIds.has(e.id)) continue;
+      pendingDeposits.push({ customer: c, entry: e });
+    }
+  }
+  // Sort by deposit date ASC (chronological) so receipt sequence reflects history order.
+  pendingDeposits.sort((a, b) => (a.entry.date || '').localeCompare(b.entry.date || ''));
+
+  // Per-day sequence counter, seeded with existing receipts to avoid collision.
+  const daySeq = {};
+  for (const rec of state.receipts) {
+    const k = _ddmmyyyyKey(rec.date);
+    if (!k) continue;
+    daySeq[k] = (daySeq[k] || 0) + 1;
+  }
+
+  const sellPrice = state.params.sellPrice || 265;
+  const co = state.company || {};
+  for (const { customer, entry } of pendingDeposits) {
+    const key = _ddmmyyyyKey(entry.date);
+    if (!key) continue;
+    daySeq[key] = (daySeq[key] || 0) + 1;
+    const number = 'REC-' + key + '-' + String(daySeq[key]).padStart(3, '0');
+    const palletsRef = sellPrice > 0 ? Math.floor((entry.amount || 0) / sellPrice) : 0;
+    state.receipts.push({
+      id: crypto.randomUUID(),
+      number,
+      customerId: customer.id,
+      linkedDepositId: entry.id,
+      date: entry.date,
+      amount: entry.amount || 0,
+      method: 'bank',
+      note: entry.note || '',
+      status: 'issued',
+      palletsRef,
+      unitPriceRef: sellPrice,
+      source: 'backfill',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      customerSnapshot: {
+        name: customer.name || '', address: customer.address || '', postcode: customer.postcode || '',
+        phone: customer.phone || '', email: customer.email || '',
+        companyNo: customer.companyNo || '', vatNo: customer.vatNo || ''
+      },
+      companySnapshot: {
+        name: co.name || '', address: co.address || '', postcode: co.postcode || '',
+        phone: co.phone || '', email: co.email || '',
+        companyNo: co.companyNo || '', vatNo: co.vatNo || '',
+        bank: co.bank || ''
+      }
+    });
+    createdRec++;
+  }
+
+  if (renamedInv + renamedRec + createdRec > 0) {
+    console.log(`[migrate] renamed ${renamedInv} invoice(s), renamed ${renamedRec} receipt(s), backfilled ${createdRec} receipt(s)`);
+  }
+  return { renamedInv, renamedRec, createdRec, changed: (renamedInv + renamedRec + createdRec) > 0 };
+}
+
+function cancelReceipt(id) {
+  const rec = (state.receipts || []).find(r => r.id === id);
+  if (!rec) return;
+  if (rec.status === 'cancelled') {
+    if (!confirm('恢复收据(取消作废)?')) return;
+    rec.status = 'issued';
+  } else {
+    if (!confirm('作废这张收据?(记录会保留,但状态变为 Cancelled)')) return;
+    rec.status = 'cancelled';
+  }
+  rec.updatedAt = new Date().toISOString();
+  save(); renderAll();
+}
+
+function editReceiptNote(id) {
+  const rec = (state.receipts || []).find(r => r.id === id);
+  if (!rec) return;
+  const newNote = prompt('修改备注:', rec.note || '');
+  if (newNote === null) return;
+  rec.note = newNote;
+  rec.updatedAt = new Date().toISOString();
+  save(); renderAll();
+  flash('备注已更新');
+}
+
+function renderCustomerReceipts(c) {
+  const tb = document.getElementById('cust-receipt-body');
+  const cnt = document.getElementById('cd-rec-count');
+  if (!tb) return;
+  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; return; }
+  const list = customerReceipts(c.id);
+  if (cnt) cnt.textContent = list.length + ' 张';
+  if (!list.length) {
+    tb.innerHTML = `<tr><td colspan="6" class="dim" style="text-align:center;padding:30px;">还没有收款单 — 客户预付时自动生成</td></tr>`;
+    return;
+  }
+  const statusBadge = {
+    issued: '<span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);">ISSUED</span>',
+    cancelled: '<span class="badge" style="background:rgba(148,163,196,0.18);color:var(--text-dim);text-decoration:line-through;">CANCELLED</span>'
+  };
+  tb.innerHTML = list.map(rec => {
+    const status = receiptStatusOf(rec);
+    const palletsHint = rec.palletsRef ? `≈ ${rec.palletsRef} 托 @ £${rec.unitPriceRef || 265}` : '';
+    const noteTxt = rec.note ? (palletsHint ? ' · ' : '') + escapeHtml(rec.note) : '';
+    return `<tr ${status === 'cancelled' ? 'style="opacity:0.55;"' : ''}>
+      <td><b>${escapeHtml(rec.number)}</b></td>
+      <td class="dim">${escapeHtml(rec.date)}</td>
+      <td><b style="color:var(--green);">${fmt(rec.amount)}</b></td>
+      <td class="dim" style="font-size:11px;">${escapeHtml(palletsHint)}${noteTxt}</td>
+      <td>${statusBadge[status] || ''}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn sm ghost" title="打印 / PDF" onclick="printReceipt('${rec.id}')">🖨</button>
+        <button class="btn sm ghost" title="改备注" onclick="editReceiptNote('${rec.id}')">✎</button>
+        <button class="btn sm ghost danger" title="${status === 'cancelled' ? '取消作废' : '作废'}" onclick="cancelReceipt('${rec.id}')">${status === 'cancelled' ? '↺' : '∅'}</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function printReceipt(id) {
+  const rec = (state.receipts || []).find(r => r.id === id);
+  if (!rec) return;
+  const c = rec.customerSnapshot || {};
+  const company = rec.companySnapshot || {};
+  const status = receiptStatusOf(rec);
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round(v * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+
+  const numToWords = n => {
+    n = Math.round(Math.abs(n));
+    if (n === 0) return 'zero';
+    const ones = ['','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+    const tens = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+    const chunk = (x) => {
+      if (x === 0) return '';
+      if (x < 20) return ones[x];
+      if (x < 100) return tens[Math.floor(x/10)] + (x%10 ? '-' + ones[x%10] : '');
+      return ones[Math.floor(x/100)] + ' hundred' + (x%100 ? ' and ' + chunk(x%100) : '');
+    };
+    let parts = [];
+    const million = Math.floor(n / 1000000); n %= 1000000;
+    const thousand = Math.floor(n / 1000); n %= 1000;
+    if (million) parts.push(chunk(million) + ' million');
+    if (thousand) parts.push(chunk(thousand) + ' thousand');
+    if (n) parts.push(chunk(n));
+    return parts.join(' ');
+  };
+
+  const amtMain = Math.floor(rec.amount || 0);
+  const amtPence = Math.round(((rec.amount || 0) - amtMain) * 100);
+  const wordsMain = numToWords(amtMain);
+  const inWords = wordsMain.charAt(0).toUpperCase() + wordsMain.slice(1) + ' pounds' + (amtPence ? ' and ' + numToWords(amtPence) + ' pence' : '');
+
+  const methodLabel = ({
+    bank: 'Bank transfer', cash: 'Cash', card: 'Card payment', cheque: 'Cheque'
+  })[rec.method] || 'Bank transfer';
+
+  const statusBanner = status === 'cancelled'
+    ? `<div class="status-stamp">CANCELLED</div>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Receipt ${esc(rec.number)} &mdash; ${esc(c.name || '')}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0a0e1a; --ink-2: #1e293b; --muted: #64748b; --mute-2: #94a3b8;
+    --line: #e2e8f0; --line-soft: #f1f5f9; --bg: #fafbfc;
+    --accent: #047857; --accent-soft: #ecfdf5; --paper: #ffffff;
+  }
+  html, body { background: var(--bg); }
+  body { font-family: 'Inter', -apple-system, sans-serif; color: var(--ink); font-size: 13px; line-height: 1.55; font-feature-settings: 'tnum' on, 'ss01' on; -webkit-font-smoothing: antialiased; padding: 32px 16px 48px; }
+  .paper { max-width: 760px; margin: 0 auto; background: var(--paper); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 10px 40px rgba(10,14,26,0.08); overflow: hidden; position: relative; }
+  .status-stamp {
+    position: absolute; top: 130px; right: -50px; transform: rotate(-12deg);
+    font-family: 'Playfair Display', Georgia, serif; font-size: 56px; font-weight: 900;
+    letter-spacing: 6px; opacity: 0.2; pointer-events: none;
+    padding: 6px 70px; border: 5px solid currentColor; border-radius: 6px;
+    z-index: 5; color: #64748b;
+  }
+  .header { padding: 40px 48px 32px; background: linear-gradient(135deg, var(--accent) 0%, #059669 100%); color: #fff; position: relative; overflow: hidden; }
+  .header::after { content: ''; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,0.06); }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1; }
+  .brand { max-width: 60%; }
+  .brand .co-name { font-family: 'Playfair Display', Georgia, serif; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; line-height: 1.1; color: #fff; }
+  .brand .co-lines { margin-top: 10px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.7; }
+  .brand .co-lines .reg { opacity: 0.7; font-size: 11px; margin-top: 6px; display: block; }
+  .doc-title { text-align: right; }
+  .doc-title .label { font-size: 10px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.7); }
+  .doc-title h1 { font-family: 'Playfair Display', Georgia, serif; font-size: 40px; font-weight: 900; letter-spacing: -0.5px; margin-top: 2px; color: #fff; }
+  .doc-title .no { margin-top: 8px; font-size: 11px; color: rgba(255,255,255,0.85); font-weight: 500; letter-spacing: 1px; }
+
+  .meta { padding: 28px 48px 0; display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; }
+  .meta-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px; }
+  .meta-block .primary { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .meta-block .lines { font-size: 12px; color: var(--ink-2); line-height: 1.65; }
+  .meta-block .muted { color: var(--muted); }
+
+  .hero { margin: 32px 48px 0; padding: 28px 32px; background: var(--accent-soft); border-radius: 8px; border-left: 4px solid var(--accent); }
+  .hero .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+  .hero .amount { font-family: 'Playfair Display', Georgia, serif; font-size: 44px; font-weight: 900; color: var(--accent); letter-spacing: -1px; line-height: 1; }
+  .hero .words { margin-top: 12px; font-size: 13px; font-style: italic; color: var(--ink-2); padding-top: 10px; border-top: 1px dashed rgba(4,120,87,0.25); }
+
+  .body-text { padding: 28px 48px 8px; font-size: 13px; color: var(--ink-2); line-height: 1.8; }
+  .body-text b { color: var(--ink); }
+
+  .grid-2 { padding: 0 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 8px; }
+  .info-row { padding: 12px 0; border-bottom: 1px solid var(--line-soft); display: flex; justify-content: space-between; align-items: baseline; }
+  .info-row .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+  .info-row .v { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+  .footer-grid { padding: 32px 48px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 36px; border-top: 1px solid var(--line-soft); margin-top: 24px; }
+  .note-block .label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--mute-2); margin-bottom: 8px; }
+  .note-block p { font-size: 12px; color: var(--ink-2); line-height: 1.7; }
+  .sig-block { text-align: right; }
+  .sig-line { border-top: 1.5px solid var(--ink); margin-top: 50px; padding-top: 6px; font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  .bottom { padding: 18px 48px; background: var(--ink); color: rgba(255,255,255,0.7); font-size: 11px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.3px; }
+  .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 13px; font-style: italic; font-weight: 400; }
+
+  .btn-bar { position: fixed; top: 16px; right: 16px; display: flex; gap: 8px; z-index: 100; }
+  .btn-bar button { padding: 10px 18px; background: var(--ink); color: #fff; border: 0; border-radius: 999px; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 4px 14px rgba(0,0,0,0.15); transition: transform 0.15s ease; }
+  .btn-bar button:hover { transform: translateY(-1px); }
+  .btn-bar button.alt { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+  @media print {
+    @page { size: A4; margin: 8mm 10mm; }
+    html, body { background: #fff !important; padding: 0 !important; margin: 0 !important; font-size: 11px !important; }
+    .btn-bar { display: none !important; }
+    .paper { box-shadow: none !important; border-radius: 0 !important; max-width: 100% !important; width: 100% !important; }
+    .header, .bottom, .hero, .status-stamp { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="btn-bar">
+  <button onclick="window.print()">Download / Print PDF</button>
+  <button class="alt" onclick="window.close()">Close</button>
+</div>
+
+<div class="paper">
+  ${statusBanner}
+
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="co-name">${esc(company.name || 'Your Company')}</div>
+        <div class="co-lines">
+          ${company.address ? esc(company.address) : ''}${company.postcode ? ', ' + esc(company.postcode) : ''}
+          ${company.phone ? '<br>Tel: ' + esc(company.phone) : ''}
+          ${company.email ? '<br>' + esc(company.email) : ''}
+          ${(company.companyNo || company.vatNo) ? '<span class="reg">' + (company.companyNo ? 'Company No. ' + esc(company.companyNo) : '') + (company.companyNo && company.vatNo ? ' &nbsp;·&nbsp; ' : '') + (company.vatNo ? 'VAT ' + esc(company.vatNo) : '') + '</span>' : ''}
+        </div>
+      </div>
+      <div class="doc-title">
+        <div class="label">Payment Receipt</div>
+        <h1>Receipt</h1>
+        <div class="no">No. ${esc(rec.number)}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="meta">
+    <div class="meta-block">
+      <div class="label">Received From</div>
+      <div class="primary">${esc(c.name || 'Customer')}</div>
+      <div class="lines">
+        ${c.address ? esc(c.address) + '<br>' : ''}
+        ${c.postcode ? esc(c.postcode) + '<br>' : ''}
+        ${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}
+        ${c.email ? esc(c.email) + '<br>' : ''}
+      </div>
+    </div>
+    <div class="meta-block" style="text-align:right;">
+      <div class="label">Date Received</div>
+      <div class="primary">${fmtDate(rec.date)}</div>
+      <div class="lines"><span class="muted">Method: ${esc(methodLabel)}</span></div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="label">Amount Received</div>
+    <div class="amount">${money(rec.amount || 0)}</div>
+    <div class="words">${esc(inWords)} only.</div>
+  </div>
+
+  <div class="body-text">
+    This is to confirm that we have <b>received the sum of ${money(rec.amount || 0)}</b> from <b>${esc(c.name || 'the above customer')}</b>
+    on <b>${fmtDate(rec.date)}</b> by <b>${esc(methodLabel)}</b>.
+    This amount is held as <b>advance payment</b> against future pallet collection${rec.palletsRef ? `, equivalent to approximately <b>${rec.palletsRef} pallets</b> at the prevailing unit price of ${money(rec.unitPriceRef || 265)} each` : ''}.
+    A separate sales invoice will be issued for each pallet collection going forward, and offset against this prepayment.
+  </div>
+
+  <div class="grid-2">
+    <div>
+      <div class="info-row"><span class="k">Receipt No.</span><span class="v">${esc(rec.number)}</span></div>
+      <div class="info-row"><span class="k">Receipt Date</span><span class="v">${fmtDate(rec.date)}</span></div>
+      <div class="info-row"><span class="k">Payment Method</span><span class="v">${esc(methodLabel)}</span></div>
+    </div>
+    <div>
+      <div class="info-row"><span class="k">Amount</span><span class="v">${money(rec.amount || 0)}</span></div>
+      ${rec.palletsRef ? `<div class="info-row"><span class="k">Pallet Equivalent</span><span class="v">≈ ${rec.palletsRef} @ ${money(rec.unitPriceRef || 265)}</span></div>` : ''}
+      <div class="info-row"><span class="k">Status</span><span class="v">${status === 'cancelled' ? 'Cancelled' : 'Issued'}</span></div>
+    </div>
+  </div>
+
+  <div class="footer-grid">
+    <div class="note-block">
+      <div class="label">Notes</div>
+      <p>${rec.note ? esc(rec.note) : 'Funds received and acknowledged. This receipt is not a tax invoice. A sales invoice will be issued separately upon delivery of pallets.'}</p>
+    </div>
+    <div class="sig-block">
+      <div class="note-block"><div class="label">Authorised By</div></div>
+      <div class="sig-line">Signature</div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div>Receipt ${esc(rec.number)} &nbsp;&middot;&nbsp; Issued ${fmtDate(rec.date)}</div>
+    <div class="thanks">Thank you for your prepayment.</div>
   </div>
 </div>
 </body>
