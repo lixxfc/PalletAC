@@ -326,11 +326,84 @@ main { flex: 1; min-width: 0; padding: 28px 32px 60px; }
   gap: 14px; margin-bottom: 24px;
 }
 .kpi {
-  padding: 18px 20px; border-radius: 16px;
+  padding: 18px 20px 28px; border-radius: 16px;
   background: var(--glass); backdrop-filter: blur(20px);
   border: 1px solid var(--stroke);
   position: relative; overflow: hidden;
   transition: transform 0.2s, box-shadow 0.2s;
+}
+.kpi-info {
+  position: absolute; bottom: 8px; right: 10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0, 229, 255, 0.08); color: var(--cyan);
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  cursor: pointer; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center;
+  transition: all 0.15s ease; opacity: 0.55;
+}
+.kpi:hover .kpi-info { opacity: 1; }
+.kpi-info:hover { background: rgba(0, 229, 255, 0.2); transform: scale(1.1); }
+
+/* Drilldown drawer */
+.drilldown-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 90;
+  background: rgba(5, 8, 25, 0.55); backdrop-filter: blur(4px);
+}
+.drilldown-backdrop.open { display: block; }
+.drilldown-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 100%; max-width: 540px; z-index: 91;
+  background: linear-gradient(180deg, rgba(20,28,60,0.97), rgba(15,22,50,0.98));
+  border-left: 1px solid var(--stroke);
+  box-shadow: -10px 0 40px rgba(0,0,0,0.4);
+  transform: translateX(100%); transition: transform 0.25s ease;
+  display: flex; flex-direction: column;
+}
+.drilldown-backdrop.open + .drilldown-panel,
+.drilldown-panel.open { transform: translateX(0); }
+.drilldown-head {
+  padding: 22px 24px 16px; border-bottom: 1px solid rgba(139,150,255,0.12);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+}
+.drilldown-title { font-size: 17px; font-weight: 700; color: var(--text); }
+.drilldown-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.drilldown-close {
+  background: transparent; border: 0; color: var(--text-dim);
+  font-size: 22px; cursor: pointer; padding: 0 6px; flex-shrink: 0;
+}
+.drilldown-close:hover { color: var(--text); }
+.drilldown-body { flex: 1; overflow-y: auto; padding: 0 24px 16px; }
+.drilldown-formula {
+  margin-top: 18px; padding: 14px 16px; border-radius: 10px;
+  background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.15);
+  font-family: 'Inter', monospace; font-size: 12.5px; line-height: 1.85;
+  color: var(--text);
+}
+.drilldown-formula .k { color: var(--text-dim); }
+.drilldown-formula .v { font-weight: 700; color: var(--text); }
+.drilldown-formula .total { color: var(--cyan); font-size: 14px; font-weight: 800; }
+.drilldown-list-title {
+  font-size: 11px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1.5px;
+  font-weight: 700; margin-top: 22px; margin-bottom: 10px;
+}
+.drilldown-list { display: flex; flex-direction: column; gap: 6px; }
+.drilldown-row {
+  display: grid; grid-template-columns: 90px 1fr auto;
+  gap: 10px; padding: 10px 12px;
+  background: rgba(5,6,15,0.4); border-radius: 8px;
+  border: 1px solid rgba(139,150,255,0.06);
+  font-size: 12.5px; align-items: center;
+}
+.drilldown-row:hover { border-color: rgba(0, 229, 255, 0.25); }
+.drilldown-row .date { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.drilldown-row .desc { color: var(--text); }
+.drilldown-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.drilldown-row .amt.pos { color: var(--green); }
+.drilldown-row .amt.neg { color: var(--rose); }
+.drilldown-foot {
+  padding: 14px 24px; border-top: 1px solid rgba(139,150,255,0.12);
+  display: flex; gap: 8px; flex-wrap: wrap;
 }
 .kpi::before {
   content: ""; position: absolute; inset: 0;
@@ -1029,8 +1102,15 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div class="card-title">新增转账</div>
         <div class="form-grid">
           <div class="form-row"><label>日期</label><input type="date" id="t-date"></div>
-          <div class="form-row"><label>金额 £</label><input type="number" id="t-amount" placeholder="例如 5000" min="1" oninput="updateTransferPreview()"></div>
-          <div class="form-row"><label>备注（可选）</label><input type="text" id="t-note" placeholder="银行转账 / 现金 / …"></div>
+          <div class="form-row"><label>这次转账够买多少托盘</label><input type="number" id="t-pallets" placeholder="例如 72" min="0" oninput="updateTransferPreview()"></div>
+          <div class="form-row"><label>金额 £ <span class="page-sub" style="font-size:10px;">(可手动改)</span></label><input type="number" id="t-amount" placeholder="自动按托盘数 × £245" min="0" step="0.01" oninput="updateTransferPreview()"></div>
+          <div class="form-row" style="grid-column:1/-1;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(251,191,36,0.06);border:1px dashed rgba(251,191,36,0.3);border-radius:10px;">
+              <input type="checkbox" id="t-include-hugo" oninput="updateTransferPreview()">
+              <span><b>💰 包含 Hugo 提成 (£<span id="t-hugo-rate">7</span>/托)</b> — 转账金额追加 <span id="t-hugo-amount">£0</span>,Emma 收到后转给 Hugo</span>
+            </label>
+          </div>
+          <div class="form-row" style="grid-column:1/-1;"><label>备注（可选）</label><input type="text" id="t-note" placeholder="银行转账 / 现金 / …"></div>
         </div>
         <div id="t-preview" class="preview-box"></div>
         <div class="row mt-4">
@@ -1219,6 +1299,24 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
   <div class="row mt-4">
     <button class="btn sm ghost" onclick="calcClear()">清空</button>
     <button class="btn sm" onclick="calcCopy()">复制结果</button>
+  </div>
+</div>
+
+<!-- Drilldown Drawer (per-KPI data lineage) -->
+<div class="drilldown-backdrop" id="drilldown-backdrop" onclick="closeDrilldown()"></div>
+<div class="drilldown-panel" id="drilldown-panel">
+  <div class="drilldown-head">
+    <div>
+      <div class="drilldown-title" id="drilldown-title">数据来源</div>
+      <div class="drilldown-sub" id="drilldown-sub"></div>
+    </div>
+    <button class="drilldown-close" onclick="closeDrilldown()">×</button>
+  </div>
+  <div class="drilldown-body" id="drilldown-body"></div>
+  <div class="drilldown-foot">
+    <button class="btn ghost sm" onclick="drilldownCopy()">📋 复制(Markdown)</button>
+    <button class="btn ghost sm" onclick="drilldownExportCsv()">⇣ 导出 CSV</button>
+    <button class="btn ghost sm" onclick="closeDrilldown()" style="margin-left:auto;">关闭</button>
   </div>
 </div>
 
@@ -1536,38 +1634,290 @@ function renderKpis() {
   const hm = hugoMonth(ym);
   const rate = hugoRate();
 
+  // Hugo: 总应得 (基于托盘) - 已通过 Emma 付 = Michael 还欠 Hugo
+  const hugoPaidViaEmma = getTransfersAll()
+    .filter(t => !t.deleted && t.includesHugoFee)
+    .reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+  const hugoOwed = ht - hugoPaidViaEmma;
+
   document.getElementById('kpi-grid').innerHTML = `
-    <div class="kpi v4">
+    <div class="kpi v4" data-drilldown="balance">
       <div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div>
       <div class="kpi-value ${balCls}">${fmt(bal)}</div>
       <div class="kpi-sub">${maxPallets > 0 ? '够拉 ' + maxPallets + ' 托盘' : '余额不足'}</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('balance')">ⓘ</button>
     </div>
-    <div class="kpi v1">
+    <div class="kpi v1" data-drilldown="transfer-total">
       <div class="kpi-head"><div class="kpi-label">累计转账</div><div class="kpi-icon">↗</div></div>
       <div class="kpi-value">${fmt(tt)}</div>
       <div class="kpi-sub">${getTransfers().length} 笔</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('transfer-total')">ⓘ</button>
     </div>
-    <div class="kpi v6">
+    <div class="kpi v6" data-drilldown="spend-total">
       <div class="kpi-head"><div class="kpi-label">累计取货花费</div><div class="kpi-icon">▦</div></div>
       <div class="kpi-value">${fmt(ts)}</div>
       <div class="kpi-sub">${tp.toLocaleString()} 托盘</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('spend-total')">ⓘ</button>
     </div>
-    <div class="kpi v5">
-      <div class="kpi-head"><div class="kpi-label">Hugo 累计提成</div><div class="kpi-icon">H</div></div>
-      <div class="kpi-value">${fmt(ht)}</div>
-      <div class="kpi-sub">£${rate}/托盘 · 本月 ${fmt(hm)}</div>
+    <div class="kpi v5" data-drilldown="hugo">
+      <div class="kpi-head"><div class="kpi-label">Hugo 提成</div><div class="kpi-icon">H</div></div>
+      <div class="kpi-value" style="color:${hugoOwed > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hugoOwed)}</div>
+      <div class="kpi-sub" style="line-height:1.6;">
+        <div>${hugoOwed > 0 ? '还欠 Hugo' : '已结清'} · 应得 ${fmt(ht)}</div>
+        <div style="font-size:10.5px;">↳ 通过 Emma 付:${fmt(hugoPaidViaEmma)}</div>
+      </div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('hugo')">ⓘ</button>
     </div>
-    <div class="kpi v2">
+    <div class="kpi v2" data-drilldown="month-pallets">
       <div class="kpi-head"><div class="kpi-label">本月托盘</div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${mt.p}</div>
       <div class="kpi-sub">花费 ${fmt(mt.s)} <span class="kpi-trend ${trend}">${trendTxt}</span></div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('month-pallets')">ⓘ</button>
     </div>
-    <div class="kpi v3">
+    <div class="kpi v3" data-drilldown="month-transfer">
       <div class="kpi-head"><div class="kpi-label">本月转账</div><div class="kpi-icon">$</div></div>
       <div class="kpi-value">${fmt(mt.t)}</div>
       <div class="kpi-sub">共 ${getTransfers().filter(e => e.date.startsWith(ym)).length} 笔</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('month-transfer')">ⓘ</button>
     </div>
   `;
+}
+
+// =====================================================
+// KPI DRILLDOWN — slide-out panel showing data lineage
+// =====================================================
+let _drilldownData = null;  // current snapshot for copy/export
+
+function openDrilldown(key) {
+  const data = buildDrilldownData(key);
+  if (!data) return;
+  _drilldownData = data;
+  document.getElementById('drilldown-title').textContent = data.title;
+  document.getElementById('drilldown-sub').textContent = data.sub || '';
+  const body = document.getElementById('drilldown-body');
+
+  // Build formula card
+  let html = '';
+  if (data.formula) {
+    html += `<div class="drilldown-formula">${data.formula}</div>`;
+  }
+
+  // Build rows table
+  if (data.rows && data.rows.length) {
+    html += `<div class="drilldown-list-title">明细 · ${data.rows.length} 条</div>`;
+    html += `<div class="drilldown-list">`;
+    for (const r of data.rows) {
+      const amtCls = r.amount > 0 ? 'pos' : (r.amount < 0 ? 'neg' : '');
+      const amtTxt = r.amount > 0 ? '+' + fmt(r.amount) : fmt(r.amount);
+      html += `<div class="drilldown-row">
+        <div class="date">${escapeHtml(r.date || '')}</div>
+        <div class="desc">${r.desc}</div>
+        <div class="amt ${amtCls}">${amtTxt}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  } else if (data.empty) {
+    html += `<div class="dim" style="padding:30px;text-align:center;">${escapeHtml(data.empty)}</div>`;
+  }
+
+  body.innerHTML = html;
+  document.getElementById('drilldown-backdrop').classList.add('open');
+  document.getElementById('drilldown-panel').classList.add('open');
+}
+
+function closeDrilldown() {
+  document.getElementById('drilldown-backdrop').classList.remove('open');
+  document.getElementById('drilldown-panel').classList.remove('open');
+}
+
+// Build the drilldown payload for a given KPI key
+function buildDrilldownData(key) {
+  const transfers = getTransfers().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const pickups   = getPickups().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const buy = state.params.buyPrice;
+  const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  const ym = new Date().toISOString().slice(0, 7);
+
+  if (key === 'balance') {
+    const tt = totalTransfer();
+    const ts = totalSpent();
+    const bal = tt - ts;
+    const rows = [];
+    // Combine transfers + pickups timeline (recent first)
+    const timeline = [];
+    for (const e of getTransfersAll().filter(x => !x.deleted)) {
+      timeline.push({ date: e.date, type: 'transfer', amount: e.amount || 0, e });
+    }
+    for (const e of getPickupsAll().filter(x => !x.deleted)) {
+      timeline.push({ date: e.date, type: 'pickup', amount: -(e.amount || 0), e });
+    }
+    timeline.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    for (const t of timeline) {
+      const e = t.e;
+      const desc = t.type === 'transfer'
+        ? `<b>转账给 Emma</b> ${e.includesHugoFee ? '<span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;margin-left:4px;">含 Hugo £' + (e.hugoFeeAmount||0) + '</span>' : ''}<br><span class="dim" style="font-size:11px;">by ${userInfo(e.createdBy).name}${e.note ? ' · ' + escapeHtml(e.note) : ''}</span>`
+        : `<b>取货</b> ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}<br><span class="dim" style="font-size:11px;">by ${userInfo(e.createdBy).name}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}</span>`;
+      rows.push({ date: t.date, desc, amount: t.amount });
+    }
+    return {
+      title: '当前余额 · 数据来源',
+      sub: '累计转账 − 累计取货花费',
+      formula: `<div><span class="k">累计转账</span><span class="v" style="float:right;">+£${fmt0(tt)}</span></div>
+                <div><span class="k">累计取货花费</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(ts)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">当前余额</span><span class="v total" style="float:right;">£${fmt0(bal)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '没有任何流水'
+    };
+  }
+
+  if (key === 'transfer-total') {
+    const tt = totalTransfer();
+    const rows = transfers.map(e => ({
+      date: e.date,
+      desc: `<b>${userInfo(e.createdBy).name} 给 Emma 转账</b>${e.pallets ? ' · ' + e.pallets + ' 托盘的钱' : ''}${e.includesHugoFee ? '<span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;margin-left:6px;">含 Hugo £' + (e.hugoFeeAmount||0) + '</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.note ? escapeHtml(e.note) : ''}</span>`,
+      amount: e.amount || 0
+    }));
+    return {
+      title: '累计转账 · 数据来源',
+      sub: `${transfers.length} 笔转账(给 Emma 的基础金额,不含 Hugo 提成那部分)`,
+      formula: `<div><span class="k">合计</span><span class="v total" style="float:right;">£${fmt0(tt)}</span></div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">注:这是给 Emma 买货的基础金额(算 Michael 在 Emma 那的预付款余额),Hugo 提成那部分另算。</div>`,
+      rows
+    };
+  }
+
+  if (key === 'spend-total') {
+    const ts = totalSpent();
+    const tp = totalPallets();
+    const rows = pickups.map(e => ({
+      date: e.date,
+      desc: `<b>${userInfo(e.createdBy).name} 取货</b> ${e.pallets} 托盘${e.palletType ? ' (' + e.palletType + ')' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${buy}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}</span>`,
+      amount: -(e.amount || 0)
+    }));
+    return {
+      title: '累计取货花费 · 数据来源',
+      sub: `${pickups.length} 次取货 · 共 ${tp} 托盘`,
+      formula: `<div><span class="k">总托盘</span><span class="v" style="float:right;">${tp.toLocaleString()} 托</span></div>
+                <div><span class="k">单价</span><span class="v" style="float:right;">£${buy}/托</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">累计花费</span><span class="v total" style="float:right;color:var(--rose);">£${fmt0(ts)}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'hugo') {
+    const ht = hugoTotal();
+    const tp = totalPallets();
+    const paidViaEmma = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee).reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+    const owed = ht - paidViaEmma;
+    const rows = [];
+    // Show pickup-side accruals
+    rows.push({ date: '', desc: '<b style="color:var(--text-dim);">━━ 应得明细(按取货)━━</b>', amount: 0 });
+    for (const e of pickups) {
+      rows.push({
+        date: e.date,
+        desc: `应得 ${e.pallets} 托 × £${rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}</span>`,
+        amount: (e.pallets || 0) * rate
+      });
+    }
+    // Then show "paid via Emma" transfers
+    const hugoTransfers = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
+    if (hugoTransfers.length) {
+      rows.push({ date: '', desc: '<b style="color:var(--text-dim);">━━ 已通过 Emma 支付 ━━</b>', amount: 0 });
+      for (const t of hugoTransfers) {
+        rows.push({
+          date: t.date,
+          desc: `<b>通过 Emma 转给 Hugo</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾选了"包含 Hugo"</span>`,
+          amount: -(t.hugoFeeAmount || 0)
+        });
+      }
+    }
+    return {
+      title: 'Hugo 提成 · 数据来源',
+      sub: `应得 £${fmt0(ht)} − 已付 £${fmt0(paidViaEmma)} = ${owed >= 0 ? '欠 Hugo' : 'Hugo 已多收'} £${fmt0(Math.abs(owed))}`,
+      formula: `<div><span class="k">Hugo 总应得</span><span class="v" style="float:right;">£${fmt0(ht)}</span><div style="font-size:11px;color:var(--text-dim);">${tp} 托 × £${rate}</div></div>
+                <div style="margin-top:8px;"><span class="k">已通过 Emma 转付</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paidViaEmma)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>${owed >= 0 ? 'Michael 欠 Hugo' : 'Hugo 多拿'}</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(Math.abs(owed))}</span></div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7;">注:转账给 Emma 时如果勾"包含 Hugo",这笔 Hugo 提成就当成已通过 Emma 支付了 Hugo。剩下的"欠 Hugo" Michael 还要直接结清(或下次转账勾上)。</div>`,
+      rows
+    };
+  }
+
+  if (key === 'month-pallets') {
+    const monthPickups = pickups.filter(e => (e.date || '').startsWith(ym));
+    const totP = monthPickups.reduce((s, e) => s + (e.pallets || 0), 0);
+    const totS = monthPickups.reduce((s, e) => s + (e.amount || 0), 0);
+    const rows = monthPickups.map(e => ({
+      date: e.date,
+      desc: `<b>${userInfo(e.createdBy).name} 取货</b> ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${buy}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}</span>`,
+      amount: -(e.amount || 0)
+    }));
+    return {
+      title: '本月托盘 · 数据来源',
+      sub: `${ym} · ${monthPickups.length} 次取货`,
+      formula: `<div><span class="k">本月托盘</span><span class="v total" style="float:right;">${totP} 托</span></div>
+                <div style="margin-top:6px;"><span class="k">本月花费</span><span class="v" style="float:right;color:var(--rose);">£${fmt0(totS)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '本月还没有取货'
+    };
+  }
+
+  if (key === 'month-transfer') {
+    const monthTrans = transfers.filter(e => (e.date || '').startsWith(ym));
+    const totT = monthTrans.reduce((s, e) => s + (e.amount || 0), 0);
+    const totHugo = monthTrans.filter(t => t.includesHugoFee).reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+    const rows = monthTrans.map(e => ({
+      date: e.date,
+      desc: `<b>${userInfo(e.createdBy).name} 转账</b>${e.pallets ? ' · ' + e.pallets + ' 托盘' : ''}${e.includesHugoFee ? '<span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;margin-left:6px;">含 Hugo £' + (e.hugoFeeAmount||0) + '</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.note ? escapeHtml(e.note) : ''}</span>`,
+      amount: e.amount || 0
+    }));
+    return {
+      title: '本月转账 · 数据来源',
+      sub: `${ym} · ${monthTrans.length} 笔转账`,
+      formula: `<div><span class="k">本月转账(基础)</span><span class="v total" style="float:right;">£${fmt0(totT)}</span></div>
+                ${totHugo > 0 ? `<div style="margin-top:6px;"><span class="k">+ 含 Hugo 提成</span><span class="v" style="float:right;color:var(--amber);">£${fmt0(totHugo)}</span></div><div style="margin-top:6px;font-size:11px;color:var(--text-dim);">实际银行转出 £${fmt0(totT + totHugo)}</div>` : ''}`,
+      rows,
+      empty: rows.length ? null : '本月还没有转账'
+    };
+  }
+
+  return null;
+}
+function fmt0(v) { return Math.round(v).toLocaleString('en-GB'); }
+
+function drilldownCopy() {
+  if (!_drilldownData) return;
+  const lines = [];
+  lines.push('# ' + _drilldownData.title);
+  if (_drilldownData.sub) lines.push(_drilldownData.sub);
+  lines.push('');
+  lines.push('| 日期 | 说明 | 金额 |');
+  lines.push('|------|------|------|');
+  for (const r of _drilldownData.rows || []) {
+    const desc = String(r.desc).replace(/<[^>]*>/g, '').replace(/\n/g, ' ').trim();
+    const amt = (r.amount > 0 ? '+£' : '£') + Math.round(r.amount).toLocaleString('en-GB');
+    lines.push('| ' + (r.date || '') + ' | ' + desc + ' | ' + amt + ' |');
+  }
+  const txt = lines.join('\n');
+  navigator.clipboard.writeText(txt).then(
+    () => flash('已复制到剪贴板'),
+    () => alert('复制失败,请手动选择文本')
+  );
+}
+
+function drilldownExportCsv() {
+  if (!_drilldownData) return;
+  const rows = [['Date', 'Description', 'Amount']];
+  for (const r of _drilldownData.rows || []) {
+    const desc = String(r.desc).replace(/<[^>]*>/g, '').replace(/\n/g, ' ').replace(/"/g, '""').trim();
+    rows.push([r.date || '', desc, Math.round(r.amount)]);
+  }
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (_drilldownData.title || 'data') + '-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
 }
 
 function delInfo(r) {
@@ -1591,10 +1941,14 @@ function renderTransfers() {
     const btn = r.deleted
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
       : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+    const hugoBadge = r.includesHugoFee && r.hugoFeeAmount > 0
+      ? ` <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;">+ Hugo £${fmt(r.hugoFeeAmount)}</span>`
+      : '';
+    const palletsTag = r.pallets ? ` <span class="dim" style="font-size:11px;">(${r.pallets} 托盘)</span>` : '';
     return `<tr${cls}>
       <td>${r.date}</td>
       ${creatorCell(r)}
-      <td class="pos"><b>+${fmt(r.amount)}</b></td>
+      <td class="pos"><b>+${fmt(r.amount)}</b>${hugoBadge}${palletsTag}</td>
       <td class="dim">${escapeHtml(r.note || '')}${delInfo(r)}</td>
       <td>${btn}</td>
     </tr>`;
@@ -1805,12 +2159,17 @@ function generateEmmaStatement() {
 
   let running = opening;
   let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0;
+  let totalHugoFee = 0;
   const inRange = [];
   for (const e of sorted) {
     if (e.date >= from && e.date <= to) {
       if (e.type === 'transfer') {
         const amt = e.amount || 0;
         totalIn += amt; running += amt; totalTransfers += 1;
+        // Note: Hugo fee does NOT affect Michael's pallet-credit balance with Emma —
+        // it's pass-through (Emma will give it to Hugo cash).
+        // We DO show it on the statement so Emma sees what she owes Hugo.
+        if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
         inRange.push({ ...e, _balance: running });
       } else if (e.type === 'pickup') {
         const palls = e.pallets || 0;
@@ -1834,24 +2193,42 @@ function generateEmmaStatement() {
   const stmtNo = 'STMT-EMMA-' + new Date().toISOString().slice(0,10).replace(/-/g,'');
 
   const rowsHtml = inRange.map(e => {
-    let desc, inCol, outCol;
     if (e.type === 'transfer') {
-      desc = 'Payment Sent to Supplier';
+      let desc = 'Payment Sent to Supplier';
       if (e.note) desc += ` <span class="muted">&mdash; ${esc(e.note)}</span>`;
-      inCol = money(e.amount || 0); outCol = '';
+      const transferRow = `<tr>
+        <td class="date-col">${fmtDate(e.date)}</td>
+        <td>${desc}</td>
+        <td class="num pos">${money(e.amount || 0)}</td>
+        <td class="num neg"></td>
+        <td class="num bal">${money(e._balance)}</td>
+      </tr>`;
+      // If this transfer included Hugo fee — render a SECOND row right after for Hugo,
+      // labeled simply "Hugo Fee" (per user's request — keep it clean, no per-pallet breakdown).
+      // Hugo fee does NOT change the running balance (it's pass-through to Hugo).
+      if (e.includesHugoFee && e.hugoFeeAmount > 0) {
+        const hugoRow = `<tr>
+          <td class="date-col">${fmtDate(e.date)}</td>
+          <td><span style="color:#854d0e;">Hugo Fee</span></td>
+          <td class="num pos" style="color:#854d0e;">${money(e.hugoFeeAmount)}</td>
+          <td class="num neg"></td>
+          <td class="num bal" style="color:var(--mute-2);">—</td>
+        </tr>`;
+        return transferRow + hugoRow;
+      }
+      return transferRow;
     } else {
-      desc = `Pallets Collected &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
+      let desc = `Pallets Collected &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
       if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
       if (e.note) desc += ` <span class="muted">&middot; ${esc(e.note)}</span>`;
-      inCol = ''; outCol = money(e._amount);
+      return `<tr>
+        <td class="date-col">${fmtDate(e.date)}</td>
+        <td>${desc}</td>
+        <td class="num pos"></td>
+        <td class="num neg">${money(e._amount)}</td>
+        <td class="num bal">${money(e._balance)}</td>
+      </tr>`;
     }
-    return `<tr>
-      <td class="date-col">${fmtDate(e.date)}</td>
-      <td>${desc}</td>
-      <td class="num pos">${inCol}</td>
-      <td class="num neg">${outCol}</td>
-      <td class="num bal">${money(e._balance)}</td>
-    </tr>`;
   }).join('');
 
   const balanceLabel = closing < 0 ? 'Amount Owed' : 'Credit Balance';
@@ -2096,7 +2473,11 @@ function generateEmmaStatement() {
       <div class="value neg">${money(totalOut)}</div>
       <div class="sub">${totalPallets} pallet${totalPallets === 1 ? '' : 's'}</div>
     </div>
-    <div class="sum-item"></div>
+    ${totalHugoFee > 0 ? `<div class="sum-item">
+      <div class="label" style="color:#854d0e;">Hugo Fee</div>
+      <div class="value" style="color:#854d0e;">${money(totalHugoFee)}</div>
+      <div class="sub">to pay Hugo cash</div>
+    </div>` : '<div class="sum-item"></div>'}
     <div class="sum-item final">
       <div class="label">${balanceLabel}</div>
       <div class="value ${balanceClass}">${money(Math.abs(closing))}</div>
@@ -2140,6 +2521,7 @@ function generateEmmaStatement() {
     <div class="note-block">
       <div class="label">Notes</div>
       <p>This statement summarises payments sent to the supplier and pallets collected during the period. All pallet collections are valued at the unit price shown opposite. Please review and let us know of any discrepancies.</p>
+      ${totalHugoFee > 0 ? `<p style="margin-top:10px;background:#fef9c3;padding:10px 12px;border-radius:6px;border-left:3px solid #fbbf24;color:#713f12;"><b>Hugo Fee:</b> ${money(totalHugoFee)} included in payments above. Please pass this amount in cash to Hugo.</p>` : ''}
       ${closing < 0
         ? `<p style="margin-top:10px;"><b style="color:var(--neg);">Note:</b> account shows an outstanding balance of <b>${money(Math.abs(closing))}</b> due to the supplier.</p>`
         : `<p style="margin-top:10px;">Account currently holds a credit of <b style="color:var(--pos);">${money(Math.abs(closing))}</b>, available against future pallet collections.</p>`
@@ -2338,17 +2720,51 @@ function updateEmmaQuote() {
 function updateTransferPreview() {
   const box = document.getElementById('t-preview');
   if (!box) return;
-  const amt = parseFloat(document.getElementById('t-amount').value) || 0;
-  if (!amt) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+
+  const palletsEl = document.getElementById('t-pallets');
+  const amtEl = document.getElementById('t-amount');
+  const includeHugoEl = document.getElementById('t-include-hugo');
+  const hugoRateEl = document.getElementById('t-hugo-rate');
+  const hugoAmountEl = document.getElementById('t-hugo-amount');
+
+  const pallets = parseInt(palletsEl ? palletsEl.value : '') || 0;
+  const buyPrice = state.params.buyPrice || 245;
+  const hugoRate = hugoRate ? hugoRateEl.textContent : 0;  // already on DOM
+  const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  if (hugoRateEl) hugoRateEl.textContent = rate;
+
+  // Auto-fill base amount when pallets typed and amount empty (don't overwrite user's manual edit)
+  let baseAmount;
+  if (pallets > 0 && (!amtEl.value || amtEl.dataset.autoFilled === 'true')) {
+    baseAmount = pallets * buyPrice;
+    amtEl.value = baseAmount;
+    amtEl.dataset.autoFilled = 'true';
+  } else {
+    baseAmount = parseFloat(amtEl.value) || 0;
+  }
+
+  const includeHugo = !!(includeHugoEl && includeHugoEl.checked);
+  const hugoFee = includeHugo && pallets > 0 ? pallets * rate : 0;
+  if (hugoAmountEl) hugoAmountEl.textContent = '£' + hugoFee.toLocaleString('en-GB');
+
+  const totalAmount = baseAmount + hugoFee;
+  if (!totalAmount) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+
   const bal = balance();
-  const after = bal + Math.abs(amt);
+  const after = bal + Math.abs(baseAmount);  // Hugo fee passes through to Emma → Hugo, doesn't increase Michael's pallet credit
   box.classList.add('show');
   box.classList.remove('danger');
+
+  const hugoLine = includeHugo && hugoFee > 0
+    ? `<div class="pv-row"><span class="pv-k">+ Hugo 提成 (${pallets} × £${rate})</span><span class="pv-v" style="color:var(--amber);">+${fmt(hugoFee)}</span></div>`
+    : '';
+
   box.innerHTML = `
-    <div class="pv-row"><span class="pv-k">本次转账</span><span class="pv-v pos">+${fmt(Math.abs(amt))}</span></div>
-    <div class="pv-row"><span class="pv-k">转账前余额</span><span class="pv-v">${fmt(bal)}</span></div>
-    <div class="pv-row"><span class="pv-k">转账后余额</span><span class="pv-v pos">${fmt(after)}</span></div>
-    <div class="pv-row"><span class="pv-k">预计可拉托盘</span><span class="pv-v">${Math.floor(after / state.params.buyPrice)} 托盘</span></div>
+    <div class="pv-row"><span class="pv-k">基础转账(给 Emma 买货)</span><span class="pv-v pos">+${fmt(baseAmount)}</span></div>
+    ${hugoLine}
+    <div class="pv-row" style="border-top:1px dashed rgba(139,150,255,0.18);padding-top:6px;margin-top:4px;"><span class="pv-k"><b>实际转账总额</b></span><span class="pv-v" style="font-size:14px;"><b>${fmt(totalAmount)}</b></span></div>
+    <div class="pv-row"><span class="pv-k">转账后余额(预付)</span><span class="pv-v pos">${fmt(after)}</span></div>
+    ${pallets > 0 ? `<div class="pv-row"><span class="pv-k">能拉托盘</span><span class="pv-v">${Math.floor(after / buyPrice)} 托盘</span></div>` : ''}
   `;
 }
 
@@ -2379,21 +2795,40 @@ function updatePickupPreview() {
 // ===== ACTIONS =====
 function addTransfer() {
   const date = document.getElementById('t-date').value;
-  const amount = parseFloat(document.getElementById('t-amount').value);
+  const baseAmount = parseFloat(document.getElementById('t-amount').value);
   const note = document.getElementById('t-note').value.trim();
+  const pallets = parseInt(document.getElementById('t-pallets').value) || 0;
+  const includeHugo = !!document.getElementById('t-include-hugo').checked;
+  const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  const hugoFee = includeHugo && pallets > 0 ? pallets * rate : 0;
+
   if (!date) { alert('请选择日期'); return; }
-  if (!amount || amount <= 0) { alert('金额必须 > 0'); return; }
+  if (!baseAmount || baseAmount <= 0) { alert('金额必须 > 0'); return; }
+
+  // The "amount" stored is the base (matches buyPrice × pallets), used for Michael's credit with Emma.
+  // Hugo fee is stored separately so we know how much "passed through" Emma to Hugo.
   state.events.push({
     id: crypto.randomUUID(),
     date, type: 'transfer',
-    amount: Math.abs(amount), note,
+    amount: Math.abs(baseAmount),                 // base only — for balance calc
+    pallets: pallets || null,                     // record what this transfer was sized for
+    includesHugoFee: includeHugo && hugoFee > 0,
+    hugoFeeAmount: hugoFee,                       // snapshot
+    hugoFeeRate: rate,                            // snapshot of rate at time of transfer
+    note,
     createdBy: currentEmail(),
     createdAt: new Date().toISOString()
   });
+
+  // Reset form
   document.getElementById('t-amount').value = '';
+  document.getElementById('t-amount').dataset.autoFilled = '';
+  document.getElementById('t-pallets').value = '';
   document.getElementById('t-note').value = '';
+  document.getElementById('t-include-hugo').checked = false;
   save(); renderAll();
-  flash('已记录转账 ' + fmt(Math.abs(amount)));
+  const totalSent = baseAmount + hugoFee;
+  flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : ''));
 }
 
 function addPickup() {
