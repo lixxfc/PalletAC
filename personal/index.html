@@ -2249,6 +2249,41 @@ select option { background: var(--bg-2); color: var(--text); }
   </div>
 </div>
 
+<!-- Send Email Modal — for emailing invoices / receipts -->
+<div class="modal-backdrop" id="email-send-modal">
+  <div class="modal" style="max-width: 580px;">
+    <div class="modal-head">
+      <div class="modal-title">📧 <span id="es-doc-label">发送邮件</span></div>
+      <button class="modal-close" onclick="closeEmailSend()">×</button>
+    </div>
+    <div class="page-sub mb-4" id="es-sub">由 <b style="color:var(--cyan);">CYPP UK LTD</b> 发出 · 客户回复直接到你 Gmail · <b style="color:var(--green);">不含银行信息</b></div>
+
+    <div class="form-grid" style="grid-template-columns: 1fr;">
+      <div class="form-row"><label>收件人邮箱 <span style="color:var(--rose);">*</span></label><input type="email" id="es-to" placeholder="customer@example.com"></div>
+      <div class="form-row"><label>主题</label><input type="text" id="es-subject"></div>
+      <div class="form-row" style="display:none;"><label>抄送(可选,英文逗号分隔)</label><input type="text" id="es-cc" placeholder="bookkeeper@example.com"></div>
+    </div>
+
+    <div style="margin-top: 14px; padding: 14px 16px; background: rgba(5,6,15,0.55); border: 1px solid rgba(139,150,255,0.18); border-radius: 10px; font-size: 12px; line-height: 1.7;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="dim">发件人</span><span><b>CYPP UK LTD</b> &lt;onboarding@resend.dev&gt;</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="dim">回复至</span><span id="es-replyto-display">harreds.ceo@gmail.com</span></div>
+      <div style="display:flex;justify-content:space-between;"><span class="dim">附件 / 内容</span><span id="es-content-summary">完整 INV 内嵌 HTML</span></div>
+    </div>
+
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--text-dim);padding:6px 0;">▸ 预览邮件 HTML(高级)</summary>
+      <iframe id="es-preview-frame" style="width:100%;height:380px;margin-top:8px;border:1px solid rgba(139,150,255,0.2);border-radius:8px;background:#fff;"></iframe>
+    </details>
+
+    <div class="row mt-4" style="gap:8px;justify-content:flex-end;">
+      <button class="btn ghost" onclick="closeEmailSend()">取消</button>
+      <button class="btn primary" id="es-send-btn" onclick="confirmAndSendEmail()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">
+        <span id="es-send-text">发送邮件</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- App Confirm Modal — pretty replacement for native confirm() -->
 <div class="modal-backdrop" id="app-confirm-modal">
   <div class="modal" style="max-width: 460px;">
@@ -5799,14 +5834,19 @@ function renderCustomerInvoices(c) {
     const status = invoiceStatusOf(inv);
     const itemsSummary = (inv.lineItems || []).map(it => `${it.qty || 0} × £${parseFloat(it.unitPrice || 0).toFixed(0)}`).join(' · ');
     const truncSummary = itemsSummary.length > 40 ? itemsSummary.slice(0, 38) + '…' : itemsSummary;
+    const sentBadge = inv.emailedAt
+      ? ` <span class="badge" title="已发送邮件给 ${escapeHtml(inv.emailedTo || '')} · ${escapeHtml((inv.emailedAt || '').slice(0, 16).replace('T', ' '))}" style="font-size:9px;padding:2px 6px;background:rgba(139,92,246,0.18);color:#c4b5fd;">📧 已发</span>`
+      : '';
     return `<tr ${status === 'void' ? 'style="opacity:0.55;"' : ''}>
-      <td><b>${escapeHtml(inv.number)}</b></td>
+      <td><b>${escapeHtml(inv.number)}</b>${sentBadge}</td>
       <td class="dim">${escapeHtml(inv.issueDate)}</td>
       <td class="dim">${escapeHtml(inv.dueDate || '—')}</td>
       <td class="dim" style="font-size:11px;">${escapeHtml(truncSummary)}</td>
       <td><b>${fmt(inv.total)}</b></td>
       <td>${statusBadge[status] || ''}</td>
       <td style="white-space:nowrap;">
+        <button class="btn sm ghost" title="发送邮件给客户" onclick="openEmailSend('invoice', '${inv.id}')" ${status === 'void' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>📧</button>
+        <button class="btn sm ghost" title="WhatsApp 发给客户" onclick="openWhatsAppShare('invoice', '${inv.id}')" ${status === 'void' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''} style="color:#25D366;">📱</button>
         <button class="btn sm ghost" title="打印 / PDF" onclick="printInvoice('${inv.id}')">🖨</button>
         <button class="btn sm ghost" title="编辑" onclick="editInvoice('${inv.id}')">✎</button>
         <button class="btn sm ${status === 'paid' ? 'ghost' : ''}" title="${status === 'paid' ? '取消已付款' : '标记已付款'}" onclick="markInvoicePaid('${inv.id}')" ${status === 'void' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>${status === 'paid' ? '↺' : '✓'}</button>
@@ -5814,6 +5854,386 @@ function renderCustomerInvoices(c) {
       </td>
     </tr>`;
   }).join('');
+}
+
+// ============================================================
+// EMAIL SENDING (Resend via Supabase Edge Function)
+// ============================================================
+// Sender: 'CYPP UK LTD <onboarding@resend.dev>' (Resend test domain).
+// Reply-to defaults to current logged-in user's email.
+// Bank info is intentionally NOT included in email body — the email is
+// just a delivery vehicle; statements with bank info go via PDF/print.
+// ============================================================
+
+const EDGE_SEND_URL = `${SUPABASE_URL}/functions/v1/send-document`;
+
+let _emailSendCtx = null;  // { docType, docId, html, defaultSubject, defaultTo }
+
+// --- Date / money helpers (email templates) ---
+function _emFmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).split('-');
+  if (!y || !m || !d) return iso;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+}
+function _emMoney(v) {
+  return '£' + (Math.round((v || 0) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function _emEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// --- Number to words (for receipt body) ---
+function _emNumToWords(n) {
+  n = Math.round(Math.abs(n || 0));
+  if (n === 0) return 'zero';
+  const ones = ['','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+  const tens = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+  const chunk = (x) => {
+    if (x === 0) return '';
+    if (x < 20) return ones[x];
+    if (x < 100) return tens[Math.floor(x/10)] + (x%10 ? '-' + ones[x%10] : '');
+    return ones[Math.floor(x/100)] + ' hundred' + (x%100 ? ' and ' + chunk(x%100) : '');
+  };
+  let parts = [];
+  const million = Math.floor(n / 1000000); n %= 1000000;
+  const thousand = Math.floor(n / 1000); n %= 1000;
+  if (million) parts.push(chunk(million) + ' million');
+  if (thousand) parts.push(chunk(thousand) + ' thousand');
+  if (n) parts.push(chunk(n));
+  return parts.join(' ');
+}
+
+// --- Email-friendly HTML for an Invoice (NO bank info) ---
+function buildInvoiceEmailHtml(inv, customerName) {
+  const c = inv.customerSnapshot || {};
+  const company = inv.companySnapshot || {};
+  const items = inv.lineItems || [];
+  const rowsHtml = items.map((it, i) => `
+    <tr>
+      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;vertical-align:top;">${_emEsc(it.description || '')}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;text-align:right;font-variant-numeric:tabular-nums;">${(it.qty || 0).toLocaleString('en-GB')}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;text-align:right;font-variant-numeric:tabular-nums;">${_emMoney(it.unitPrice || 0)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_emMoney((it.qty || 0) * (it.unitPrice || 0))}</td>
+    </tr>`).join('');
+
+  const dueLabel = inv.paymentTerms === '0' ? 'Payable on receipt' : `Due ${_emFmtDate(inv.dueDate)}`;
+  const headerColor = '#0f4c75';
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:#1e293b;">
+  <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(10,14,26,0.08);">
+      <div style="padding:32px 36px 24px;background:linear-gradient(135deg,${headerColor} 0%,#1a6ca8 100%);color:#ffffff;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="vertical-align:top;">
+              <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">${_emEsc(company.name || 'CYPP UK LTD')}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;line-height:1.6;">
+                ${company.address ? _emEsc(company.address) + '<br>' : ''}${company.email ? _emEsc(company.email) : ''}
+              </div>
+            </td>
+            <td style="vertical-align:top;text-align:right;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:2.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;">Sales Invoice</div>
+              <div style="font-size:30px;font-weight:800;letter-spacing:-0.5px;margin-top:4px;">Invoice</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.85);margin-top:6px;letter-spacing:0.8px;">No. ${_emEsc(inv.number)}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div style="padding:24px 36px 8px;">
+        <div style="font-size:13px;color:#1e293b;line-height:1.6;">
+          Dear <b>${_emEsc(c.name || customerName || 'Customer')}</b>,
+        </div>
+        <div style="font-size:13px;color:#1e293b;line-height:1.7;margin-top:10px;">
+          Please find your invoice <b>${_emEsc(inv.number)}</b> for <b>${_emMoney(inv.total)}</b>. ${_emEsc(dueLabel)}.
+        </div>
+      </div>
+      <div style="padding:18px 36px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:#fafbfc;border-radius:8px;">
+          <tr>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Issue Date</div>
+              <div style="font-size:13px;font-weight:600;color:#0a0e1a;margin-top:4px;">${_emFmtDate(inv.issueDate)}</div>
+            </td>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Due Date</div>
+              <div style="font-size:13px;font-weight:600;color:#0a0e1a;margin-top:4px;">${inv.dueDate ? _emFmtDate(inv.dueDate) : '—'}</div>
+            </td>
+            <td style="padding:14px 18px;text-align:right;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:${headerColor};text-transform:uppercase;">Total Due</div>
+              <div style="font-size:22px;font-weight:800;color:${headerColor};margin-top:2px;letter-spacing:-0.3px;">${_emMoney(inv.total)}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div style="padding:24px 36px 8px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#64748b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">Items &amp; Services</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:8px 12px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Description</th>
+              <th style="padding:8px 12px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Qty</th>
+              <th style="padding:8px 12px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Unit Price</th>
+              <th style="padding:8px 12px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="3" style="padding:12px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;background:${headerColor};color:#ffffff;border-top-left-radius:6px;border-bottom-left-radius:6px;">TOTAL DUE</td>
+              <td style="padding:12px;text-align:right;font-size:16px;font-weight:800;color:#ffffff;background:${headerColor};border-top-right-radius:6px;border-bottom-right-radius:6px;">${_emMoney(inv.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      ${inv.notes ? `<div style="padding:20px 36px 0;"><div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:12px;color:#475569;line-height:1.7;">${_emEsc(inv.notes)}</div></div>` : ''}
+      <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;">
+        <div style="font-size:12px;color:#475569;line-height:1.7;">
+          If you have any questions about this invoice, please reply to this email and I'll get back to you shortly.
+        </div>
+        <div style="font-size:13px;color:#0a0e1a;font-weight:600;margin-top:14px;">Best regards,</div>
+        <div style="font-size:14px;color:#0a0e1a;font-weight:700;margin-top:2px;">CYPP UK LTD</div>
+      </div>
+      <div style="padding:14px 36px;background:#0a0e1a;color:rgba(255,255,255,0.6);font-size:10px;letter-spacing:0.4px;">
+        Invoice ${_emEsc(inv.number)} &nbsp;·&nbsp; Issued ${_emFmtDate(inv.issueDate)} &nbsp;·&nbsp; This is an electronically generated invoice.
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px;letter-spacing:0.3px;">CYPP UK LTD &nbsp;·&nbsp; United Kingdom</div>
+  </div>
+</body></html>`;
+}
+
+// --- Email-friendly HTML for a Receipt (NO bank info) ---
+function buildReceiptEmailHtml(rec, customerName) {
+  const c = rec.customerSnapshot || {};
+  const company = rec.companySnapshot || {};
+  const headerColor = '#047857';
+
+  const amtMain = Math.floor(rec.amount || 0);
+  const amtPence = Math.round(((rec.amount || 0) - amtMain) * 100);
+  const wordsMain = _emNumToWords(amtMain);
+  const inWords = wordsMain.charAt(0).toUpperCase() + wordsMain.slice(1) + ' pounds' + (amtPence ? ' and ' + _emNumToWords(amtPence) + ' pence' : '');
+  const methodLabel = ({ bank:'Bank transfer', cash:'Cash', card:'Card payment', cheque:'Cheque' })[rec.method] || 'Bank transfer';
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:#1e293b;">
+  <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(10,14,26,0.08);">
+      <div style="padding:32px 36px 24px;background:linear-gradient(135deg,${headerColor} 0%,#059669 100%);color:#ffffff;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="vertical-align:top;">
+              <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">${_emEsc(company.name || 'CYPP UK LTD')}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;line-height:1.6;">
+                ${company.address ? _emEsc(company.address) + '<br>' : ''}${company.email ? _emEsc(company.email) : ''}
+              </div>
+            </td>
+            <td style="vertical-align:top;text-align:right;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:2.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;">Payment Receipt</div>
+              <div style="font-size:30px;font-weight:800;letter-spacing:-0.5px;margin-top:4px;">Receipt</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.85);margin-top:6px;letter-spacing:0.8px;">No. ${_emEsc(rec.number)}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div style="padding:24px 36px 8px;">
+        <div style="font-size:13px;color:#1e293b;line-height:1.6;">
+          Dear <b>${_emEsc(c.name || customerName || 'Customer')}</b>,
+        </div>
+        <div style="font-size:13px;color:#1e293b;line-height:1.7;margin-top:10px;">
+          Thank you for your payment of <b>${_emMoney(rec.amount)}</b> received on <b>${_emFmtDate(rec.date)}</b> by ${_emEsc(methodLabel)}.
+        </div>
+      </div>
+      <div style="padding:18px 36px 0;">
+        <div style="background:#ecfdf5;border-radius:8px;border-left:4px solid ${headerColor};padding:18px 24px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:${headerColor};text-transform:uppercase;">Amount Received</div>
+          <div style="font-size:34px;font-weight:800;color:${headerColor};margin-top:6px;letter-spacing:-1px;">${_emMoney(rec.amount)}</div>
+          <div style="font-size:11px;font-style:italic;color:#475569;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(4,120,87,0.25);">${_emEsc(inWords)} only.</div>
+        </div>
+      </div>
+      <div style="padding:24px 36px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.7px;">Receipt No.</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;color:#0a0e1a;text-align:right;">${_emEsc(rec.number)}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.7px;">Date Received</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;color:#0a0e1a;text-align:right;">${_emFmtDate(rec.date)}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.7px;">Payment Method</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;color:#0a0e1a;text-align:right;">${_emEsc(methodLabel)}</td></tr>
+          ${rec.palletsRef ? `<tr><td style="padding:10px 0;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.7px;">Pallet Equivalent</td><td style="padding:10px 0;font-size:13px;font-weight:600;color:#0a0e1a;text-align:right;">≈ ${rec.palletsRef} @ ${_emMoney(rec.unitPriceRef || 265)}</td></tr>` : ''}
+        </table>
+      </div>
+      <div style="padding:18px 36px 0;font-size:12px;color:#475569;line-height:1.8;">
+        This amount is held as <b>advance payment</b> against future pallet collection${rec.palletsRef ? `, equivalent to approximately <b>${rec.palletsRef} pallets</b> at the prevailing unit price` : ''}. A separate sales invoice will be issued for each pallet collection going forward, and offset against this prepayment.
+      </div>
+      ${rec.note ? `<div style="padding:18px 36px 0;"><div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Notes</div><div style="font-size:12px;color:#475569;line-height:1.7;">${_emEsc(rec.note)}</div></div>` : ''}
+      <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;">
+        <div style="font-size:12px;color:#475569;line-height:1.7;">
+          If anything looks incorrect, please reply to this email and I'll fix it right away.
+        </div>
+        <div style="font-size:13px;color:#0a0e1a;font-weight:600;margin-top:14px;">Best regards,</div>
+        <div style="font-size:14px;color:#0a0e1a;font-weight:700;margin-top:2px;">CYPP UK LTD</div>
+      </div>
+      <div style="padding:14px 36px;background:#0a0e1a;color:rgba(255,255,255,0.6);font-size:10px;letter-spacing:0.4px;">
+        Receipt ${_emEsc(rec.number)} &nbsp;·&nbsp; Issued ${_emFmtDate(rec.date)} &nbsp;·&nbsp; This receipt is not a tax invoice.
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px;letter-spacing:0.3px;">CYPP UK LTD &nbsp;·&nbsp; United Kingdom</div>
+  </div>
+</body></html>`;
+}
+
+// --- Open the email send modal for an INV / REC ---
+function openEmailSend(docType, docId) {
+  let doc, html, customerName, defaultSubject;
+  if (docType === 'invoice') {
+    doc = (state.invoices || []).find(i => i.id === docId);
+    if (!doc) { flash('找不到发票'); return; }
+    const customer = state.customers.find(c => c.id === doc.customerId);
+    customerName = (customer && customer.name) || (doc.customerSnapshot && doc.customerSnapshot.name) || '';
+    html = buildInvoiceEmailHtml(doc, customerName);
+    defaultSubject = `Invoice ${doc.number} from CYPP UK LTD — ${_emMoney(doc.total)}`;
+  } else if (docType === 'receipt') {
+    doc = (state.receipts || []).find(r => r.id === docId);
+    if (!doc) { flash('找不到收据'); return; }
+    const customer = state.customers.find(c => c.id === doc.customerId);
+    customerName = (customer && customer.name) || (doc.customerSnapshot && doc.customerSnapshot.name) || '';
+    html = buildReceiptEmailHtml(doc, customerName);
+    defaultSubject = `Payment Receipt ${doc.number} from CYPP UK LTD — ${_emMoney(doc.amount)}`;
+  } else {
+    flash('未知文档类型');
+    return;
+  }
+
+  const customer = state.customers.find(c => c.id === doc.customerId);
+  const defaultTo = (customer && customer.email) || (doc.customerSnapshot && doc.customerSnapshot.email) || '';
+
+  _emailSendCtx = { docType, docId, html, defaultSubject, defaultTo, customerName };
+
+  document.getElementById('es-doc-label').textContent = docType === 'invoice' ? '发送发票邮件' : '发送收据邮件';
+  document.getElementById('es-to').value = defaultTo;
+  document.getElementById('es-subject').value = defaultSubject;
+  document.getElementById('es-cc').value = '';
+  document.getElementById('es-replyto-display').textContent = (currentUser && currentUser.email) || 'harreds.ceo@gmail.com';
+  document.getElementById('es-content-summary').textContent = docType === 'invoice'
+    ? `完整发票内嵌(无银行信息) · ${(doc.lineItems || []).length} 条明细`
+    : `完整收据内嵌(无银行信息) · ${_emMoney(doc.amount)}`;
+
+  // Load preview into iframe
+  const frame = document.getElementById('es-preview-frame');
+  if (frame) {
+    frame.srcdoc = html;
+  }
+
+  document.getElementById('email-send-modal').classList.add('open');
+}
+
+function closeEmailSend() {
+  document.getElementById('email-send-modal').classList.remove('open');
+  _emailSendCtx = null;
+}
+
+async function confirmAndSendEmail() {
+  if (!_emailSendCtx) return;
+  const to = (document.getElementById('es-to').value || '').trim();
+  const subject = (document.getElementById('es-subject').value || '').trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    alert('请填写有效收件人邮箱');
+    return;
+  }
+  if (!subject) {
+    alert('主题不能为空');
+    return;
+  }
+  const ccRaw = (document.getElementById('es-cc').value || '').trim();
+  const cc = ccRaw ? ccRaw.split(/[,，;；\s]+/).filter(Boolean) : [];
+
+  const btn = document.getElementById('es-send-btn');
+  const txt = document.getElementById('es-send-text');
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  txt.textContent = '发送中…';
+
+  try {
+    const session = await db.auth.getSession();
+    const token = session && session.data && session.data.session && session.data.session.access_token;
+    if (!token) throw new Error('请重新登录');
+
+    const res = await fetch(EDGE_SEND_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to,
+        subject,
+        html: _emailSendCtx.html,
+        fromName: 'CYPP UK LTD',
+        replyTo: (currentUser && currentUser.email) || undefined,
+        cc
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error((data && (data.error || JSON.stringify(data.details))) || `HTTP ${res.status}`);
+    }
+
+    // Mark document as sent
+    const { docType, docId } = _emailSendCtx;
+    const doc = docType === 'invoice'
+      ? (state.invoices || []).find(i => i.id === docId)
+      : (state.receipts || []).find(r => r.id === docId);
+    if (doc) {
+      doc.emailedTo = to;
+      doc.emailedAt = data.sentAt || new Date().toISOString();
+      doc.emailedBy = (currentUser && currentUser.email) || '';
+      doc.emailMessageId = data.messageId || null;
+      doc.updatedAt = new Date().toISOString();
+      // Don't change INV status — separate from "paid". Email != paid.
+      save();
+      renderAll();
+    }
+
+    closeEmailSend();
+    flash('✓ 邮件已发出 → ' + to);
+  } catch (err) {
+    console.error('[email] send failed:', err);
+    alert('发送失败:' + (err.message || err));
+    btn.disabled = false;
+    btn.style.opacity = '';
+    txt.textContent = '发送邮件';
+  }
+}
+
+// --- Open WhatsApp share with prefilled message ---
+function openWhatsAppShare(docType, docId) {
+  let doc, customer, summary;
+  if (docType === 'invoice') {
+    doc = (state.invoices || []).find(i => i.id === docId);
+    if (!doc) { flash('找不到发票'); return; }
+    customer = state.customers.find(c => c.id === doc.customerId);
+    summary = `Invoice ${doc.number}\nAmount: ${_emMoney(doc.total)}\nDue: ${_emFmtDate(doc.dueDate || doc.issueDate)}`;
+  } else if (docType === 'receipt') {
+    doc = (state.receipts || []).find(r => r.id === docId);
+    if (!doc) { flash('找不到收据'); return; }
+    customer = state.customers.find(c => c.id === doc.customerId);
+    summary = `Payment Receipt ${doc.number}\nReceived: ${_emMoney(doc.amount)}\nDate: ${_emFmtDate(doc.date)}`;
+  } else { return; }
+
+  const greeting = customer && customer.name ? `Hi ${customer.name},` : 'Hi,';
+  const msg = `${greeting}\n\n${docType === 'invoice' ? "Here's your invoice from CYPP UK LTD:" : 'Confirming payment received — thank you!'}\n\n${summary}\n\n— Pallet AC`;
+
+  // Strip non-digits from phone, prepend +44 if 0-prefixed UK number
+  let phone = (customer && customer.phone || '').replace(/\D/g, '');
+  if (phone.startsWith('0')) phone = '44' + phone.slice(1);
+
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
 }
 
 // === Print invoice — same UI as Statement ===
@@ -6535,13 +6955,18 @@ function renderCustomerReceipts(c) {
     const status = receiptStatusOf(rec);
     const palletsHint = rec.palletsRef ? `≈ ${rec.palletsRef} 托 @ £${rec.unitPriceRef || 265}` : '';
     const noteTxt = rec.note ? (palletsHint ? ' · ' : '') + escapeHtml(rec.note) : '';
+    const sentBadge = rec.emailedAt
+      ? ` <span class="badge" title="已发送邮件给 ${escapeHtml(rec.emailedTo || '')} · ${escapeHtml((rec.emailedAt || '').slice(0, 16).replace('T', ' '))}" style="font-size:9px;padding:2px 6px;background:rgba(139,92,246,0.18);color:#c4b5fd;">📧 已发</span>`
+      : '';
     return `<tr ${status === 'cancelled' ? 'style="opacity:0.55;"' : ''}>
-      <td><b>${escapeHtml(rec.number)}</b></td>
+      <td><b>${escapeHtml(rec.number)}</b>${sentBadge}</td>
       <td class="dim">${escapeHtml(rec.date)}</td>
       <td><b style="color:var(--green);">${fmt(rec.amount)}</b></td>
       <td class="dim" style="font-size:11px;">${escapeHtml(palletsHint)}${noteTxt}</td>
       <td>${statusBadge[status] || ''}</td>
       <td style="white-space:nowrap;">
+        <button class="btn sm ghost" title="发送邮件给客户" onclick="openEmailSend('receipt', '${rec.id}')" ${status === 'cancelled' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>📧</button>
+        <button class="btn sm ghost" title="WhatsApp 发给客户" onclick="openWhatsAppShare('receipt', '${rec.id}')" ${status === 'cancelled' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''} style="color:#25D366;">📱</button>
         <button class="btn sm ghost" title="打印 / PDF" onclick="printReceipt('${rec.id}')">🖨</button>
         <button class="btn sm ghost" title="改备注" onclick="editReceiptNote('${rec.id}')">✎</button>
         <button class="btn sm ghost danger" title="${status === 'cancelled' ? '取消作废' : '作废'}" onclick="cancelReceipt('${rec.id}')">${status === 'cancelled' ? '↺' : '∅'}</button>
