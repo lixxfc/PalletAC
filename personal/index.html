@@ -1718,11 +1718,11 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
 
           <div class="kpi-grid mt-6" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 20px;">
-            <div class="kpi v5"><div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" id="cd-wk-range" style="font-size:9px;padding:2px 6px;">—</span></div><div class="kpi-icon">★</div></div><div class="kpi-value" id="cd-wk-profit">£0</div><div class="kpi-sub" id="cd-wk-sub">0 托盘 · 周一 → 周日</div></div>
-            <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div></div>
-            <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div></div>
-            <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div></div>
-            <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div></div>
+            <div class="kpi v5"><div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" id="cd-wk-range" style="font-size:9px;padding:2px 6px;">—</span></div><div class="kpi-icon">★</div></div><div class="kpi-value" id="cd-wk-profit">£0</div><div class="kpi-sub" id="cd-wk-sub">0 托盘 · 周一 → 周日</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-week-profit')">ⓘ</button></div>
+            <div class="kpi v4"><div class="kpi-head"><div class="kpi-label">当前余额</div><div class="kpi-icon">£</div></div><div class="kpi-value" id="cd-balance">£0</div><div class="kpi-sub">累计 <span id="cd-deposit">£0</span> 预付</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-balance')">ⓘ</button></div>
+            <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-canbuy')">ⓘ</button></div>
+            <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-pallets')">ⓘ</button></div>
+            <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-profit')">ⓘ</button></div>
           </div>
 
           <!-- Quick Quote Calculator (no ledger save) -->
@@ -2987,6 +2987,158 @@ function buildDrilldownData(key) {
       rows,
       empty: rows.length ? null : '还没有任何取货'
     };
+  }
+
+  // === Customer-specific KPIs (require currentCustomer) ===
+  // These read the customer's ledger. They DO NOT modify any data.
+  if (key && key.startsWith('cust-')) {
+    if (!currentCustomer) return { title: '请先选客户', formula: '', rows: [], empty: '请从客户列表里点开一个客户' };
+    const c = state.customers.find(x => x.id === currentCustomer);
+    if (!c) return { title: '客户不存在', formula: '', rows: [], empty: '' };
+
+    const sellPrice = state.params.sellPrice || 265;
+    const swapPrem = swapTtPremium();
+    const allEntries = [...(c.ledger || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    // === 客户内页:本周利润 ===
+    if (key === 'cust-week-profit') {
+      const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
+      const lastWkD = new Date(todayWk + 'T12:00:00'); lastWkD.setDate(lastWkD.getDate() - 7);
+      const lastWk = lastWkD.toISOString().slice(0, 10);
+      let thisWkPallets = 0, thisWkProfit = 0, lastWkProfit = 0;
+      const rows = [];
+      for (const e of (c.ledger || [])) {
+        if (e.type !== 'pickup') continue;
+        const wk = weekStartOf(e.date);
+        const palletProfit = (e.pallets || 0) * perPalletProfit();
+        const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapPrem) : 0;
+        const profitForEntry = palletProfit + swapBonus;
+        if (wk === todayWk) {
+          thisWkPallets += (e.pallets || 0);
+          thisWkProfit += profitForEntry;
+          rows.push({
+            date: e.date,
+            desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${perPalletProfit()}${e.isSwap ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
+            amount: profitForEntry
+          });
+        } else if (wk === lastWk) {
+          lastWkProfit += profitForEntry;
+        }
+      }
+      const trendTxt = lastWkProfit > 0 ? ((thisWkProfit - lastWkProfit) / lastWkProfit * 100).toFixed(1) + '%' : (thisWkProfit > 0 ? '新' : '—');
+      return {
+        title: c.name + ' · 本周利润',
+        sub: `${weekLabelShort(todayWk)} · 跟上周比 ${trendTxt}`,
+        formula: `<div><span class="k">本周托盘</span><span class="v" style="float:right;">${thisWkPallets} 托</span></div>
+                  <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${perPalletProfit()}</span></div>
+                  ${rows.some(r => /SWAP/.test(r.desc)) ? `<div><span class="k">+ Swap 加成</span><span class="v" style="float:right;color:var(--pink);">已分摊</span></div>` : ''}
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本周净利</span><span class="v total" style="float:right;">${fmt(thisWkProfit)}</span></div>`,
+        rows,
+        empty: rows.length ? null : '该客户本周还没有取货'
+      };
+    }
+
+    // === 客户内页:当前余额(完整流水) ===
+    if (key === 'cust-balance') {
+      const bal = customerBalance(c);
+      const totalDep = customerTotalDeposit(c);
+      const rows = allEntries.map(e => {
+        const typeMap = { deposit: '预付', pickup: '取货', refund: '退款', adjust: '调整' };
+        const lbl = typeMap[e.type] || e.type;
+        const sign = e.type === 'deposit' ? +1 : -1;
+        const amount = sign * (e.amount || 0);
+        const swapTag = e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : '';
+        const desc = e.type === 'pickup'
+          ? `<b>${lbl}</b>${swapTag} · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${e.unitPrice || sellPrice}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}</span>`
+          : `<b>${lbl}</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`;
+        return { date: e.date, desc, amount };
+      });
+      return {
+        title: c.name + ' · 当前余额',
+        sub: `${(c.ledger || []).length} 条流水 · 累计预付 ${fmt(totalDep)}`,
+        formula: `<div><span class="k">累计预付(deposit + adjust+)</span><span class="v" style="float:right;color:var(--green);">+${fmt(totalDep)}</span></div>
+                  <div><span class="k">累计扣减(pickup + refund + adjust−)</span><span class="v" style="float:right;color:var(--rose);">−${fmt(totalDep - bal)}</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">当前余额</span><span class="v total" style="float:right;color:${bal < 0 ? 'var(--rose)' : ''};">${fmt(bal)}</span></div>`,
+        rows,
+        empty: rows.length ? null : '该客户还没有任何流水'
+      };
+    }
+
+    // === 客户内页:余额还能买(公式) ===
+    if (key === 'cust-canbuy') {
+      const bal = customerBalance(c);
+      const canBuy = sellPrice > 0 ? Math.floor(Math.max(0, bal) / sellPrice) : 0;
+      const remainder = bal - canBuy * sellPrice;
+      // Last 5 pickups for context
+      const recentPickups = allEntries.filter(e => e.type === 'pickup').slice(0, 5);
+      return {
+        title: c.name + ' · 余额还能买多少托盘',
+        sub: bal < 0 ? '客户已透支,需要催款' : `按当前单价 £${sellPrice}/托`,
+        formula: `<div><span class="k">当前余额</span><span class="v" style="float:right;">${fmt(bal)}</span></div>
+                  <div><span class="k">÷ 单价 £${sellPrice}/托</span><span class="v" style="float:right;"></span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">能买</span><span class="v total" style="float:right;">${bal < 0 ? '透支' : canBuy + ' 托'}</span></div>
+                  ${remainder > 0 ? `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">余 £${Math.round(remainder)}(不够再多一托)</div>` : ''}
+                  <div style="margin-top:10px;font-size:11px;color:var(--text-dim);line-height:1.7;">注:这个数字按"普通取货"算。如果是 Swap TT(£${sellPrice + swapPrem}/托),实际能买的会少一点。</div>`,
+        rows: recentPickups.map(e => ({
+          date: e.date,
+          desc: `<b>近期取货</b>${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : ''} · ${e.pallets} 托<br><span class="dim" style="font-size:11px;">扣 ${fmt(e.amount)}</span>`,
+          amount: -(e.amount || 0)
+        })),
+        empty: null
+      };
+    }
+
+    // === 客户内页:累计取货 ===
+    if (key === 'cust-pallets') {
+      const totalPallets = customerTotalPallets(c);
+      const pickups = allEntries.filter(e => e.type === 'pickup');
+      const ttPallets = pickups.filter(e => (e.palletType || (e.isSwap ? 'TT' : 'Mixed')) === 'TT').reduce((s, e) => s + (e.pallets || 0), 0);
+      const amzPallets = pickups.filter(e => e.palletType === 'AMAZON').reduce((s, e) => s + (e.pallets || 0), 0);
+      const swapPallets = pickups.filter(e => e.isSwap).reduce((s, e) => s + (e.pallets || 0), 0);
+      const rows = pickups.map(e => ({
+        date: e.date,
+        desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : ''}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}`,
+        amount: e.pallets || 0
+      }));
+      return {
+        title: c.name + ' · 累计取货',
+        sub: `${pickups.length} 笔取货 · 共 ${totalPallets} 托`,
+        formula: `<div><span class="k">取货笔数</span><span class="v" style="float:right;">${pickups.length} 笔</span></div>
+                  ${ttPallets > 0 ? `<div><span class="k">TT 托盘</span><span class="v" style="float:right;color:#a5b4fc;">${ttPallets} 托</span></div>` : ''}
+                  ${amzPallets > 0 ? `<div><span class="k">AMAZON 托盘</span><span class="v" style="float:right;color:#67e8f9;">${amzPallets} 托</span></div>` : ''}
+                  ${swapPallets > 0 ? `<div><span class="k">其中 Swap TT</span><span class="v" style="float:right;color:var(--pink);">${swapPallets} 托</span></div>` : ''}
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">累计托盘</span><span class="v total" style="float:right;">${totalPallets} 托</span></div>`,
+        rows,
+        empty: rows.length ? null : '该客户还没有取货'
+      };
+    }
+
+    // === 客户内页:累计利润 ===
+    if (key === 'cust-profit') {
+      const profit = customerProfit(c);
+      const swapBonusTotal = customerSwapBonus(c);
+      const baseProfit = profit - swapBonusTotal;
+      const totalPallets = customerTotalPallets(c);
+      const pickups = allEntries.filter(e => e.type === 'pickup');
+      const rows = pickups.map(e => {
+        const palletProfit = (e.pallets || 0) * perPalletProfit();
+        const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapPrem) : 0;
+        return {
+          date: e.date,
+          desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${perPalletProfit()}${swapBonus > 0 ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
+          amount: palletProfit + swapBonus
+        };
+      });
+      return {
+        title: c.name + ' · 累计利润',
+        sub: `${pickups.length} 笔取货 · 共 ${totalPallets} 托`,
+        formula: `<div><span class="k">基础利润 (${totalPallets} × £${perPalletProfit()})</span><span class="v" style="float:right;">${fmt(baseProfit)}</span></div>
+                  ${swapBonusTotal > 0 ? `<div><span class="k">+ Swap TT 加成</span><span class="v" style="float:right;color:var(--pink);">+${fmt(swapBonusTotal)}</span></div>` : ''}
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">累计利润</span><span class="v total" style="float:right;">${fmt(profit)}</span></div>`,
+        rows,
+        empty: rows.length ? null : '该客户还没有取货'
+      };
+    }
   }
 
   return null;
