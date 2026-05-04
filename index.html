@@ -1039,7 +1039,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="quote-icon">💷</div>
           <div class="grow">
             <div class="quote-title">快速询价 · 给 Emma 转多少</div>
-            <div class="quote-sub">输入即将取的托盘数,系统按 £<span id="qq-buy">245</span> / 托盘 算出还差多少钱给 Emma 转(只算,不记账)</div>
+            <div class="quote-sub">输入即将取的托盘数 → 算出货款缺口 + Hugo 提成 = 实际银行转账总额 <span style="color:var(--amber);">(£<span id="qq-buy">245</span>/托 + £7 Hugo)</span></div>
           </div>
           <div class="quote-input-wrap">
             <label>托盘数</label>
@@ -2661,6 +2661,7 @@ function updateEmmaQuote() {
   if (!box) return;
   const buyEl = document.getElementById('qq-buy');
   const buyPrice = state.params.buyPrice || 245;
+  const hugoRate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (buyEl) buyEl.textContent = buyPrice;
   const inputEl = document.getElementById('qq-pallets');
   const raw = (inputEl && inputEl.value || '').trim();
@@ -2669,29 +2670,38 @@ function updateEmmaQuote() {
   if (!isFinite(pallets) || pallets < 0) { box.innerHTML = '<div class="qq-empty">请输入正整数</div>'; return; }
 
   const bal = balance();
-  const totalCost = pallets * buyPrice;
-  const owe = totalCost - bal;  // > 0 = need to send Emma more, < 0 = leftover credit
+  const totalCost = pallets * buyPrice;            // base goods cost
+  const hugoFee = pallets * hugoRate;              // Hugo's portion to bundle
+  const owe = totalCost - bal;                     // > 0 = need to send Emma more (base only)
+  const totalToSend = Math.max(owe, 0) + hugoFee;  // 实际银行转账(基础缺口 + Hugo)
   const moneyFmt = v => '£' + Math.round(v).toLocaleString('en-GB');
 
   let headline;
   if (owe > 0) {
     headline = `<div class="qq-cell headline">
-      <div class="k">还需给 Emma 转</div>
-      <div class="v">${moneyFmt(owe)}</div>
-      <div class="sub">${pallets} × £${buyPrice} − 余额 ${moneyFmt(bal)}</div>
+      <div class="k">实际银行转账总额</div>
+      <div class="v">${moneyFmt(totalToSend)}</div>
+      <div class="sub">${moneyFmt(owe)} 货款缺口 + ${moneyFmt(hugoFee)} Hugo</div>
     </div>`;
   } else if (owe === 0) {
     headline = `<div class="qq-cell headline zero">
-      <div class="k">余额刚好够 ✓</div>
-      <div class="v">£0</div>
-      <div class="sub">${pallets} × £${buyPrice} = 余额 ${moneyFmt(bal)}</div>
+      <div class="k">货款余额刚好够 · 只需付 Hugo</div>
+      <div class="v">${moneyFmt(hugoFee)}</div>
+      <div class="sub">${pallets} × £${hugoRate} Hugo</div>
     </div>`;
   } else {
-    headline = `<div class="qq-cell headline zero">
-      <div class="k">余额够付,无需再转</div>
-      <div class="v">${moneyFmt(Math.abs(owe))}</div>
-      <div class="sub">取后还剩余额 ${moneyFmt(Math.abs(owe))}</div>
-    </div>`;
+    // 余额够付货款 + 还有剩 — 但 Hugo 还是要付的
+    headline = hugoFee > 0
+      ? `<div class="qq-cell headline zero">
+          <div class="k">货款够付 · 只需付 Hugo</div>
+          <div class="v">${moneyFmt(hugoFee)}</div>
+          <div class="sub">取后还剩 ${moneyFmt(Math.abs(owe))} 信用 · ${pallets} × £${hugoRate} Hugo</div>
+        </div>`
+      : `<div class="qq-cell headline zero">
+          <div class="k">余额够付,无需再转</div>
+          <div class="v">${moneyFmt(Math.abs(owe))}</div>
+          <div class="sub">取后还剩余额 ${moneyFmt(Math.abs(owe))}</div>
+        </div>`;
   }
 
   box.innerHTML = `
@@ -2708,7 +2718,17 @@ function updateEmmaQuote() {
         <div class="sub">可拉 ${buyPrice > 0 ? Math.floor(Math.max(0, bal) / buyPrice) : 0} 托盘</div>
       </div>
       <div class="qq-cell">
-        <div class="k">取货后余额</div>
+        <div class="k">货款部分缺口</div>
+        <div class="v" style="color: ${owe > 0 ? 'var(--rose)' : 'var(--green)'};">${moneyFmt(Math.max(owe, 0))}</div>
+        <div class="sub">${owe > 0 ? '需补给 Emma' : '已够,无需补'}</div>
+      </div>
+      <div class="qq-cell" style="background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04));border-color:rgba(251,191,36,0.4);">
+        <div class="k" style="color:var(--amber);">Hugo 提成 (含在转账里)</div>
+        <div class="v" style="color:var(--amber);">${moneyFmt(hugoFee)}</div>
+        <div class="sub">${pallets} × £${hugoRate} · Emma 收到后给 Hugo 现金</div>
+      </div>
+      <div class="qq-cell">
+        <div class="k">取货后货款余额</div>
         <div class="v" style="color: ${(bal - totalCost) < 0 ? 'var(--rose)' : 'var(--green)'};">${moneyFmt(bal - totalCost)}</div>
         <div class="sub">${(bal - totalCost) < 0 ? '将透支 ' + moneyFmt(Math.abs(bal - totalCost)) : '剩余信用'}</div>
       </div>
@@ -2729,7 +2749,6 @@ function updateTransferPreview() {
 
   const pallets = parseInt(palletsEl ? palletsEl.value : '') || 0;
   const buyPrice = state.params.buyPrice || 245;
-  const hugoRate = hugoRate ? hugoRateEl.textContent : 0;  // already on DOM
   const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (hugoRateEl) hugoRateEl.textContent = rate;
 
