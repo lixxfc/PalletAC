@@ -1508,6 +1508,85 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
+      <!-- Last-Month — PARTNERSHIP (SSS pickups by Michael / Emma) -->
+      <div class="row mt-6" style="align-items:baseline;gap:10px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:var(--amber);text-transform:uppercase;">📦 上月合伙账(SSS 取货)</div>
+        <div class="page-sub" style="font-size:11px;">从合伙账实时拉取 · 数据按 <b>谁记录</b> 区分(createdBy)</div>
+      </div>
+      <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="kpi v3">
+          <div class="kpi-head">
+            <div class="kpi-label">合伙账总取货 <span class="badge" id="pa-range" style="font-size:9px;padding:2px 6px;background:rgba(251,191,36,0.18);color:var(--amber);">—</span></div>
+            <div class="kpi-icon">▦</div>
+          </div>
+          <div class="kpi-value" id="pa-total-pallets">0</div>
+          <div class="kpi-sub" id="pa-total-sub">Michael + Emma 合计</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('pa-total-pallets')">ⓘ</button>
+        </div>
+        <div class="kpi v1">
+          <div class="kpi-head">
+            <div class="kpi-label">我从 SSS 取的托盘</div>
+            <div class="kpi-icon">M</div>
+          </div>
+          <div class="kpi-value" id="pa-michael-pallets">0</div>
+          <div class="kpi-sub" id="pa-michael-sub">占 0% · 0 笔</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('pa-michael-pallets')">ⓘ</button>
+        </div>
+        <div class="kpi" style="border-color:rgba(244,114,182,0.35);background:linear-gradient(180deg,rgba(244,114,182,0.06),rgba(244,114,182,0.02));">
+          <div class="kpi-head">
+            <div class="kpi-label">Emma 从 SSS 取的托盘</div>
+            <div class="kpi-icon" style="color:var(--pink);background:rgba(244,114,182,0.12);">E</div>
+          </div>
+          <div class="kpi-value" id="pa-emma-pallets" style="color:var(--pink);">0</div>
+          <div class="kpi-sub" id="pa-emma-sub">占 0% · 0 笔</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('pa-emma-pallets')">ⓘ</button>
+        </div>
+      </div>
+
+      <!-- Last-Month — PERSONAL (my customers' pickups) -->
+      <div class="row mt-6" style="align-items:baseline;gap:10px;margin-bottom:10px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1.4px;color:var(--cyan);text-transform:uppercase;">🛒 上月个人账(我的客户)</div>
+        <div class="page-sub" style="font-size:11px;">客户从我这里取的托盘 / 我赚的利润</div>
+      </div>
+      <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="kpi v1">
+          <div class="kpi-head">
+            <div class="kpi-label">客户取的托盘 <span class="badge" id="lm-range" style="font-size:9px;padding:2px 6px;">—</span></div>
+            <div class="kpi-icon">▦</div>
+          </div>
+          <div class="kpi-value" id="lm-pallets">0</div>
+          <div class="kpi-sub" id="lm-pallets-sub">0 笔取货 · 跟上上月比 —</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('lm-pallets')">ⓘ</button>
+        </div>
+        <div class="kpi v2">
+          <div class="kpi-head">
+            <div class="kpi-label">上月利润 <span class="badge" id="lm-range-2" style="font-size:9px;padding:2px 6px;">—</span></div>
+            <div class="kpi-icon">✦</div>
+          </div>
+          <div class="kpi-value" id="lm-profit">£0</div>
+          <div class="kpi-sub" id="lm-profit-sub">每托均利 £0 · 跟上上月比 —</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('lm-profit')">ⓘ</button>
+        </div>
+        <div class="kpi v4">
+          <div class="kpi-head">
+            <div class="kpi-label">上月营收</div>
+            <div class="kpi-icon">£</div>
+          </div>
+          <div class="kpi-value" id="lm-revenue">£0</div>
+          <div class="kpi-sub" id="lm-revenue-sub">客户付款总额</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('lm-revenue')">ⓘ</button>
+        </div>
+        <div class="kpi v3">
+          <div class="kpi-head">
+            <div class="kpi-label">上月活跃客户</div>
+            <div class="kpi-icon">◉</div>
+          </div>
+          <div class="kpi-value" id="lm-customers">0</div>
+          <div class="kpi-sub" id="lm-customers-sub">个不同客户来取货</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('lm-customers')">ⓘ</button>
+        </div>
+      </div>
+
       <div class="chart-grid">
         <div class="card chart-card">
           <div class="card-title">营收 / 成本 / 利润 走势 <span class="badge">近 6 月</span></div>
@@ -2580,6 +2659,36 @@ async function loadUserData() {
     state = emptyState();
     setSyncStatus('error');
   }
+  // Also fetch partnership data (read-only, for dashboard cross-account KPIs)
+  // This is gated by RLS — only whitelisted emails (Michael) can read it.
+  try {
+    await fetchPartnershipForDashboard();
+  } catch (e) { console.warn('[partnership] fetch skipped:', e); }
+}
+
+// === Partnership data cache (read-only, for cross-account dashboard KPIs) ===
+let _partnershipCache = null;
+let _partnershipFetchedAt = null;
+async function fetchPartnershipForDashboard() {
+  try {
+    const { data, error } = await db
+      .from('partnership_data')
+      .select('data')
+      .eq('workspace_id', 'main')
+      .maybeSingle();
+    if (error) {
+      console.warn('[partnership] read failed:', error.message);
+      _partnershipCache = null;
+      return null;
+    }
+    _partnershipCache = (data && data.data) || null;
+    _partnershipFetchedAt = new Date();
+    return _partnershipCache;
+  } catch (e) {
+    console.warn('[partnership] fetch error:', e);
+    _partnershipCache = null;
+    return null;
+  }
 }
 
 // One-time migration: move legacy state.daily[] into a "未分类" customer's ledger
@@ -2838,6 +2947,139 @@ function totals() {
   let mPallets = 0, mProfit = 0;
   for (const r of thisMonth) { const m = pickupMetrics(r); mPallets += r.pallets; mProfit += m.profit; }
   return { pallets, revenue, cost, fee, profit, mPallets, mProfit };
+}
+
+// === Last-month + previous-month aggregates (calendar months) ===
+// Returns { last: {ym, label, pallets, revenue, cost, profit, customers, pickupCount},
+//           prev: {ym, label, pallets, ..., profit},
+//           palletsDelta, profitDelta, palletsTrendPct, profitTrendPct }
+function lastMonthStats() {
+  const now = new Date();
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 15);  // mid of last month
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 2, 15);  // mid of month before that
+  const ymOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const lastYm = ymOf(lastMonthDate);
+  const prevYm = ymOf(prevMonthDate);
+  const monthLabel = (d) => `${d.getFullYear()}年${d.getMonth() + 1}月`;
+
+  const collect = (ym) => {
+    const pickups = allPickups().filter(r => (r.date || '').startsWith(ym));
+    let pallets = 0, revenue = 0, cost = 0, profit = 0, customers = new Set(), entries = [];
+    for (const r of pickups) {
+      const m = pickupMetrics(r);
+      pallets += r.pallets; revenue += m.revenue; cost += m.cost; profit += m.profit;
+      if (r.customerId) customers.add(r.customerId);
+      entries.push({ ...r, _profit: m.profit, _revenue: m.revenue, _cost: m.cost });
+    }
+    return { ym, pallets, revenue, cost, profit, customers, customerCount: customers.size, pickupCount: pickups.length, entries };
+  };
+
+  const last = collect(lastYm);
+  const prev = collect(prevYm);
+  last.label = monthLabel(lastMonthDate);
+  prev.label = monthLabel(prevMonthDate);
+
+  const palletsDelta = last.pallets - prev.pallets;
+  const profitDelta = last.profit - prev.profit;
+  const palletsTrendPct = prev.pallets > 0 ? (palletsDelta / prev.pallets * 100) : null;
+  const profitTrendPct = prev.profit > 0 ? (profitDelta / prev.profit * 100) : null;
+  const avgPerPallet = last.pallets > 0 ? Math.round(last.profit / last.pallets) : 0;
+
+  return { last, prev, palletsDelta, profitDelta, palletsTrendPct, profitTrendPct, avgPerPallet };
+}
+
+// === Partnership stats — last calendar month (from partnership_data cache) ===
+// Returns { last: {ym, label, totalPallets, michaelPallets, emmaPallets, otherPallets,
+//                   michaelCount, emmaCount, michaelPickupRows, emmaPickupRows },
+//           prev: same shape, ymLabel, ... }
+function partnershipLastMonthStats() {
+  const events = (_partnershipCache && Array.isArray(_partnershipCache.events))
+    ? _partnershipCache.events.filter(e => !e.deleted && e.date && e.type === 'pickup')
+    : [];
+  const now = new Date();
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 2, 15);
+  const ymOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const lastYm = ymOf(lastMonthDate);
+  const prevYm = ymOf(prevMonthDate);
+  const monthLabel = (d) => `${d.getFullYear()}年${d.getMonth() + 1}月`;
+
+  const isMichael = (email) => (email || '').toLowerCase() === 'harreds.ceo@gmail.com';
+  const isEmma = (email) => (email || '').toLowerCase() === 'emma@maomail.uk';
+
+  const collect = (ym) => {
+    const rows = events.filter(e => (e.date || '').startsWith(ym));
+    let totalPallets = 0, michaelPallets = 0, emmaPallets = 0, otherPallets = 0;
+    let michaelCount = 0, emmaCount = 0, otherCount = 0;
+    const michaelRows = [], emmaRows = [], otherRows = [];
+    for (const e of rows) {
+      const palls = e.pallets || 0;
+      totalPallets += palls;
+      if (isMichael(e.createdBy)) {
+        michaelPallets += palls; michaelCount++; michaelRows.push(e);
+      } else if (isEmma(e.createdBy)) {
+        emmaPallets += palls; emmaCount++; emmaRows.push(e);
+      } else {
+        otherPallets += palls; otherCount++; otherRows.push(e);
+      }
+    }
+    return { ym, totalPallets, michaelPallets, emmaPallets, otherPallets,
+             michaelCount, emmaCount, otherCount, totalPickups: rows.length,
+             michaelRows, emmaRows, otherRows, allRows: rows };
+  };
+
+  const last = collect(lastYm);
+  const prev = collect(prevYm);
+  last.label = monthLabel(lastMonthDate);
+  prev.label = monthLabel(prevMonthDate);
+  return {
+    last, prev,
+    available: !!_partnershipCache,
+    fetchedAt: _partnershipFetchedAt
+  };
+}
+
+// === Render the dashboard last-month cards (personal + partnership) ===
+function renderLastMonthKpis() {
+  const s = lastMonthStats();
+  const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  const trendTxt = (pct) => pct == null ? '—' : (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+
+  // --- PERSONAL cards ---
+  setText('lm-range', s.last.label);
+  setText('lm-range-2', s.last.label);
+  setText('lm-pallets', s.last.pallets.toLocaleString('en-GB'));
+  setText('lm-pallets-sub', `${s.last.pickupCount} 笔取货 · 跟上上月比 ${trendTxt(s.palletsTrendPct)}`);
+  setText('lm-profit', fmt(s.last.profit));
+  setText('lm-profit-sub', `每托均利 £${s.avgPerPallet} · 跟上上月比 ${trendTxt(s.profitTrendPct)}`);
+  setText('lm-revenue', fmt(s.last.revenue));
+  setText('lm-revenue-sub', `成本 ${fmt(s.last.cost)} · 客户付款总额`);
+  setText('lm-customers', String(s.last.customerCount));
+  setText('lm-customers-sub', `个不同客户来取货 · ${s.last.pickupCount} 笔`);
+
+  // --- PARTNERSHIP cards ---
+  const p = partnershipLastMonthStats();
+  setText('pa-range', p.last.label);
+  if (!p.available) {
+    setText('pa-total-pallets', '—');
+    setText('pa-total-sub', '合伙账数据未加载(刷新页面试试)');
+    setText('pa-michael-pallets', '—');
+    setText('pa-michael-sub', '—');
+    setText('pa-emma-pallets', '—');
+    setText('pa-emma-sub', '—');
+    return;
+  }
+  const total = p.last.totalPallets;
+  const michaelPct = total > 0 ? Math.round(p.last.michaelPallets / total * 100) : 0;
+  const emmaPct = total > 0 ? Math.round(p.last.emmaPallets / total * 100) : 0;
+  setText('pa-total-pallets', total.toLocaleString('en-GB'));
+  const totalSub = p.last.totalPickups + ' 笔取货'
+    + (p.prev.totalPallets > 0 ? ` · 上上月 ${p.prev.totalPallets} 托(${p.last.totalPallets - p.prev.totalPallets >= 0 ? '+' : ''}${p.last.totalPallets - p.prev.totalPallets})` : '');
+  setText('pa-total-sub', totalSub);
+  setText('pa-michael-pallets', p.last.michaelPallets.toLocaleString('en-GB'));
+  setText('pa-michael-sub', `占 ${michaelPct}% · ${p.last.michaelCount} 笔`);
+  setText('pa-emma-pallets', p.last.emmaPallets.toLocaleString('en-GB'));
+  setText('pa-emma-sub', `占 ${emmaPct}% · ${p.last.emmaCount} 笔`);
 }
 
 // ============ RENDER ============
@@ -3143,6 +3385,199 @@ function buildDrilldownData(key) {
       rows,
       empty: rows.length ? null : '还没有任何取货'
     };
+  }
+
+  // === PARTNERSHIP LAST-MONTH KPIs (pa-total-pallets / pa-michael-pallets / pa-emma-pallets) ===
+  if (key === 'pa-total-pallets' || key === 'pa-michael-pallets' || key === 'pa-emma-pallets') {
+    const p = partnershipLastMonthStats();
+    if (!p.available) {
+      return {
+        title: '合伙账数据未加载',
+        sub: '可能 RLS 权限不足或网络问题',
+        formula: '<div style="color:var(--rose);font-size:13px;line-height:1.7;">合伙账数据(partnership_data)还没拉到。<br><br>试试:<br>· 刷新这个页面<br>· 检查你登录的邮箱(必须是 harreds.ceo@gmail.com)<br>· 检查 Supabase 项目里的 RLS policy 是不是允许你读 partnership_data</div>',
+        rows: [],
+        empty: ''
+      };
+    }
+    const rangeBadge = p.last.label;
+    const fmtTrip = (e) => {
+      const tag = e.palletType ? ' · ' + e.palletType : '';
+      const swap = e.isSwap ? ' <span style="color:var(--pink);">🔁</span>' : '';
+      return `${e.pallets || 0} 托${tag}${swap}${e.truck ? ' · 车 ' + escapeHtml(e.truck) : ''}`;
+    };
+
+    if (key === 'pa-total-pallets') {
+      const rows = [...p.last.allRows].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => {
+        const who = ((e.createdBy || '').toLowerCase() === 'harreds.ceo@gmail.com') ? 'Michael' :
+                    ((e.createdBy || '').toLowerCase() === 'emma@maomail.uk') ? 'Emma' : '?';
+        const whoColor = who === 'Michael' ? '#a5b4fc' : (who === 'Emma' ? 'var(--pink)' : 'var(--text-dim)');
+        return {
+          date: e.date,
+          desc: `<b style="color:${whoColor};">${who}</b> · ${fmtTrip(e)}`,
+          amount: e.pallets || 0
+        };
+      });
+      const palletsDelta = p.last.totalPallets - p.prev.totalPallets;
+      const palletsTrendPct = p.prev.totalPallets > 0 ? (palletsDelta / p.prev.totalPallets * 100) : null;
+      return {
+        title: rangeBadge + ' · 合伙账总取货',
+        sub: `${p.last.totalPickups} 笔取货 · Michael + Emma 合计`,
+        formula: `<div><span class="k">${rangeBadge} 总托盘</span><span class="v" style="float:right;">${p.last.totalPallets} 托</span></div>
+                  <div><span class="k">└ Michael</span><span class="v" style="float:right;color:#a5b4fc;">${p.last.michaelPallets} 托</span></div>
+                  <div><span class="k">└ Emma</span><span class="v" style="float:right;color:var(--pink);">${p.last.emmaPallets} 托</span></div>
+                  ${p.last.otherPallets > 0 ? `<div><span class="k">└ 其他</span><span class="v" style="float:right;color:var(--text-dim);">${p.last.otherPallets} 托</span></div>` : ''}
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">${p.prev.label} 总托盘</span><span class="v" style="float:right;color:var(--text-dim);">${p.prev.totalPallets} 托</span></div>
+                  <div><span class="k">差额</span><span class="v" style="float:right;">${palletsDelta >= 0 ? '+' : ''}${palletsDelta} 托${palletsTrendPct == null ? '' : ' (' + (palletsTrendPct >= 0 ? '+' : '') + palletsTrendPct.toFixed(1) + '%)'}</span></div>`,
+        rows,
+        empty: rows.length ? null : '上月合伙账没有任何取货'
+      };
+    }
+
+    if (key === 'pa-michael-pallets') {
+      const rows = [...p.last.michaelRows].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => ({
+        date: e.date,
+        desc: fmtTrip(e),
+        amount: e.pallets || 0
+      }));
+      const totalP = p.last.totalPallets;
+      const pct = totalP > 0 ? (p.last.michaelPallets / totalP * 100) : 0;
+      return {
+        title: rangeBadge + ' · 我从 SSS 取的托盘',
+        sub: `${p.last.michaelCount} 笔取货 · 占合伙账 ${pct.toFixed(1)}%`,
+        formula: `<div><span class="k">我(Michael)上月</span><span class="v" style="float:right;color:#a5b4fc;">${p.last.michaelPallets} 托</span></div>
+                  <div><span class="k">合伙账总量</span><span class="v" style="float:right;">${p.last.totalPallets} 托</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">占比</span><span class="v total" style="float:right;">${pct.toFixed(1)}%</span></div>
+                  <div style="margin-top:6px;"><span class="k">${p.prev.label} 我取</span><span class="v" style="float:right;color:var(--text-dim);">${p.prev.michaelPallets} 托</span></div>
+                  <div><span class="k">差额</span><span class="v" style="float:right;">${p.last.michaelPallets - p.prev.michaelPallets >= 0 ? '+' : ''}${p.last.michaelPallets - p.prev.michaelPallets} 托</span></div>
+                  <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">"我" = createdBy 是 harreds.ceo@gmail.com 的取货记录</div>`,
+        rows,
+        empty: rows.length ? null : '上月你没有从 SSS 取货'
+      };
+    }
+
+    if (key === 'pa-emma-pallets') {
+      const rows = [...p.last.emmaRows].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => ({
+        date: e.date,
+        desc: fmtTrip(e),
+        amount: e.pallets || 0
+      }));
+      const totalP = p.last.totalPallets;
+      const pct = totalP > 0 ? (p.last.emmaPallets / totalP * 100) : 0;
+      return {
+        title: rangeBadge + ' · Emma 从 SSS 取的托盘',
+        sub: `${p.last.emmaCount} 笔取货 · 占合伙账 ${pct.toFixed(1)}%`,
+        formula: `<div><span class="k">Emma 上月</span><span class="v" style="float:right;color:var(--pink);">${p.last.emmaPallets} 托</span></div>
+                  <div><span class="k">合伙账总量</span><span class="v" style="float:right;">${p.last.totalPallets} 托</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">占比</span><span class="v total" style="float:right;">${pct.toFixed(1)}%</span></div>
+                  <div style="margin-top:6px;"><span class="k">${p.prev.label} Emma 取</span><span class="v" style="float:right;color:var(--text-dim);">${p.prev.emmaPallets} 托</span></div>
+                  <div><span class="k">差额</span><span class="v" style="float:right;">${p.last.emmaPallets - p.prev.emmaPallets >= 0 ? '+' : ''}${p.last.emmaPallets - p.prev.emmaPallets} 托</span></div>
+                  <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">"Emma" = createdBy 是 emma@maomail.uk 的取货记录</div>`,
+        rows,
+        empty: rows.length ? null : '上月 Emma 没有从 SSS 取货'
+      };
+    }
+  }
+
+  // === LAST-MONTH KPIs (lm-pallets / lm-profit / lm-revenue / lm-customers) ===
+  if (key === 'lm-pallets' || key === 'lm-profit' || key === 'lm-revenue' || key === 'lm-customers') {
+    const s = lastMonthStats();
+    const trendBadge = (pct) => {
+      if (pct == null) return '<span class="dim">—</span>';
+      const sign = pct >= 0 ? '+' : '';
+      const color = pct >= 0 ? 'var(--green)' : 'var(--rose)';
+      return `<span style="color:${color};font-weight:700;">${sign}${pct.toFixed(1)}%</span>`;
+    };
+    // Build per-customer breakdown for last month (sorted by pallets desc)
+    const byCustomer = new Map();
+    for (const e of s.last.entries) {
+      const k = e.customerName || '(未分类)';
+      const cur = byCustomer.get(k) || { name: k, pallets: 0, profit: 0, revenue: 0, cost: 0, trips: 0 };
+      cur.pallets += e.pallets || 0;
+      cur.profit += e._profit || 0;
+      cur.revenue += e._revenue || 0;
+      cur.cost += e._cost || 0;
+      cur.trips += 1;
+      byCustomer.set(k, cur);
+    }
+
+    if (key === 'lm-pallets') {
+      const sortedCust = [...byCustomer.values()].sort((a, b) => b.pallets - a.pallets);
+      const rows = sortedCust.map(c => ({
+        date: '—',
+        desc: `<b>${escapeHtml(c.name)}</b>${c.trips > 1 ? ` <span class="dim">(${c.trips} 笔)</span>` : ''}`,
+        amount: c.pallets
+      }));
+      return {
+        title: s.last.label + ' · 托盘总数',
+        sub: `${s.last.pickupCount} 笔取货 · ${s.last.customerCount} 个客户`,
+        formula: `<div><span class="k">${s.last.label} 托盘</span><span class="v" style="float:right;">${s.last.pallets} 托</span></div>
+                  <div><span class="k">${s.prev.label} 托盘</span><span class="v" style="float:right;color:var(--text-dim);">${s.prev.pallets} 托</span></div>
+                  <div><span class="k">差额</span><span class="v" style="float:right;">${s.palletsDelta >= 0 ? '+' : ''}${s.palletsDelta} 托</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">环比变化</span><span class="v total" style="float:right;">${trendBadge(s.palletsTrendPct)}</span></div>`,
+        rows,
+        empty: rows.length ? null : '上月没有任何取货'
+      };
+    }
+
+    if (key === 'lm-profit') {
+      const sortedCust = [...byCustomer.values()].sort((a, b) => b.profit - a.profit);
+      const rows = sortedCust.map(c => ({
+        date: '—',
+        desc: `<b>${escapeHtml(c.name)}</b><br><span class="dim" style="font-size:11px;">${c.pallets} 托 · 单托均利 £${c.pallets > 0 ? Math.round(c.profit / c.pallets) : 0}</span>`,
+        amount: c.profit
+      }));
+      const perP = perPalletProfit();
+      return {
+        title: s.last.label + ' · 利润',
+        sub: `${s.last.pallets} 托 × 每托均利 £${s.avgPerPallet}`,
+        formula: `<div><span class="k">营收</span><span class="v" style="float:right;color:var(--cyan);">${fmt(s.last.revenue)}</span></div>
+                  <div><span class="k">成本(${s.last.pallets} × £${state.params.buyPrice})</span><span class="v" style="float:right;color:var(--rose);">−${fmt(s.last.cost)}</span></div>
+                  <div><span class="k">手续费(${s.last.pallets} × £${state.params.myFee})</span><span class="v" style="float:right;color:var(--green);">+${fmt(s.last.pallets * (state.params.myFee || 0))}</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">${s.last.label} 净利</span><span class="v total" style="float:right;">${fmt(s.last.profit)}</span></div>
+                  <div style="margin-top:6px;"><span class="k">${s.prev.label} 净利</span><span class="v" style="float:right;color:var(--text-dim);">${fmt(s.prev.profit)}</span></div>
+                  <div style="margin-top:4px;"><span class="k">环比变化</span><span class="v" style="float:right;">${trendBadge(s.profitTrendPct)}</span></div>`,
+        rows,
+        empty: rows.length ? null : '上月没有任何利润'
+      };
+    }
+
+    if (key === 'lm-revenue') {
+      const sortedCust = [...byCustomer.values()].sort((a, b) => b.revenue - a.revenue);
+      const rows = sortedCust.map(c => ({
+        date: '—',
+        desc: `<b>${escapeHtml(c.name)}</b><br><span class="dim" style="font-size:11px;">${c.pallets} 托 · ${c.trips} 笔</span>`,
+        amount: c.revenue
+      }));
+      return {
+        title: s.last.label + ' · 营收',
+        sub: `客户付款总额 · ${s.last.pickupCount} 笔取货`,
+        formula: `<div><span class="k">${s.last.label} 营收</span><span class="v" style="float:right;color:var(--cyan);">${fmt(s.last.revenue)}</span></div>
+                  <div><span class="k">${s.last.label} 成本</span><span class="v" style="float:right;color:var(--rose);">−${fmt(s.last.cost)}</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">毛利(营收 − 成本)</span><span class="v total" style="float:right;">${fmt(s.last.revenue - s.last.cost)}</span></div>
+                  <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">注:净利还要加上每托 £${state.params.myFee} 手续费</div>`,
+        rows,
+        empty: rows.length ? null : '上月没有营收'
+      };
+    }
+
+    if (key === 'lm-customers') {
+      const sortedCust = [...byCustomer.values()].sort((a, b) => b.pallets - a.pallets);
+      const rows = sortedCust.map(c => ({
+        date: '—',
+        desc: `<b>${escapeHtml(c.name)}</b>`,
+        amount: c.pallets
+      }));
+      return {
+        title: s.last.label + ' · 活跃客户',
+        sub: `${s.last.customerCount} 个客户 · ${s.last.pickupCount} 笔取货`,
+        formula: `<div><span class="k">${s.last.label} 活跃</span><span class="v" style="float:right;">${s.last.customerCount} 个</span></div>
+                  <div><span class="k">${s.prev.label} 活跃</span><span class="v" style="float:right;color:var(--text-dim);">${s.prev.customerCount} 个</span></div>
+                  <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">差异</span><span class="v total" style="float:right;">${s.last.customerCount - s.prev.customerCount >= 0 ? '+' : ''}${s.last.customerCount - s.prev.customerCount} 个</span></div>
+                  <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">"活跃" = 上月有过取货流水。光预付不算。</div>`,
+        rows,
+        empty: rows.length ? null : '上月没有客户来取货'
+      };
+    }
   }
 
   // === Customer-specific KPIs (require currentCustomer) ===
@@ -8562,7 +8997,7 @@ function renderAll() {
   renderSettings();
   renderInsights();
   // Only render dashboard charts when on dashboard — prevents flicker
-  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); renderSmartAlerts(); }
+  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); renderSmartAlerts(); renderLastMonthKpis(); }
   // Only render supply view when it's the active tab — prevents chart flicker
   if (currentViewName === 'supply' && typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
