@@ -397,7 +397,7 @@ body::after { background: radial-gradient(circle, #00E5FF, transparent 70%); bot
 }
 .kpi {
   position: relative;
-  padding: 22px;
+  padding: 22px 22px 32px;
   border-radius: 18px;
   background: var(--glass);
   border: 1px solid var(--stroke);
@@ -405,6 +405,79 @@ body::after { background: radial-gradient(circle, #00E5FF, transparent 70%); bot
   -webkit-backdrop-filter: blur(20px);
   overflow: hidden;
   transition: all 0.3s ease;
+}
+.kpi-info {
+  position: absolute; bottom: 10px; right: 12px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0, 229, 255, 0.08); color: var(--cyan);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  cursor: pointer; font-size: 12px; font-weight: 700;
+  display: grid; place-items: center;
+  transition: all 0.15s ease; opacity: 0.5;
+  z-index: 2;
+}
+.kpi:hover .kpi-info { opacity: 1; }
+.kpi-info:hover { background: rgba(0, 229, 255, 0.22); transform: scale(1.1); }
+
+/* Drilldown drawer */
+.drilldown-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 90;
+  background: rgba(5, 8, 25, 0.55); backdrop-filter: blur(4px);
+}
+.drilldown-backdrop.open { display: block; }
+.drilldown-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 100%; max-width: 560px; z-index: 91;
+  background: linear-gradient(180deg, rgba(20,28,60,0.97), rgba(15,22,50,0.98));
+  border-left: 1px solid var(--stroke);
+  box-shadow: -10px 0 40px rgba(0,0,0,0.4);
+  transform: translateX(100%); transition: transform 0.25s ease;
+  display: flex; flex-direction: column;
+}
+.drilldown-panel.open { transform: translateX(0); }
+.drilldown-head {
+  padding: 22px 24px 16px; border-bottom: 1px solid rgba(139,150,255,0.12);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+}
+.drilldown-title { font-size: 17px; font-weight: 700; color: var(--text); }
+.drilldown-sub { font-size: 12px; color: var(--text-dim); margin-top: 4px; line-height: 1.6; }
+.drilldown-close {
+  background: transparent; border: 0; color: var(--text-dim);
+  font-size: 22px; cursor: pointer; padding: 0 6px; flex-shrink: 0;
+}
+.drilldown-close:hover { color: var(--text); }
+.drilldown-body { flex: 1; overflow-y: auto; padding: 0 24px 16px; }
+.drilldown-formula {
+  margin-top: 18px; padding: 14px 16px; border-radius: 10px;
+  background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.15);
+  font-family: 'Inter', monospace; font-size: 12.5px; line-height: 1.85;
+  color: var(--text);
+}
+.drilldown-formula .k { color: var(--text-dim); }
+.drilldown-formula .v { font-weight: 700; color: var(--text); }
+.drilldown-formula .total { color: var(--cyan); font-size: 14px; font-weight: 800; }
+.drilldown-list-title {
+  font-size: 11px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 1.5px;
+  font-weight: 700; margin-top: 22px; margin-bottom: 10px;
+}
+.drilldown-list { display: flex; flex-direction: column; gap: 6px; }
+.drilldown-row {
+  display: grid; grid-template-columns: 90px 1fr auto;
+  gap: 10px; padding: 10px 12px;
+  background: rgba(5,6,15,0.4); border-radius: 8px;
+  border: 1px solid rgba(139,150,255,0.06);
+  font-size: 12.5px; align-items: center;
+}
+.drilldown-row:hover { border-color: rgba(0, 229, 255, 0.25); }
+.drilldown-row .date { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+.drilldown-row .desc { color: var(--text); }
+.drilldown-row .amt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.drilldown-row .amt.pos { color: var(--green); }
+.drilldown-row .amt.neg { color: var(--rose); }
+.drilldown-foot {
+  padding: 14px 24px; border-top: 1px solid rgba(139,150,255,0.12);
+  display: flex; gap: 8px; flex-wrap: wrap;
 }
 .kpi:hover { transform: translateY(-3px); border-color: var(--stroke-hi); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), var(--shadow-glow); }
 .kpi::before { content: ""; position: absolute; inset: 0; opacity: 0.08; pointer-events: none; }
@@ -2102,6 +2175,24 @@ select option { background: var(--bg-2); color: var(--text); }
   </div>
 </div>
 
+<!-- Drilldown Drawer (per-KPI data lineage) -->
+<div class="drilldown-backdrop" id="drilldown-backdrop" onclick="closeDrilldown()"></div>
+<div class="drilldown-panel" id="drilldown-panel">
+  <div class="drilldown-head">
+    <div>
+      <div class="drilldown-title" id="drilldown-title">数据来源</div>
+      <div class="drilldown-sub" id="drilldown-sub"></div>
+    </div>
+    <button class="drilldown-close" onclick="closeDrilldown()">×</button>
+  </div>
+  <div class="drilldown-body" id="drilldown-body"></div>
+  <div class="drilldown-foot">
+    <button class="btn ghost sm" onclick="drilldownCopy()">📋 复制(Markdown)</button>
+    <button class="btn ghost sm" onclick="drilldownExportCsv()">⇣ 导出 CSV</button>
+    <button class="btn ghost sm" onclick="closeDrilldown()" style="margin-left:auto;">关闭</button>
+  </div>
+</div>
+
 <!-- AI Settings Modal -->
 <div class="modal-backdrop" id="ai-settings-modal">
   <div class="modal" style="max-width:520px;">
@@ -2594,6 +2685,355 @@ function totals() {
 }
 
 // ============ RENDER ============
+// ============================================================
+// KPI DRILLDOWN — slide-out panel showing data lineage
+// (READ-ONLY: only displays data computed by existing functions)
+// ============================================================
+let _drilldownData = null;
+
+function openDrilldown(key) {
+  const data = buildDrilldownData(key);
+  if (!data) return;
+  _drilldownData = data;
+  document.getElementById('drilldown-title').textContent = data.title;
+  document.getElementById('drilldown-sub').innerHTML = data.sub || '';
+  const body = document.getElementById('drilldown-body');
+  let html = '';
+  if (data.formula) html += `<div class="drilldown-formula">${data.formula}</div>`;
+  if (data.rows && data.rows.length) {
+    html += `<div class="drilldown-list-title">明细 · ${data.rows.length} 条</div>`;
+    html += `<div class="drilldown-list">`;
+    for (const r of data.rows) {
+      const amtCls = r.amount > 0 ? 'pos' : (r.amount < 0 ? 'neg' : '');
+      const amtTxt = r.amount === 0 ? '' : (r.amount > 0 ? '+' + fmt(r.amount) : fmt(r.amount));
+      html += `<div class="drilldown-row">
+        <div class="date">${escapeHtml(r.date || '')}</div>
+        <div class="desc">${r.desc}</div>
+        <div class="amt ${amtCls}">${amtTxt}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  } else if (data.empty) {
+    html += `<div class="dim" style="padding:30px;text-align:center;">${escapeHtml(data.empty)}</div>`;
+  }
+  body.innerHTML = html;
+  document.getElementById('drilldown-backdrop').classList.add('open');
+  document.getElementById('drilldown-panel').classList.add('open');
+}
+
+function closeDrilldown() {
+  document.getElementById('drilldown-backdrop').classList.remove('open');
+  document.getElementById('drilldown-panel').classList.remove('open');
+}
+
+function buildDrilldownData(key) {
+  const today = new Date().toISOString().slice(0, 10);
+  const ymStr = today.slice(0, 7);
+  const perP = perPalletProfit();
+
+  // === 本周利润 ===
+  if (key === 'week-profit') {
+    const wk = thisWeekTotals();
+    const wkMon = wk.week;
+    const swapPrem = swapTtPremium();
+    const rows = [];
+    for (const r of allPickups()) {
+      if (weekStartOf(r.date) !== wkMon) continue;
+      const m = pickupMetrics(r);
+      const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : '';
+      rows.push({
+        date: r.date,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' (' + r.palletType + ')' : ''}<br><span class="dim" style="font-size:11px;">利润 = ${r.pallets} × £${perP}${r.isSwap ? ' + ' + r.pallets + ' × £' + (r.swapPremium || swapPrem) + ' Swap' : ''}</span>`,
+        amount: m.profit
+      });
+    }
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '本周利润 · 数据来源',
+      sub: `${weekLabelShort(wkMon)} · 周一 → 周日 · 跟上周比 ${wk.lastProfit > 0 ? ((wk.profit - wk.lastProfit) / wk.lastProfit * 100).toFixed(1) + '%' : '—'}`,
+      formula: `<div><span class="k">本周托盘</span><span class="v" style="float:right;">${wk.pallets} 托</span></div>
+                <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${perP}</span></div>
+                ${rows.some(r => /SWAP/.test(r.desc)) ? `<div><span class="k">+ Swap TT 加成</span><span class="v" style="float:right;color:var(--pink);">已分摊到每条</span></div>` : ''}
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本周净利合计</span><span class="v total" style="float:right;">${fmt(wk.profit)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '本周还没有取货'
+    };
+  }
+
+  // === 累计净利润 ===
+  if (key === 'cum-profit') {
+    const t = totals();
+    const rows = allPickups().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(r => {
+      const m = pickupMetrics(r);
+      const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : '';
+      return {
+        date: r.date,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' · ' + r.palletType : ''}`,
+        amount: m.profit
+      };
+    });
+    return {
+      title: '累计净利润 · 数据来源',
+      sub: `所有取货流水的利润合计 · 共 ${rows.length} 笔`,
+      formula: `<div><span class="k">总托盘</span><span class="v" style="float:right;">${t.pallets.toLocaleString()} 托</span></div>
+                <div><span class="k">营收</span><span class="v" style="float:right;color:var(--green);">+${fmt(t.revenue + t.fee)}</span></div>
+                <div><span class="k">成本</span><span class="v" style="float:right;color:var(--rose);">−${fmt(t.cost)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">累计净利润</span><span class="v total" style="float:right;">${fmt(t.profit)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '还没有任何取货'
+    };
+  }
+
+  // === 本月利润 ===
+  if (key === 'month-profit') {
+    const t = totals();
+    const monthPickups = allPickups().filter(r => (r.date || '').startsWith(ymStr)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const rows = monthPickups.map(r => {
+      const m = pickupMetrics(r);
+      const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : '';
+      return {
+        date: r.date,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' · ' + r.palletType : ''}`,
+        amount: m.profit
+      };
+    });
+    const todayD = new Date();
+    const mEnd = new Date(todayD.getFullYear(), todayD.getMonth() + 1, 0).getDate();
+    const mDay = todayD.getDate();
+    const projected = (mDay >= 3 && t.mProfit > 0) ? (t.mProfit / mDay * mEnd) : 0;
+    return {
+      title: '本月利润 · 数据来源',
+      sub: `${ymStr} · 已过 ${mDay}/${mEnd} 天 · ${monthPickups.length} 笔取货`,
+      formula: `<div><span class="k">本月托盘</span><span class="v" style="float:right;">${t.mPallets} 托</span></div>
+                <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${perP}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本月净利</span><span class="v total" style="float:right;">${fmt(t.mProfit)}</span></div>
+                ${projected > 0 ? `<div style="margin-top:8px;font-size:11px;color:var(--cyan);">📈 按当前节奏,月底预计 ${fmt(projected)}(线性外推)</div>` : ''}`,
+      rows,
+      empty: rows.length ? null : '本月还没有取货'
+    };
+  }
+
+  // === 本月托盘 ===
+  if (key === 'month-pallets') {
+    const t = totals();
+    const monthPickups = allPickups().filter(r => (r.date || '').startsWith(ymStr)).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const rows = monthPickups.map(r => ({
+      date: r.date,
+      desc: `<b>${escapeHtml(r.customerName)}</b>${r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : ''}${r.palletType ? ' · ' + r.palletType : ''}${r.truck ? ' · 车 ' + escapeHtml(r.truck) : ''}`,
+      amount: r.pallets || 0
+    }));
+    return {
+      title: '本月托盘 · 数据来源',
+      sub: `${ymStr} · ${monthPickups.length} 笔取货 · 共 ${t.mPallets} 托`,
+      formula: `<div><span class="k">取货笔数</span><span class="v" style="float:right;">${monthPickups.length} 笔</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本月托盘合计</span><span class="v total" style="float:right;">${t.mPallets} 托</span></div>`,
+      rows: rows.map(r => ({ ...r, amount: r.amount })),  // amount field carries pallets here, render as raw
+      empty: rows.length ? null : '本月还没有取货'
+    };
+  }
+
+  // === 每托盘毛利 ===
+  if (key === 'per-pallet-margin') {
+    const sell = state.params.sellPrice;
+    const buy = state.params.buyPrice;
+    const myFee = state.params.myFee;
+    return {
+      title: '每托盘毛利 · 公式',
+      sub: '基于设置里的参数计算',
+      formula: `<div><span class="k">卖给客户</span><span class="v" style="float:right;color:var(--green);">+£${sell}</span></div>
+                <div><span class="k">+ 我的中介费</span><span class="v" style="float:right;color:var(--green);">+£${myFee}</span></div>
+                <div><span class="k">− SSS 买价</span><span class="v" style="float:right;color:var(--rose);">−£${buy}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">每托盘净利</span><span class="v total" style="float:right;">£${perP}</span></div>
+                <div style="margin-top:10px;font-size:11px;color:var(--text-dim);line-height:1.7;">利润率 = ${perP}/(${sell}+${myFee}) = ${(perP/(sell+myFee)*100).toFixed(1)}%<br>Hugo £${state.params.hugoFee}/托 + V £${state.params.vFee}/托 是客户直接付,不进你利润<br>Swap TT 时,每托额外 +£${swapTtPremium()}(纯增量)</div>`,
+      rows: [],
+      empty: null
+    };
+  }
+
+  // === 未收款 (Outstanding Invoices) ===
+  if (key === 'outstanding') {
+    const all = (state.invoices || []).filter(i => {
+      const s = invoiceStatusOf(i);
+      return s === 'unpaid' || s === 'overdue';
+    }).sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+    const total = invoiceOutstanding();
+    const overdue = invoiceCount('overdue');
+    const unpaid = invoiceCount('unpaid');
+    const rows = all.map(inv => {
+      const cust = state.customers.find(c => c.id === inv.customerId);
+      const cName = cust ? cust.name : (inv.customerSnapshot ? inv.customerSnapshot.name : '?');
+      const status = invoiceStatusOf(inv);
+      const statusBadge = status === 'overdue'
+        ? '<span class="badge" style="background:rgba(251,113,133,0.18);color:var(--rose);font-size:9px;">逾期</span>'
+        : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);font-size:9px;">未付</span>';
+      return {
+        date: inv.dueDate || inv.issueDate,
+        desc: `<b>${escapeHtml(inv.number)}</b> · ${escapeHtml(cName)} ${statusBadge}<br><span class="dim" style="font-size:11px;">开 ${inv.issueDate} · 到期 ${inv.dueDate || '?'}</span>`,
+        amount: inv.total || 0
+      };
+    });
+    return {
+      title: '未收款 · 数据来源',
+      sub: `共 ${unpaid} 张未付${overdue > 0 ? ' (含 ' + overdue + ' 张逾期)' : ''}`,
+      formula: `<div><span class="k">未付发票总额</span><span class="v total" style="float:right;color:${overdue > 0 ? 'var(--rose)' : 'var(--cyan)'};">${fmt(total)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '没有未付发票 — 完美!'
+    };
+  }
+
+  // === 本月 Swap TT 加成 ===
+  if (key === 'swap-bonus') {
+    const swapPrem = swapTtPremium();
+    let swapBonus = 0, swapPallets = 0;
+    const rows = [];
+    for (const r of allPickups()) {
+      if (!r.isSwap || !(r.date || '').startsWith(ymStr)) continue;
+      const prem = r.swapPremium != null ? r.swapPremium : swapPrem;
+      const bonus = (r.pallets || 0) * prem;
+      swapBonus += bonus; swapPallets += (r.pallets || 0);
+      rows.push({
+        date: r.date,
+        desc: `<b>${escapeHtml(r.customerName)}</b> · ${r.pallets} 托 Swap TT<br><span class="dim" style="font-size:11px;">${r.pallets} × £${prem} 加成</span>`,
+        amount: bonus
+      });
+    }
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '本月 Swap TT 加成 · 数据来源',
+      sub: `${ymStr} · ${rows.length} 笔 swap-TT 取货`,
+      formula: `<div><span class="k">Swap TT 托盘数</span><span class="v" style="float:right;">${swapPallets} 托</span></div>
+                <div><span class="k">加成单价</span><span class="v" style="float:right;color:var(--pink);">£${swapPrem}/托</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本月 Swap TT 加成</span><span class="v total" style="float:right;color:var(--pink);">${fmt(swapBonus)}</span></div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">这是 swap TT 客户多付的 £${swapPrem}/托,纯利润增量。</div>`,
+      rows,
+      empty: rows.length ? null : '本月还没有 Swap TT'
+    };
+  }
+
+  // === 卡车欠条 ===
+  if (key === 'truck-debt') {
+    const debt = emmaTruckDebt();
+    const rows = [];
+    let owed = 0;
+    for (const day of (state.dailySupply || [])) {
+      for (const truck of (day.trucks || [])) {
+        if (!truck.swapped) continue;
+        const sign = day.pickupBy === 'Emma' ? +1 : -1;
+        owed += sign;
+        const desc = day.pickupBy === 'Emma'
+          ? `Emma 取货日 · 1 车 ${truck.type} <span style="color:var(--rose);">→ Michael(Michael 欠 +1)</span>`
+          : `Michael 取货日 · 1 车 ${truck.type} <span style="color:var(--green);">→ Emma(欠款 −1)</span>`;
+        rows.push({
+          date: day.date,
+          desc: `${desc}<br><span class="dim" style="font-size:11px;">该日累计欠条:${owed} 车</span>`,
+          amount: sign
+        });
+      }
+    }
+    rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '卡车欠条 · 数据来源',
+      sub: debt > 0 ? `Michael 欠 Emma ${debt} 车 AMAZON · 私人记录` : (debt < 0 ? `Emma 欠你 ${Math.abs(debt)} 车` : '已平衡'),
+      formula: `<div><span class="k">公式</span><span class="v" style="float:right;font-size:11px;">Σ(Emma 日 swap 出去) − Σ(Michael 日 swap 给 Emma)</span></div>
+                <div style="margin-top:8px;"><span class="k">${debt > 0 ? '欠 Emma' : (debt < 0 ? 'Emma 欠你' : '平衡')}</span><span class="v total" style="float:right;color:${debt > 0 ? 'var(--rose)' : 'var(--green)'};">${Math.abs(debt)} 车</span></div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">"每日供货" 里每条标了 swap 的卡车,Emma 取货日 = 你欠她 1 车,Michael 取货日 = 你还给她 1 车。</div>`,
+      rows,
+      empty: rows.length ? null : '没有任何 swap 卡车记录'
+    };
+  }
+
+  // === 客户预付余额 ===
+  if (key === 'customer-balance') {
+    const total = allBalance();
+    const rows = (state.customers || []).map(c => {
+      const bal = customerBalance(c);
+      const pallets = customerTotalPallets(c);
+      return {
+        date: '',
+        desc: `<b>${escapeHtml(c.name)}</b><br><span class="dim" style="font-size:11px;">累计取货 ${pallets} 托 · 余额能再买 ${state.params.sellPrice > 0 ? Math.floor(Math.max(0, bal) / state.params.sellPrice) : 0} 托</span>`,
+        amount: bal
+      };
+    }).sort((a, b) => b.amount - a.amount);
+    return {
+      title: '客户预付余额 · 数据来源',
+      sub: `${state.customers.length} 位客户 · 各客户预付款合计`,
+      formula: `<div><span class="k">客户数量</span><span class="v" style="float:right;">${state.customers.length} 位</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">客户预付余额合计</span><span class="v total" style="float:right;">${fmt(total)}</span></div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">每位客户 = 累计预付 − 累计取货扣款 − 退款</div>`,
+      rows,
+      empty: rows.length ? null : '还没有客户'
+    };
+  }
+
+  // === 累计营收 ===
+  if (key === 'cum-revenue') {
+    const t = totals();
+    const rows = allPickups().sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(r => {
+      const m = pickupMetrics(r);
+      const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : '';
+      return {
+        date: r.date,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' · ' + r.palletType : ''}<br><span class="dim" style="font-size:11px;">${r.pallets} × £${(r.unitPrice || state.params.sellPrice)} 营收 + £${state.params.myFee} myFee</span>`,
+        amount: m.revenue + m.fee
+      };
+    });
+    return {
+      title: '累计营收 · 数据来源',
+      sub: `所有取货 · 含 myFee 收入`,
+      formula: `<div><span class="k">总托盘</span><span class="v" style="float:right;">${t.pallets.toLocaleString()} 托</span></div>
+                <div><span class="k">营收(售价 + myFee)</span><span class="v" style="float:right;color:var(--green);">+${fmt(t.revenue + t.fee)}</span></div>
+                <div><span class="k">成本(SSS 买价)</span><span class="v" style="float:right;color:var(--rose);">−${fmt(t.cost)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">毛利 = 营收 − 成本</span><span class="v total" style="float:right;">${fmt(t.revenue + t.fee - t.cost)}</span></div>`,
+      rows,
+      empty: rows.length ? null : '还没有任何取货'
+    };
+  }
+
+  return null;
+}
+
+function drilldownCopy() {
+  if (!_drilldownData) return;
+  const lines = [];
+  lines.push('# ' + _drilldownData.title);
+  if (_drilldownData.sub) lines.push(String(_drilldownData.sub).replace(/<[^>]*>/g, ''));
+  lines.push('');
+  lines.push('| 日期 | 说明 | 数值 |');
+  lines.push('|------|------|------|');
+  for (const r of _drilldownData.rows || []) {
+    const desc = String(r.desc).replace(/<[^>]*>/g, '').replace(/\n/g, ' ').trim();
+    let amtTxt;
+    if (typeof r.amount === 'number' && Number.isInteger(r.amount) && Math.abs(r.amount) < 1000) {
+      // For pallet counts (small ints) and truck counts
+      amtTxt = (r.amount > 0 ? '+' : '') + r.amount;
+    } else {
+      amtTxt = (r.amount > 0 ? '+£' : '£') + Math.round(r.amount).toLocaleString('en-GB');
+    }
+    lines.push('| ' + (r.date || '') + ' | ' + desc + ' | ' + amtTxt + ' |');
+  }
+  const txt = lines.join('\n');
+  navigator.clipboard.writeText(txt).then(
+    () => flash && flash('已复制到剪贴板'),
+    () => alert('复制失败,请手动选择文本')
+  );
+}
+
+function drilldownExportCsv() {
+  if (!_drilldownData) return;
+  const rows = [['Date', 'Description', 'Amount']];
+  for (const r of _drilldownData.rows || []) {
+    const desc = String(r.desc).replace(/<[^>]*>/g, '').replace(/\n/g, ' ').replace(/"/g, '""').trim();
+    rows.push([r.date || '', desc, Math.round(r.amount || 0)]);
+  }
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (_drilldownData.title || 'data') + '-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 100);
+}
+
 function renderKpis() {
   const t = totals();
   const bal = allBalance();
@@ -2620,11 +3060,13 @@ function renderKpis() {
       <div class="kpi-head"><div class="kpi-label">本周利润 <span class="badge" style="font-size:9px;padding:2px 6px;">${weekLabelShort(wk.week)}</span></div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${fmt(wk.profit)}</div>
       <div class="kpi-sub">${wk.pallets} 托盘 · ${wk.customerCount} 客户 <span class="kpi-trend ${wTrend}">${wTrendTxt}</span></div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('week-profit')">ⓘ</button>
     </div>
     <div class="kpi v2">
       <div class="kpi-head"><div class="kpi-label">累计净利润</div><div class="kpi-icon">✦</div></div>
       <div class="kpi-value">${fmt(t.profit)}</div>
       <div class="kpi-sub">共 ${t.pallets.toLocaleString()} 托盘</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('cum-profit')">ⓘ</button>
     </div>
     ${(() => {
       // Compute month-end forecast (linear projection from current pace)
@@ -2638,22 +3080,26 @@ function renderKpis() {
         <div class="kpi-value">${fmt(t.mProfit)}</div>
         <div class="kpi-sub">${t.mPallets} 托盘 <span class="kpi-trend ${trend}">${trendTxt}</span></div>
         ${forecastTxt ? `<div class="kpi-sub" style="font-size:11px;color:var(--cyan);margin-top:2px;">📈 ${forecastTxt}</div>` : ''}
+        <button class="kpi-info" title="数据来源" onclick="openDrilldown('month-profit')">ⓘ</button>
       </div>`;
     })()}
     <div class="kpi v1">
       <div class="kpi-head"><div class="kpi-label">本月托盘</div><div class="kpi-icon">▦</div></div>
       <div class="kpi-value">${t.mPallets}</div>
       <div class="kpi-sub">约 ${Math.round(t.mPallets / 30 * 7)} 托盘/周</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('month-pallets')">ⓘ</button>
     </div>
     <div class="kpi v6">
       <div class="kpi-head"><div class="kpi-label">每托盘毛利</div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${fmt(perP)}</div>
       <div class="kpi-sub">${(perP / (state.params.sellPrice + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('per-pallet-margin')">ⓘ</button>
     </div>
     <div class="kpi v3">
       <div class="kpi-head"><div class="kpi-label">未收款 Outstanding</div><div class="kpi-icon">!</div></div>
       <div class="kpi-value">${fmt(invoiceOutstanding())}</div>
       <div class="kpi-sub">${invoiceCount('unpaid')} 张未付${invoiceCount('overdue') > 0 ? ' · ' + invoiceCount('overdue') + ' 张逾期' : ''}</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('outstanding')">ⓘ</button>
     </div>
     ${(() => {
       // Swap TT bonus this month
@@ -2674,11 +3120,13 @@ function renderKpis() {
           <div class="kpi-head"><div class="kpi-label">本月 Swap TT 加成</div><div class="kpi-icon">🔁</div></div>
           <div class="kpi-value">${fmt(swapBonus)}</div>
           <div class="kpi-sub">${swapPallets} 托盘 · 额外 £${swapTtPremium()}/个</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('swap-bonus')">ⓘ</button>
         </div>
         <div class="kpi v3">
           <div class="kpi-head"><div class="kpi-label">卡车欠条 (私人)</div><div class="kpi-icon">⇆</div></div>
           <div class="kpi-value" style="${debtColor}">${Math.abs(debt)}</div>
           <div class="kpi-sub">${debtText}${debt !== 0 ? ' · AMAZON' : ''}</div>
+          <button class="kpi-info" title="数据来源" onclick="openDrilldown('truck-debt')">ⓘ</button>
         </div>
       `;
     })()}
@@ -2686,11 +3134,13 @@ function renderKpis() {
       <div class="kpi-head"><div class="kpi-label">客户预付余额</div><div class="kpi-icon">◈</div></div>
       <div class="kpi-value">${fmt(bal)}</div>
       <div class="kpi-sub">${state.customers.length} 位客户</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('customer-balance')">ⓘ</button>
     </div>
     <div class="kpi v6">
       <div class="kpi-head"><div class="kpi-label">累计营收</div><div class="kpi-icon">↗</div></div>
       <div class="kpi-value">${fmt(t.revenue + t.fee)}</div>
       <div class="kpi-sub">成本 ${fmt(t.cost)}</div>
+      <button class="kpi-info" title="数据来源" onclick="openDrilldown('cum-revenue')">ⓘ</button>
     </div>
   `;
   document.getElementById('kpi-grid').innerHTML = html;
