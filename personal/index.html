@@ -705,6 +705,47 @@ select option { background: var(--bg-2); color: var(--text); }
 /* Hide utility for dynamic ledger form rows */
 .row-hidden { display: none !important; }
 
+/* Inline editable note cell in ledger table */
+.ledger-note-cell {
+  display: inline-block;
+  min-width: 140px;
+  max-width: 280px;
+  min-height: 22px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: text;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.45;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.ledger-note-cell:hover { background: rgba(139, 150, 255, 0.08); }
+.ledger-note-cell:focus {
+  background: rgba(139, 150, 255, 0.12);
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(139, 150, 255, 0.5);
+}
+.ledger-note-cell:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-dim);
+  opacity: 0.45;
+  font-style: italic;
+  font-size: 11px;
+}
+.ledger-note-cell:empty:hover::before { opacity: 0.8; }
+.ledger-note-cell.saved-flash {
+  background: rgba(34, 211, 165, 0.20);
+  transition: background 0.6s ease;
+}
+
+/* Action button variants used in ledger table */
+.btn.danger { color: var(--rose); border-color: rgba(251, 113, 133, 0.4); }
+.btn.danger:hover { background: rgba(251, 113, 133, 0.10); }
+.btn.warn { color: var(--amber); border-color: rgba(251, 191, 36, 0.4); }
+.btn.warn:hover { background: rgba(251, 191, 36, 0.10); }
+
 /* 🧠 Smart Alerts card */
 .alerts-card {
   background: linear-gradient(135deg, rgba(0, 229, 255, 0.04), rgba(139, 92, 246, 0.06));
@@ -2166,6 +2207,63 @@ select option { background: var(--bg-2); color: var(--text); }
   </div>
 </div>
 
+<!-- Ledger Entry Edit Modal — for editing a single ledger entry (deposit/pickup/refund) -->
+<div class="modal-backdrop" id="ledger-edit-modal">
+  <div class="modal" style="max-width: 580px;">
+    <div class="modal-head">
+      <div class="modal-title" id="le-title">修改流水</div>
+      <button class="modal-close" onclick="closeLedgerEdit()">×</button>
+    </div>
+    <div class="page-sub mb-4" id="le-sub">改动会同步到关联的发票 / 收据(如果有)。<b style="color:var(--amber);">类型不能改</b>(如类型错了请删除后重建)。</div>
+
+    <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="form-row"><label>日期</label><input type="date" id="le-date" oninput="updateLedgerEditPreview()"></div>
+      <div class="form-row"><label>类型</label><input type="text" id="le-type-display" disabled style="background:rgba(139,150,255,0.06);font-weight:600;"></div>
+      <div class="form-row" id="le-amount-row"><label id="le-amount-label">金额 £</label><input type="number" id="le-amount" placeholder="0" oninput="updateLedgerEditPreview()"></div>
+      <div class="form-row row-hidden" id="le-pallets-row"><label>托盘数</label><input type="number" id="le-pallets" placeholder="24" min="1" oninput="updateLedgerEditPreview()"></div>
+      <div class="form-row row-hidden" id="le-truck-row"><label>车次(可选)</label><input type="text" id="le-truck" placeholder="T-001"></div>
+      <div class="form-row row-hidden" id="le-pallet-type-row"><label>托盘类型</label>
+        <select id="le-pallet-type">
+          <option value="TT">TT</option>
+          <option value="AMAZON">AMAZON</option>
+          <option value="Mixed">Mixed (?)</option>
+        </select>
+      </div>
+      <div class="form-row row-hidden" id="le-swap-row" style="grid-column: 1/-1;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="le-swap" oninput="updateLedgerEditPreview()">
+          <span>这是 Swap TT (单价 £<span id="le-swap-price">295</span>)</span>
+        </label>
+      </div>
+      <div class="form-row" style="grid-column: 1/-1;"><label>备注</label><input type="text" id="le-note" placeholder="备注…"></div>
+    </div>
+
+    <div id="le-preview" class="preview-box" style="margin-top: 16px;"></div>
+
+    <div id="le-linked-info" style="margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: rgba(139,150,255,0.06); border: 1px solid rgba(139,150,255,0.15); font-size: 12px; color: var(--text-dim); line-height: 1.7; display: none;"></div>
+
+    <div class="row mt-4" style="gap: 8px; justify-content: flex-end;">
+      <button class="btn ghost" onclick="closeLedgerEdit()">取消</button>
+      <button class="btn primary" onclick="saveLedgerEdit()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- App Confirm Modal — pretty replacement for native confirm() -->
+<div class="modal-backdrop" id="app-confirm-modal">
+  <div class="modal" style="max-width: 460px;">
+    <div class="modal-head">
+      <div class="modal-title" id="ac-title">确认</div>
+      <button class="modal-close" onclick="_appConfirmDone(false)">×</button>
+    </div>
+    <div id="ac-body" style="font-size: 13px; line-height: 1.7; color: var(--text-dim);"></div>
+    <div class="row mt-4" style="gap: 8px; justify-content: flex-end;">
+      <button class="btn ghost" id="ac-cancel" onclick="_appConfirmDone(false)">取消</button>
+      <button class="btn primary" id="ac-ok" onclick="_appConfirmDone(true)">确认</button>
+    </div>
+  </div>
+</div>
+
 <!-- Statement Modal -->
 <div class="modal-backdrop" id="statement-modal">
   <div class="modal">
@@ -3534,11 +3632,11 @@ function renderCustomerDetail() {
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
       <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
       <td class="${runCls}"><b>${fmt(running)}</b></td>
-      <td class="dim">${escapeHtml(e.note || '')}</td>
+      <td><div class="ledger-note-cell" contenteditable="true" data-placeholder="点击添加备注…" data-entry-id="${e.id}" onfocus="onNoteFocus(this)" onblur="onNoteBlur(this, '${e.id}')" onkeydown="if (event.key==='Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }">${escapeHtml(e.note || '')}</div></td>
       <td style="white-space:nowrap;">
         ${e.type === 'pickup' ? `<button class="btn sm ghost" title="重复这一笔(填到下面新增表单,日期=今天)" onclick="repeatLedgerEntry('${e.id}')">↻</button> ` : ''}
-        ${e.type === 'pickup' && !linkedInv ? `<button class="btn sm ghost" title="为这条取货生成发票" onclick="openInvoiceEditor({customerId: currentCustomer, fromPickup: '${e.id}'})">📄</button> ` : ''}
-        <button class="btn sm danger" onclick="delLedger('${e.id}')">删</button>
+        <button class="btn sm warn" title="修改这条流水" onclick="openLedgerEdit('${e.id}')">✎</button>
+        <button class="btn sm danger" title="删除这条流水" onclick="delLedger('${e.id}')">删</button>
       </td>
     </tr>`, id: e.id };
   });
@@ -4364,11 +4462,305 @@ function addLedger() {
   save(); renderAll();
   flash('已添加流水' + autoDocMsg);
 }
-function delLedger(id) {
-  if (!confirm('删除这条流水？（如果是出货，交易记录会同步删除）')) return;
+// ============================================================
+// CUSTOM CONFIRM (replaces native confirm — prettier, async)
+// ============================================================
+let _appConfirmResolve = null;
+function appConfirm(opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    _appConfirmResolve = resolve;
+    document.getElementById('ac-title').textContent = opts.title || '确认';
+    document.getElementById('ac-body').innerHTML = opts.body || opts.message || '';
+    const okBtn = document.getElementById('ac-ok');
+    const cancelBtn = document.getElementById('ac-cancel');
+    okBtn.textContent = opts.okText || '确认';
+    cancelBtn.textContent = opts.cancelText || '取消';
+    if (opts.danger) {
+      okBtn.style.background = 'linear-gradient(135deg, var(--rose), #b91c1c)';
+      okBtn.style.color = '#fff';
+      okBtn.style.borderColor = 'transparent';
+    } else {
+      okBtn.style.background = 'linear-gradient(135deg, var(--violet), var(--cyan))';
+      okBtn.style.color = '#fff';
+      okBtn.style.borderColor = 'transparent';
+    }
+    document.getElementById('app-confirm-modal').classList.add('open');
+  });
+}
+function _appConfirmDone(result) {
+  document.getElementById('app-confirm-modal').classList.remove('open');
+  if (_appConfirmResolve) {
+    const r = _appConfirmResolve;
+    _appConfirmResolve = null;
+    r(result);
+  }
+}
+
+// ============================================================
+// INLINE NOTE EDITING (per-row in ledger table)
+// ============================================================
+function onNoteFocus(el) {
+  // Place cursor at end on focus (subtle UX touch)
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+function onNoteBlur(el, entryId) {
+  if (!currentCustomer) return;
   const c = state.customers.find(x => x.id === currentCustomer);
-  c.ledger = c.ledger.filter(e => e.id !== id);
+  if (!c) return;
+  const e = (c.ledger || []).find(x => x.id === entryId);
+  if (!e) return;
+  const newVal = (el.textContent || '').replace(/\s+$/g, '').trim();
+  if ((e.note || '') === newVal) return;  // no change
+  e.note = newVal;
+  // Sync to linked docs
+  const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === entryId);
+  if (linkedInv) {
+    if (newVal) linkedInv.notes = newVal;
+    linkedInv.updatedAt = new Date().toISOString();
+  }
+  const linkedRec = (state.receipts || []).find(r => r.linkedDepositId === entryId);
+  if (linkedRec) {
+    linkedRec.note = newVal;
+    linkedRec.updatedAt = new Date().toISOString();
+  }
+  save();
+  // Visual feedback (no full renderAll — preserve other focus state)
+  el.classList.add('saved-flash');
+  setTimeout(() => el.classList.remove('saved-flash'), 700);
+}
+
+// ============================================================
+// DELETE LEDGER ENTRY (with cascade-cancel of linked INV/REC)
+// ============================================================
+async function delLedger(id) {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const e = (c.ledger || []).find(x => x.id === id);
+  if (!e) return;
+
+  const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === id);
+  const linkedRec = (state.receipts || []).find(r => r.linkedDepositId === id);
+
+  const typeMap = { deposit: '预付', pickup: '取货', refund: '退款', adjust: '调整' };
+  const typeLbl = typeMap[e.type] || '?';
+  const summary = `
+    <div style="margin-top:10px;padding:14px 16px;background:rgba(5,6,15,0.55);border:1px solid rgba(139,150,255,0.18);border-radius:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+        <span style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;">${typeLbl}</span>
+        <span style="color:var(--text);font-weight:600;">${e.date}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;">
+        <span style="color:var(--text-dim);">${e.type === 'pickup' ? `${e.pallets || 0} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' · SWAP' : ''}` : '金额'}</span>
+        <span style="color:${e.type === 'deposit' ? 'var(--green)' : 'var(--rose)'};font-weight:700;font-variant-numeric:tabular-nums;">${e.type === 'deposit' ? '+' : '-'}${fmt(e.amount)}</span>
+      </div>
+      ${e.note ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(139,150,255,0.18);font-size:11px;color:var(--text-dim);">备注:${escapeHtml(e.note)}</div>` : ''}
+    </div>`;
+  const linkedHtml = (linkedInv || linkedRec) ? `
+    <div style="margin-top:12px;padding:10px 14px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.3);border-radius:10px;font-size:12px;line-height:1.7;">
+      <b style="color:var(--amber);">⚠ 关联单据会自动作废:</b><br>
+      ${linkedInv ? `· 发票 <b>${escapeHtml(linkedInv.number)}</b>(${fmt(linkedInv.total)})将被作废 — 可在发票历史里恢复<br>` : ''}
+      ${linkedRec ? `· 收据 <b>${escapeHtml(linkedRec.number)}</b>(${fmt(linkedRec.amount)})将被作废 — 可在收款历史里恢复` : ''}
+    </div>` : '';
+
+  const ok = await appConfirm({
+    title: '删除这条流水?',
+    body: `要删除这条 <b style="color:var(--rose);">${typeLbl}</b> 记录吗?<br>原始数据会从客户账本里移除,<b style="color:var(--rose);">不可撤销</b>。${summary}${linkedHtml}`,
+    okText: '删除',
+    cancelText: '保留',
+    danger: true
+  });
+  if (!ok) return;
+
+  if (linkedInv) {
+    linkedInv.status = 'void';
+    linkedInv.updatedAt = new Date().toISOString();
+    linkedInv.linkedPickupId = null;
+  }
+  if (linkedRec) {
+    linkedRec.status = 'cancelled';
+    linkedRec.updatedAt = new Date().toISOString();
+    linkedRec.linkedDepositId = null;
+  }
+
+  c.ledger = c.ledger.filter(x => x.id !== id);
   save(); renderAll();
+  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : ''));
+}
+
+// ============================================================
+// EDIT LEDGER ENTRY (modal — full edit, syncs linked INV/REC)
+// ============================================================
+let _editingLedgerId = null;
+
+function openLedgerEdit(entryId) {
+  if (!currentCustomer) return;
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const e = (c.ledger || []).find(x => x.id === entryId);
+  if (!e) return;
+  _editingLedgerId = entryId;
+
+  const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === entryId);
+  const linkedRec = (state.receipts || []).find(r => r.linkedDepositId === entryId);
+  const typeMap = { deposit: '预付 (Deposit)', pickup: '取货 (Pickup)', refund: '退款 (Refund)', adjust: '调整 (Adjust)' };
+  document.getElementById('le-title').textContent = '修改流水 — ' + (typeMap[e.type] || '?');
+
+  const isPickup = e.type === 'pickup';
+  const showAmount = !isPickup;
+
+  document.getElementById('le-amount-row').classList.toggle('row-hidden', !showAmount);
+  document.getElementById('le-pallets-row').classList.toggle('row-hidden', !isPickup);
+  document.getElementById('le-truck-row').classList.toggle('row-hidden', !isPickup);
+  document.getElementById('le-pallet-type-row').classList.toggle('row-hidden', !isPickup);
+  document.getElementById('le-swap-row').classList.toggle('row-hidden', !isPickup);
+
+  document.getElementById('le-date').value = e.date || '';
+  document.getElementById('le-type-display').value = typeMap[e.type] || e.type;
+  document.getElementById('le-amount').value = isPickup ? '' : (e.amount || '');
+  document.getElementById('le-pallets').value = e.pallets || '';
+  document.getElementById('le-truck').value = e.truck || '';
+  document.getElementById('le-pallet-type').value = e.palletType || (e.isSwap ? 'TT' : 'Mixed');
+  document.getElementById('le-swap').checked = !!e.isSwap;
+  document.getElementById('le-note').value = e.note || '';
+  const swapPriceEl = document.getElementById('le-swap-price');
+  if (swapPriceEl) swapPriceEl.textContent = (state.params.sellPrice || 265) + swapTtPremium();
+
+  const linkedHtmlParts = [];
+  if (linkedInv) linkedHtmlParts.push(`<b>📄 关联发票:</b> ${escapeHtml(linkedInv.number)} <span style="color:${linkedInv.status === 'void' ? 'var(--rose)' : 'var(--cyan)'};">[${linkedInv.status}]</span> · ${fmt(linkedInv.total || 0)}`);
+  if (linkedRec) linkedHtmlParts.push(`<b>🧾 关联收据:</b> ${escapeHtml(linkedRec.number)} <span style="color:${linkedRec.status === 'cancelled' ? 'var(--rose)' : 'var(--green)'};">[${linkedRec.status}]</span> · ${fmt(linkedRec.amount || 0)}`);
+  const linkedBox = document.getElementById('le-linked-info');
+  if (linkedHtmlParts.length) {
+    linkedBox.style.display = '';
+    linkedBox.innerHTML = linkedHtmlParts.join('<br>') + '<br><br><b style="color:var(--green);">✓ 保存修改时,关联单据会自动同步金额 / 日期 / 备注</b>';
+  } else {
+    linkedBox.style.display = 'none';
+  }
+
+  updateLedgerEditPreview();
+  document.getElementById('ledger-edit-modal').classList.add('open');
+}
+
+function closeLedgerEdit() {
+  document.getElementById('ledger-edit-modal').classList.remove('open');
+  _editingLedgerId = null;
+}
+
+function updateLedgerEditPreview() {
+  const box = document.getElementById('le-preview');
+  if (!box) return;
+  if (!_editingLedgerId || !currentCustomer) { box.classList.remove('show'); return; }
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+  const orig = (c.ledger || []).find(x => x.id === _editingLedgerId);
+  if (!orig) return;
+  const isPickup = orig.type === 'pickup';
+
+  let newAmount;
+  if (isPickup) {
+    const isSwap = !!document.getElementById('le-swap').checked;
+    const unitPrice = isSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265);
+    const palletsN = parseInt(document.getElementById('le-pallets').value, 10) || 0;
+    newAmount = palletsN * unitPrice;
+  } else {
+    newAmount = parseFloat(document.getElementById('le-amount').value) || 0;
+  }
+  const oldAmount = orig.amount || 0;
+  const diff = newAmount - oldAmount;
+  const sign = orig.type === 'deposit' ? 1 : -1;
+  const balDelta = sign * diff;
+  const balBefore = customerBalance(c);
+  const balAfter = balBefore + balDelta;
+
+  box.classList.add('show');
+  box.classList.toggle('danger', balAfter < 0);
+  box.innerHTML = `
+    <div class="pv-row"><span class="pv-k">原金额</span><span class="pv-v">${fmt(oldAmount)}</span></div>
+    <div class="pv-row"><span class="pv-k">新金额</span><span class="pv-v ${diff > 0 ? 'pos' : (diff < 0 ? 'warn' : '')}">${fmt(newAmount)}</span></div>
+    <div class="pv-row"><span class="pv-k">差额(对客户余额)</span><span class="pv-v ${balDelta > 0 ? 'pos' : (balDelta < 0 ? 'neg' : '')}">${balDelta >= 0 ? '+' : ''}${fmt(balDelta)}</span></div>
+    <div class="pv-row" style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(139,150,255,0.2);"><span class="pv-k">改后余额</span><span class="pv-v ${balAfter < 0 ? 'neg' : ''}">${fmt(balAfter)}</span></div>
+    <div class="pv-warning">⚠ 改后余额为负 — 客户透支!</div>`;
+}
+
+function saveLedgerEdit() {
+  if (!_editingLedgerId || !currentCustomer) { closeLedgerEdit(); return; }
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) { closeLedgerEdit(); return; }
+  const e = (c.ledger || []).find(x => x.id === _editingLedgerId);
+  if (!e) { closeLedgerEdit(); return; }
+  const isPickup = e.type === 'pickup';
+
+  const newDate = document.getElementById('le-date').value;
+  if (!newDate) { alert('请填写日期'); return; }
+  const newNote = (document.getElementById('le-note').value || '').trim();
+
+  let newAmount, newPallets, newTruck, newIsSwap, newPalletType, newUnitPrice, newSwapPremium;
+  if (isPickup) {
+    newPallets = parseInt(document.getElementById('le-pallets').value, 10) || 0;
+    if (newPallets <= 0) { alert('托盘数必须 > 0'); return; }
+    newTruck = (document.getElementById('le-truck').value || '').trim();
+    newPalletType = document.getElementById('le-pallet-type').value || 'Mixed';
+    newIsSwap = !!document.getElementById('le-swap').checked;
+    newUnitPrice = newIsSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265);
+    newSwapPremium = newIsSwap ? swapTtPremium() : 0;
+    newAmount = newPallets * newUnitPrice;
+  } else {
+    newAmount = parseFloat(document.getElementById('le-amount').value);
+    if (!isFinite(newAmount) || newAmount <= 0) { alert('金额必须 > 0'); return; }
+    newAmount = Math.abs(newAmount);
+  }
+
+  e.date = newDate;
+  e.amount = newAmount;
+  e.note = newNote;
+  if (isPickup) {
+    e.pallets = newPallets;
+    e.truck = newTruck;
+    e.palletType = newIsSwap ? 'TT' : newPalletType;
+    e.isSwap = newIsSwap;
+    e.unitPrice = newUnitPrice;
+    e.swapPremium = newSwapPremium;
+  }
+
+  // Sync linked invoice
+  const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === _editingLedgerId);
+  if (linkedInv && isPickup) {
+    linkedInv.issueDate = newDate;
+    linkedInv.dueDate = computeDueDate(newDate, linkedInv.paymentTerms || '7', linkedInv.customDays || 0);
+    linkedInv.lineItems = [{
+      description: (newIsSwap ? 'Pallets (Swap TT)' : 'Pallets')
+                   + (newPalletType && !newIsSwap ? ' (' + newPalletType + ')' : '')
+                   + (newTruck ? ' [Vehicle ' + newTruck + ']' : ''),
+      qty: newPallets,
+      unitPrice: newUnitPrice
+    }];
+    linkedInv.subtotal = newAmount;
+    linkedInv.total = newAmount;
+    if (newNote) linkedInv.notes = newNote;
+    linkedInv.updatedAt = new Date().toISOString();
+  }
+
+  // Sync linked receipt
+  const linkedRec = (state.receipts || []).find(r => r.linkedDepositId === _editingLedgerId);
+  if (linkedRec && e.type === 'deposit') {
+    linkedRec.date = newDate;
+    linkedRec.amount = newAmount;
+    linkedRec.note = newNote;
+    const sellP = state.params.sellPrice || 265;
+    linkedRec.palletsRef = sellP > 0 ? Math.floor(newAmount / sellP) : 0;
+    linkedRec.unitPriceRef = sellP;
+    linkedRec.updatedAt = new Date().toISOString();
+  }
+
+  save(); renderAll();
+  closeLedgerEdit();
+  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : ''));
 }
 
 function saveSettings() {
@@ -6004,10 +6396,99 @@ function migrateInvoicesAndReceiptsToNewFormat() {
     createdRec++;
   }
 
-  if (renamedInv + renamedRec + createdRec > 0) {
-    console.log(`[migrate] renamed ${renamedInv} invoice(s), renamed ${renamedRec} receipt(s), backfilled ${createdRec} receipt(s)`);
+  // ---------- 4. Backfill INVOICES for all historical pickups ----------
+  // For each pickup not already linked to an invoice:
+  //   (a) try to LINK an existing matching invoice (same customer + date + total) — avoids duplicate
+  //   (b) otherwise CREATE a new invoice
+  let createdInv = 0, linkedExistingInv = 0;
+  const linkedPickupIds = new Set(state.invoices.map(i => i.linkedPickupId).filter(Boolean));
+  const pendingPickups = [];
+  for (const c of state.customers || []) {
+    for (const e of c.ledger || []) {
+      if (e.type !== 'pickup') continue;
+      if (linkedPickupIds.has(e.id)) continue;
+      pendingPickups.push({ customer: c, entry: e });
+    }
   }
-  return { renamedInv, renamedRec, createdRec, changed: (renamedInv + renamedRec + createdRec) > 0 };
+  pendingPickups.sort((a, b) => (a.entry.date || '').localeCompare(b.entry.date || ''));
+
+  // Per-day sequence counter for invoices, seeded with existing invoices
+  const invDaySeq = {};
+  for (const inv of state.invoices) {
+    const k = _ddmmyyyyKey(inv.issueDate);
+    if (!k) continue;
+    invDaySeq[k] = (invDaySeq[k] || 0) + 1;
+  }
+
+  for (const { customer, entry } of pendingPickups) {
+    const expectedTotal = entry.amount || 0;
+    // (a) Smart match: look for an unlinked invoice that fits
+    const match = state.invoices.find(inv =>
+      !inv.linkedPickupId &&
+      inv.customerId === customer.id &&
+      inv.issueDate === entry.date &&
+      Math.abs((inv.total || 0) - expectedTotal) < 0.01
+    );
+    if (match) {
+      match.linkedPickupId = entry.id;
+      match.updatedAt = new Date().toISOString();
+      linkedExistingInv++;
+      continue;
+    }
+    // (b) Create a new auto invoice
+    const key = _ddmmyyyyKey(entry.date);
+    if (!key) continue;
+    invDaySeq[key] = (invDaySeq[key] || 0) + 1;
+    const number = 'INV-' + key + '-' + String(invDaySeq[key]).padStart(3, '0');
+    const isSwap = !!entry.isSwap;
+    const unitPrice = entry.unitPrice != null
+      ? entry.unitPrice
+      : (isSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265));
+    const desc = (isSwap ? 'Pallets (Swap TT)' : 'Pallets')
+               + (entry.palletType && !isSwap ? ' (' + entry.palletType + ')' : '')
+               + (entry.truck ? ' [Vehicle ' + entry.truck + ']' : '');
+    state.invoices.push({
+      id: crypto.randomUUID(),
+      number,
+      customerId: customer.id,
+      linkedPickupId: entry.id,
+      issueDate: entry.date,
+      dueDate: computeDueDate(entry.date, '7', 0),
+      paymentTerms: '7',
+      customDays: '',
+      poNumber: '',
+      notes: 'Thank you for your business. Payment by bank transfer.',
+      lineItems: [{ description: desc, qty: entry.pallets || 0, unitPrice }],
+      subtotal: expectedTotal,
+      total: expectedTotal,
+      status: 'unpaid',
+      paidDate: null,
+      paidNote: null,
+      source: 'backfill',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      customerSnapshot: {
+        name: customer.name || '', address: customer.address || '', postcode: customer.postcode || '',
+        phone: customer.phone || '', email: customer.email || '',
+        companyNo: customer.companyNo || '', vatNo: customer.vatNo || ''
+      },
+      companySnapshot: {
+        name: co.name || '', address: co.address || '', postcode: co.postcode || '',
+        phone: co.phone || '', email: co.email || '',
+        companyNo: co.companyNo || '', vatNo: co.vatNo || '',
+        bank: co.bank || ''
+      }
+    });
+    createdInv++;
+  }
+
+  if (renamedInv + renamedRec + createdRec + createdInv + linkedExistingInv > 0) {
+    console.log(`[migrate] renamed ${renamedInv} INV, renamed ${renamedRec} REC, backfilled ${createdRec} REC, backfilled ${createdInv} INV, linked ${linkedExistingInv} existing INV to pickups`);
+  }
+  return {
+    renamedInv, renamedRec, createdRec, createdInv, linkedExistingInv,
+    changed: (renamedInv + renamedRec + createdRec + createdInv + linkedExistingInv) > 0
+  };
 }
 
 function cancelReceipt(id) {
