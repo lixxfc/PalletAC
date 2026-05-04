@@ -2215,7 +2215,7 @@ function fillHugoInfo() {
 // ============================================================
 // EMAIL SENDING — partnership app (Resend via Supabase Edge Function)
 // ============================================================
-const EDGE_SEND_URL = `${SUPABASE_URL}/functions/v1/send-document`;
+const EDGE_SEND_URL = `${SUPA_URL}/functions/v1/send-document`;
 let _emailSendCtx = null;  // { who, html, subject, defaultTo, label }
 
 function _pmFmtDate(iso) {
@@ -2563,7 +2563,7 @@ async function confirmAndSendEmail() {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
-        'apikey': SUPABASE_KEY,
+        'apikey': SUPA_KEY,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
