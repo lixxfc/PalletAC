@@ -1028,7 +1028,8 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="page-sub">共享工作区 · Michael · Emma · Hugo 都能看到同一份账</div>
         </div>
         <div class="row">
-          <button class="btn sm" onclick="openEmmaStatementModal()">📄 导出 Emma 对账单</button>
+          <button class="btn sm" onclick="openEmmaStatementModal()">📄 Emma 对账单</button>
+          <button class="btn sm" onclick="openHugoStatementModal()" style="margin-left:6px;">📄 Hugo 提成</button>
         </div>
       </div>
       <div class="kpi-grid" id="kpi-grid"></div>
@@ -1263,17 +1264,39 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       </div>
 
       <div class="card mt-4">
-        <div class="card-title">Emma 信息 <span class="page-sub" style="font-size:11px;font-weight:400;">(出现在对账单 "Statement For" 处)</span></div>
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+          <span>Emma 信息</span>
+          <span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);font-size:10px;letter-spacing:0.4px;">PARTNER</span>
+          <span class="page-sub" style="font-size:11px;font-weight:400;margin-left:auto;">(出现在对账单 "Statement For" 处 · 用于发送邮件 / WhatsApp)</span>
+        </div>
         <div class="form-grid mt-4">
           <div class="form-row"><label>姓名 / 公司名</label><input type="text" id="s-emma-name" placeholder="Emma · Company Ltd" onchange="saveEmmaInfo()"></div>
-          <div class="form-row"><label>电话</label><input type="text" id="s-emma-phone" placeholder="07xxx xxxxxx" onchange="saveEmmaInfo()"></div>
+          <div class="form-row"><label>电话(座机 / Phone)</label><input type="text" id="s-emma-phone" placeholder="020 xxxx xxxx" onchange="saveEmmaInfo()"></div>
+          <div class="form-row"><label>手机(Mobile)</label><input type="text" id="s-emma-mobile" placeholder="07xxx xxxxxx" onchange="saveEmmaInfo()"></div>
+          <div class="form-row"><label>邮箱</label><input type="email" id="s-emma-email" placeholder="emma@maomail.uk" onchange="saveEmmaInfo()"></div>
           <div class="form-row" style="grid-column: 1/-1;"><label>地址</label><input type="text" id="s-emma-address" placeholder="Street, City" onchange="saveEmmaInfo()"></div>
           <div class="form-row"><label>邮编</label><input type="text" id="s-emma-postcode" placeholder="SW1A 1AA" onchange="saveEmmaInfo()"></div>
           <div class="form-row"><label>公司号码 (可选)</label><input type="text" id="s-emma-companyNo" placeholder="12345678" onchange="saveEmmaInfo()"></div>
           <div class="form-row"><label>VAT 号码 (可选)</label><input type="text" id="s-emma-vatNo" placeholder="GB123456789" onchange="saveEmmaInfo()"></div>
-          <div class="form-row"><label>邮箱 (可选)</label><input type="text" id="s-emma-email" placeholder="emma@example.com" onchange="saveEmmaInfo()"></div>
         </div>
       </div>
+
+      <div class="card mt-4">
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+          <span>Hugo 信息</span>
+          <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:10px;letter-spacing:0.4px;">PARTNER</span>
+          <span class="page-sub" style="font-size:11px;font-weight:400;margin-left:auto;">(用于发送 Hugo 提成对账单 / WhatsApp 通知)</span>
+        </div>
+        <div class="form-grid mt-4">
+          <div class="form-row"><label>姓名 / 公司名</label><input type="text" id="s-hugo-name" placeholder="Hugo · Company Ltd" onchange="saveHugoInfo()"></div>
+          <div class="form-row"><label>电话(座机 / Phone)</label><input type="text" id="s-hugo-phone" placeholder="020 xxxx xxxx" onchange="saveHugoInfo()"></div>
+          <div class="form-row"><label>手机(Mobile)</label><input type="text" id="s-hugo-mobile" placeholder="07xxx xxxxxx" onchange="saveHugoInfo()"></div>
+          <div class="form-row"><label>邮箱</label><input type="email" id="s-hugo-email" placeholder="ukhugo@outlook.com" onchange="saveHugoInfo()"></div>
+          <div class="form-row" style="grid-column: 1/-1;"><label>地址(可选)</label><input type="text" id="s-hugo-address" placeholder="Street, City" onchange="saveHugoInfo()"></div>
+          <div class="form-row"><label>邮编(可选)</label><input type="text" id="s-hugo-postcode" placeholder="SW1A 1AA" onchange="saveHugoInfo()"></div>
+        </div>
+      </div>
+
       <div class="card mt-4">
         <div class="card-title">导入 / 导出</div>
         <div class="row mt-4">
@@ -1338,7 +1361,72 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <button class="btn ghost sm" onclick="setEmmaStmtRange('ytd')">今年至今</button>
       <button class="btn ghost sm" onclick="setEmmaStmtRange('all')">全部</button>
     </div>
-    <div class="row mt-4"><button class="btn primary" onclick="generateEmmaStatement()">生成对账单</button></div>
+    <div class="row mt-4" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" onclick="generateEmmaStatement()">🖨 打印 / PDF</button>
+      <button class="btn primary" onclick="emailEmmaStatement()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">📧 发送邮件</button>
+      <button class="btn primary" onclick="whatsAppEmmaStatement()" style="background:linear-gradient(135deg,#25D366,#128C7E);">📱 WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hugo Commission Summary Modal -->
+<div class="modal-backdrop" id="hugo-stmt-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">导出 Hugo 提成对账</div>
+      <button class="modal-close" onclick="closeHugoStatementModal()">×</button>
+    </div>
+    <div class="page-sub">Hugo 按 £<span id="hs-rate">7</span> / 托盘提成,通过 Emma 转给他。这里只统计 Hugo 应得 / 已付 / 待付。</div>
+    <div class="form-grid mt-4">
+      <div class="form-row"><label>开始日期</label><input type="date" id="hs-from"></div>
+      <div class="form-row"><label>结束日期</label><input type="date" id="hs-to"></div>
+    </div>
+    <div class="row mt-4" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn ghost sm" onclick="setHugoStmtRange('month')">本月</button>
+      <button class="btn ghost sm" onclick="setHugoStmtRange('last-month')">上月</button>
+      <button class="btn ghost sm" onclick="setHugoStmtRange('ytd')">今年至今</button>
+      <button class="btn ghost sm" onclick="setHugoStmtRange('all')">全部</button>
+    </div>
+    <div class="row mt-4" style="gap:8px;flex-wrap:wrap;">
+      <button class="btn primary" onclick="generateHugoStatement()">🖨 打印 / PDF</button>
+      <button class="btn primary" onclick="emailHugoStatement()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">📧 发送邮件</button>
+      <button class="btn primary" onclick="whatsAppHugoStatement()" style="background:linear-gradient(135deg,#25D366,#128C7E);">📱 WhatsApp</button>
+    </div>
+  </div>
+</div>
+
+<!-- Send Email Modal — for emailing Emma / Hugo statements -->
+<div class="modal-backdrop" id="email-send-modal">
+  <div class="modal-card" style="max-width: 580px;">
+    <div class="modal-head">
+      <div class="modal-title">📧 <span id="es2-doc-label">发送对账邮件</span></div>
+      <button class="modal-close" onclick="closeEmailSend()">×</button>
+    </div>
+    <div class="page-sub">由 <b style="color:var(--cyan);">CYPP UK LTD</b> 发出 · 客户回复直接到你 Gmail · <b style="color:var(--green);">不含银行信息</b></div>
+
+    <div class="form-grid mt-4" style="grid-template-columns: 1fr;">
+      <div class="form-row"><label>收件人邮箱 <span style="color:var(--rose);">*</span></label><input type="email" id="es2-to" placeholder="emma@example.com"></div>
+      <div class="form-row"><label>主题</label><input type="text" id="es2-subject"></div>
+      <div class="form-row"><label>抄送 (可选,英文逗号分隔)</label><input type="text" id="es2-cc" placeholder="bookkeeper@example.com"></div>
+    </div>
+
+    <div style="margin-top: 14px; padding: 14px 16px; background: rgba(5,6,15,0.55); border: 1px solid rgba(139,150,255,0.18); border-radius: 10px; font-size: 12px; line-height: 1.7;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:var(--mute-2);">发件人</span><span><b>CYPP UK LTD</b> &lt;onboarding@resend.dev&gt;</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:var(--mute-2);">回复至</span><span id="es2-replyto-display">harreds.ceo@gmail.com</span></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:var(--mute-2);">附件 / 内容</span><span id="es2-content-summary">完整对账单内嵌 HTML</span></div>
+    </div>
+
+    <details style="margin-top:14px;">
+      <summary style="cursor:pointer;font-size:12px;color:var(--mute-2);padding:6px 0;">▸ 预览邮件 HTML(高级)</summary>
+      <iframe id="es2-preview-frame" style="width:100%;height:380px;margin-top:8px;border:1px solid rgba(139,150,255,0.2);border-radius:8px;background:#fff;"></iframe>
+    </details>
+
+    <div class="row mt-4" style="gap:8px;justify-content:flex-end;">
+      <button class="btn ghost" onclick="closeEmailSend()">取消</button>
+      <button class="btn primary" id="es2-send-btn" onclick="confirmAndSendEmail()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">
+        <span id="es2-send-text">发送邮件</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -2058,6 +2146,7 @@ function renderSettings() {
   document.getElementById('calc-commission').textContent = state.params.hugoCommission;
   fillCompanyInfo();
   fillEmmaInfo();
+  fillHugoInfo();
 }
 
 // ============ COMPANY INFO (my business) ============
@@ -2087,6 +2176,7 @@ function saveEmmaInfo() {
   if (!state.emma) state.emma = {};
   state.emma.name      = document.getElementById('s-emma-name').value.trim();
   state.emma.phone     = document.getElementById('s-emma-phone').value.trim();
+  state.emma.mobile    = document.getElementById('s-emma-mobile').value.trim();
   state.emma.address   = document.getElementById('s-emma-address').value.trim();
   state.emma.postcode  = document.getElementById('s-emma-postcode').value.trim();
   state.emma.companyNo = document.getElementById('s-emma-companyNo').value.trim();
@@ -2097,13 +2187,500 @@ function saveEmmaInfo() {
 function fillEmmaInfo() {
   const em = state.emma || {};
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-  set('s-emma-name', em.name); set('s-emma-phone', em.phone);
+  set('s-emma-name', em.name); set('s-emma-phone', em.phone); set('s-emma-mobile', em.mobile);
   set('s-emma-address', em.address); set('s-emma-postcode', em.postcode);
   set('s-emma-companyNo', em.companyNo); set('s-emma-vatNo', em.vatNo);
   set('s-emma-email', em.email);
 }
 
+// ============ HUGO INFO ============
+function saveHugoInfo() {
+  if (!state.hugo) state.hugo = {};
+  state.hugo.name     = document.getElementById('s-hugo-name').value.trim();
+  state.hugo.phone    = document.getElementById('s-hugo-phone').value.trim();
+  state.hugo.mobile   = document.getElementById('s-hugo-mobile').value.trim();
+  state.hugo.email    = document.getElementById('s-hugo-email').value.trim();
+  state.hugo.address  = document.getElementById('s-hugo-address').value.trim();
+  state.hugo.postcode = document.getElementById('s-hugo-postcode').value.trim();
+  save();
+}
+function fillHugoInfo() {
+  const h = state.hugo || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('s-hugo-name', h.name); set('s-hugo-phone', h.phone); set('s-hugo-mobile', h.mobile);
+  set('s-hugo-email', h.email); set('s-hugo-address', h.address); set('s-hugo-postcode', h.postcode);
+}
+
 // ============ STATEMENT MODAL ============
+// ============================================================
+// EMAIL SENDING — partnership app (Resend via Supabase Edge Function)
+// ============================================================
+const EDGE_SEND_URL = `${SUPABASE_URL}/functions/v1/send-document`;
+let _emailSendCtx = null;  // { who, html, subject, defaultTo, label }
+
+function _pmFmtDate(iso) {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).split('-');
+  if (!y || !m || !d) return iso;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+}
+function _pmMoney(v) {
+  return '£' + (Math.round((v || 0) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function _pmEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// Compute statement data for given range — returns { rows[], opening, closing, totals... }
+function computeEmmaStatementData(from, to) {
+  const buyPrice = state.params.buyPrice || 245;
+  const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
+  let opening = 0;
+  for (const e of sorted) {
+    if (e.date < from) {
+      if (e.type === 'transfer') opening += (e.amount || 0);
+      else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPrice;
+    }
+  }
+  let running = opening;
+  let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0, totalHugoFee = 0;
+  const inRange = [];
+  for (const e of sorted) {
+    if (e.date >= from && e.date <= to) {
+      if (e.type === 'transfer') {
+        const amt = e.amount || 0;
+        totalIn += amt; running += amt; totalTransfers += 1;
+        if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
+        inRange.push({ ...e, _balance: running });
+      } else if (e.type === 'pickup') {
+        const palls = e.pallets || 0;
+        const amt = palls * buyPrice;
+        totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
+        inRange.push({ ...e, _balance: running, _amount: amt });
+      }
+    }
+  }
+  return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, buyPrice };
+}
+
+// Compute Hugo commission data for given range
+function computeHugoStatementData(from, to) {
+  const buyPrice = state.params.buyPrice || 245;
+  const hugoRate = (state.params && state.params.hugoCommission) || 7;
+  const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
+  let totalPallets = 0, totalCommission = 0;
+  let paidViaEmma = 0;
+  const pickupRows = [];
+  const transferRows = [];
+  for (const e of sorted) {
+    if (e.date < from || e.date > to) continue;
+    if (e.type === 'pickup') {
+      const palls = e.pallets || 0;
+      const commission = palls * hugoRate;
+      totalPallets += palls;
+      totalCommission += commission;
+      pickupRows.push({ ...e, _commission: commission });
+    } else if (e.type === 'transfer' && e.includesHugoFee && e.hugoFeeAmount > 0) {
+      paidViaEmma += e.hugoFeeAmount;
+      transferRows.push({ ...e });
+    }
+  }
+  return {
+    pickupRows, transferRows,
+    totalPallets, totalCommission, paidViaEmma,
+    stillOwed: totalCommission - paidViaEmma,
+    rate: hugoRate, buyPrice
+  };
+}
+
+// === Email-friendly Emma statement HTML (no bank info) ===
+function buildEmmaStatementEmailHtml(from, to) {
+  const data = computeEmmaStatementData(from, to);
+  const company = state.company || {};
+  const emma = state.emma || {};
+  const headerColor = '#0f4c75';
+
+  const rowsHtml = data.rows.map(e => {
+    if (e.type === 'transfer') {
+      const transferRow = `
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;">Payment Sent to Supplier${e.note ? ' <span style="color:#94a3b8;">— ' + _pmEsc(e.note) + '</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#047857;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e.amount || 0)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
+        </tr>`;
+      if (e.includesHugoFee && e.hugoFeeAmount > 0) {
+        return transferRow + `
+        <tr>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;font-style:italic;">Hugo Fee</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;text-align:right;font-variant-numeric:tabular-nums;">${_pmMoney(e.hugoFeeAmount)}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;">—</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;">—</td>
+        </tr>`;
+      }
+      return transferRow;
+    } else {
+      return `
+        <tr>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;">Pallets Collected — ${e.pallets || 0} @ ${_pmMoney(data.buyPrice)}${e.truck ? ' <span style="color:#94a3b8;">(' + _pmEsc(e.truck) + ')</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#b91c1c;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e._amount)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
+        </tr>`;
+    }
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;">
+  <div style="max-width:760px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(10,14,26,0.08);">
+      <div style="padding:32px 36px 24px;background:linear-gradient(135deg,${headerColor} 0%,#1a6ca8 100%);color:#ffffff;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="vertical-align:top;">
+              <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">${_pmEsc(company.name || 'CYPP UK LTD')}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.75);margin-top:6px;line-height:1.6;">
+                ${company.address ? _pmEsc(company.address) + '<br>' : ''}${company.email ? _pmEsc(company.email) : ''}
+              </div>
+            </td>
+            <td style="vertical-align:top;text-align:right;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:2.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;">Statement of Account</div>
+              <div style="font-size:30px;font-weight:800;letter-spacing:-0.5px;margin-top:4px;">Statement</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.85);margin-top:6px;">${_pmFmtDate(from)} &nbsp;&mdash;&nbsp; ${_pmFmtDate(to)}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="padding:24px 36px 8px;font-size:13px;line-height:1.7;">
+        Dear <b>${_pmEsc(emma.name || 'Emma')}</b>,<br>
+        Please find your statement of account for the period <b>${_pmFmtDate(from)}</b> to <b>${_pmFmtDate(to)}</b>.
+      </div>
+
+      <div style="padding:18px 36px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafbfc;border-radius:8px;border:1px solid #e2e8f0;">
+          <tr>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Opening</div>
+              <div style="font-size:14px;font-weight:600;color:#0a0e1a;margin-top:4px;">${_pmMoney(data.opening)}</div>
+            </td>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;">In</div>
+              <div style="font-size:14px;font-weight:600;color:#047857;margin-top:4px;">${_pmMoney(data.totalIn)}</div>
+            </td>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#b91c1c;text-transform:uppercase;">Out</div>
+              <div style="font-size:14px;font-weight:600;color:#b91c1c;margin-top:4px;">${_pmMoney(data.totalOut)}</div>
+            </td>
+            <td style="padding:14px 18px;text-align:right;background:${headerColor};color:#fff;border-top-right-radius:7px;border-bottom-right-radius:7px;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.8);text-transform:uppercase;">Closing</div>
+              <div style="font-size:18px;font-weight:800;margin-top:2px;letter-spacing:-0.3px;">${_pmMoney(data.closing)}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="padding:24px 36px 8px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#64748b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">Transactions</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+              <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Description</th>
+              <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">In</th>
+              <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Out</th>
+              <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Balance</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No transactions in this period.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      ${data.totalHugoFee > 0 ? `<div style="padding:12px 36px 0;"><div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;font-size:12px;color:#854d0e;line-height:1.6;"><b>Hugo Fee Pass-through:</b> ${_pmMoney(data.totalHugoFee)} — included in transfers above as a pass-through. Please remit this to Hugo separately.</div></div>` : ''}
+
+      <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;">
+        <div style="font-size:12px;color:#475569;line-height:1.7;">
+          ${data.closing >= 0 ? `Pallet credit available: <b>${Math.floor(data.closing / data.buyPrice)}</b> pallets at the unit price of ${_pmMoney(data.buyPrice)}.` : `Account is overdrawn — please send a transfer to top up.`}
+          If anything looks incorrect, please reply to this email.
+        </div>
+        <div style="font-size:13px;color:#0a0e1a;font-weight:600;margin-top:14px;">Best regards,</div>
+        <div style="font-size:14px;color:#0a0e1a;font-weight:700;margin-top:2px;">CYPP UK LTD</div>
+      </div>
+
+      <div style="padding:14px 36px;background:#0a0e1a;color:rgba(255,255,255,0.6);font-size:10px;letter-spacing:0.4px;">
+        Statement &nbsp;·&nbsp; ${_pmFmtDate(from)} &mdash; ${_pmFmtDate(to)} &nbsp;·&nbsp; All pallet collections invoiced at the unit price shown.
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px;letter-spacing:0.3px;">CYPP UK LTD &nbsp;·&nbsp; United Kingdom</div>
+  </div>
+</body></html>`;
+}
+
+// === Email-friendly Hugo commission HTML ===
+function buildHugoStatementEmailHtml(from, to) {
+  const data = computeHugoStatementData(from, to);
+  const company = state.company || {};
+  const hugo = state.hugo || {};
+  const headerColor = '#854d0e';
+
+  const pickupRowsHtml = data.pickupRows.map(e => `
+    <tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;text-align:center;">${e.pallets || 0}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
+    </tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;">
+  <div style="max-width:680px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(10,14,26,0.08);">
+      <div style="padding:32px 36px 24px;background:linear-gradient(135deg,${headerColor} 0%,#a16207 100%);color:#ffffff;">
+        <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">${_pmEsc(company.name || 'CYPP UK LTD')}</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:2.5px;color:rgba(255,255,255,0.7);text-transform:uppercase;margin-top:18px;">Hugo Commission Summary</div>
+        <div style="font-size:26px;font-weight:800;margin-top:4px;letter-spacing:-0.3px;">Commission Statement</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.85);margin-top:6px;">${_pmFmtDate(from)} &mdash; ${_pmFmtDate(to)}</div>
+      </div>
+      <div style="padding:24px 36px 8px;font-size:13px;line-height:1.7;">
+        Dear <b>${_pmEsc(hugo.name || 'Hugo')}</b>,<br>
+        Here is your commission summary at <b>${_pmMoney(data.rate)}</b> per pallet for the period above.
+      </div>
+      <div style="padding:18px 36px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafbfc;border-radius:8px;border:1px solid #e2e8f0;">
+          <tr>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Pallets</div>
+              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${data.totalPallets}</div>
+            </td>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Total Commission</div>
+              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${_pmMoney(data.totalCommission)}</div>
+            </td>
+            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;">Paid via Emma</div>
+              <div style="font-size:18px;font-weight:700;color:#047857;margin-top:4px;">${_pmMoney(data.paidViaEmma)}</div>
+            </td>
+            <td style="padding:14px 18px;text-align:right;background:${data.stillOwed > 0 ? '#b91c1c' : '#047857'};color:#fff;border-top-right-radius:7px;border-bottom-right-radius:7px;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.8);text-transform:uppercase;">${data.stillOwed > 0 ? 'Still Owed' : 'Settled'}</div>
+              <div style="font-size:18px;font-weight:800;margin-top:2px;">${_pmMoney(Math.max(0, data.stillOwed))}</div>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <div style="padding:24px 36px 8px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#64748b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">Pallet Collections in Period</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <thead>
+            <tr>
+              <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+              <th style="padding:8px 10px;text-align:center;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pallets</th>
+              <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Commission</th>
+            </tr>
+          </thead>
+          <tbody>${pickupRowsHtml || '<tr><td colspan="3" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No pallet collections in this period.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;font-size:12px;color:#475569;line-height:1.7;">
+        ${data.stillOwed > 0 ? `Outstanding amount of <b>${_pmMoney(data.stillOwed)}</b> will be paid through Emma in the next transfer.` : 'All commission for this period has been settled. Thank you.'}
+      </div>
+      <div style="padding:24px 36px 0;font-size:13px;color:#0a0e1a;font-weight:600;">Best regards,</div>
+      <div style="padding:0 36px 24px;font-size:14px;color:#0a0e1a;font-weight:700;">CYPP UK LTD</div>
+      <div style="padding:14px 36px;background:#0a0e1a;color:rgba(255,255,255,0.6);font-size:10px;letter-spacing:0.4px;">
+        Hugo Commission &nbsp;·&nbsp; ${_pmFmtDate(from)} &mdash; ${_pmFmtDate(to)} &nbsp;·&nbsp; Rate: ${_pmMoney(data.rate)} / pallet
+      </div>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px;letter-spacing:0.3px;">CYPP UK LTD &nbsp;·&nbsp; United Kingdom</div>
+  </div>
+</body></html>`;
+}
+
+// --- Open Email Send modal ---
+function emailEmmaStatement() {
+  const from = document.getElementById('es-from').value;
+  const to = document.getElementById('es-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  const html = buildEmmaStatementEmailHtml(from, to);
+  const emma = state.emma || {};
+  const subject = `Statement of Account — ${_pmFmtDate(from)} to ${_pmFmtDate(to)} — CYPP UK LTD`;
+  _emailSendCtx = { who: 'emma', html, subject, defaultTo: emma.email || '', label: 'Emma 对账单' };
+  closeEmmaStatementModal();
+  _openSendEmailModal('Emma 对账单');
+}
+function emailHugoStatement() {
+  const from = document.getElementById('hs-from').value;
+  const to = document.getElementById('hs-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  const html = buildHugoStatementEmailHtml(from, to);
+  const hugo = state.hugo || {};
+  const subject = `Hugo Commission Summary — ${_pmFmtDate(from)} to ${_pmFmtDate(to)} — CYPP UK LTD`;
+  _emailSendCtx = { who: 'hugo', html, subject, defaultTo: hugo.email || '', label: 'Hugo 提成对账' };
+  closeHugoStatementModal();
+  _openSendEmailModal('Hugo 提成对账');
+}
+
+function _openSendEmailModal(label) {
+  if (!_emailSendCtx) return;
+  document.getElementById('es2-doc-label').textContent = '发送 ' + label + ' 邮件';
+  document.getElementById('es2-to').value = _emailSendCtx.defaultTo || '';
+  document.getElementById('es2-subject').value = _emailSendCtx.subject;
+  document.getElementById('es2-cc').value = '';
+  document.getElementById('es2-replyto-display').textContent = (currentUser && currentUser.email) || 'harreds.ceo@gmail.com';
+  document.getElementById('es2-content-summary').textContent = label + '(完整对账单 HTML 内嵌,无银行信息)';
+  const frame = document.getElementById('es2-preview-frame');
+  if (frame) frame.srcdoc = _emailSendCtx.html;
+  document.getElementById('email-send-modal').classList.add('open');
+}
+
+function closeEmailSend() {
+  document.getElementById('email-send-modal').classList.remove('open');
+  _emailSendCtx = null;
+}
+
+async function confirmAndSendEmail() {
+  if (!_emailSendCtx) return;
+  const to = (document.getElementById('es2-to').value || '').trim();
+  const subject = (document.getElementById('es2-subject').value || '').trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { alert('请填写有效收件人邮箱'); return; }
+  if (!subject) { alert('主题不能为空'); return; }
+  const ccRaw = (document.getElementById('es2-cc').value || '').trim();
+  const cc = ccRaw ? ccRaw.split(/[,，;；\s]+/).filter(Boolean) : [];
+
+  const btn = document.getElementById('es2-send-btn');
+  const txt = document.getElementById('es2-send-text');
+  btn.disabled = true; btn.style.opacity = '0.6'; txt.textContent = '发送中…';
+
+  try {
+    const session = await db.auth.getSession();
+    const token = session && session.data && session.data.session && session.data.session.access_token;
+    if (!token) throw new Error('请重新登录');
+
+    const res = await fetch(EDGE_SEND_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to, subject, html: _emailSendCtx.html, fromName: 'CYPP UK LTD',
+        replyTo: (currentUser && currentUser.email) || undefined, cc
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      throw new Error((data && (data.error || JSON.stringify(data.details))) || `HTTP ${res.status}`);
+    }
+
+    closeEmailSend();
+    flash('✓ 邮件已发出 → ' + to);
+  } catch (err) {
+    console.error('[email] send failed:', err);
+    alert('发送失败:' + (err.message || err));
+    btn.disabled = false; btn.style.opacity = ''; txt.textContent = '发送邮件';
+  }
+}
+
+// --- WhatsApp share for Emma statement ---
+function whatsAppEmmaStatement() {
+  const from = document.getElementById('es-from').value;
+  const to = document.getElementById('es-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  const data = computeEmmaStatementData(from, to);
+  const emma = state.emma || {};
+  const msg = `Hi ${emma.name || 'Emma'},
+
+Statement summary (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):
+
+Opening balance: ${_pmMoney(data.opening)}
+Transfers in:    ${_pmMoney(data.totalIn)} (${data.totalTransfers} payments)
+Pallets out:     ${_pmMoney(data.totalOut)} (${data.totalPallets} pallets)
+Closing balance: ${_pmMoney(data.closing)}
+${data.totalHugoFee > 0 ? '\nHugo fee in this period: ' + _pmMoney(data.totalHugoFee) + '\n' : ''}
+A full statement email is also on the way.
+
+— CYPP UK LTD`;
+
+  let phone = (emma.mobile || emma.phone || '').replace(/\D/g, '');
+  if (phone.startsWith('0')) phone = '44' + phone.slice(1);
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+function whatsAppHugoStatement() {
+  const from = document.getElementById('hs-from').value;
+  const to = document.getElementById('hs-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  const data = computeHugoStatementData(from, to);
+  const hugo = state.hugo || {};
+  const msg = `Hi ${hugo.name || 'Hugo'},
+
+Commission summary (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):
+
+Pallets:        ${data.totalPallets}
+Rate:           ${_pmMoney(data.rate)} / pallet
+Total earned:   ${_pmMoney(data.totalCommission)}
+Paid via Emma:  ${_pmMoney(data.paidViaEmma)}
+${data.stillOwed > 0 ? 'Still owed:     ' + _pmMoney(data.stillOwed) + ' (paid through Emma in next transfer)' : 'All settled. Thank you!'}
+
+A full breakdown email is also on the way.
+
+— CYPP UK LTD`;
+
+  let phone = (hugo.mobile || hugo.phone || '').replace(/\D/g, '');
+  if (phone.startsWith('0')) phone = '44' + phone.slice(1);
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+// --- Hugo statement modal helpers ---
+function openHugoStatementModal() {
+  const dates = (state.events || []).filter(e => !e.deleted && e.date).map(e => e.date).sort();
+  const first = dates[0] || new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('hs-from').value = first;
+  document.getElementById('hs-to').value = today;
+  const rateEl = document.getElementById('hs-rate');
+  if (rateEl) rateEl.textContent = (state.params && state.params.hugoCommission) || 7;
+  document.getElementById('hugo-stmt-modal').classList.add('open');
+}
+function closeHugoStatementModal() {
+  document.getElementById('hugo-stmt-modal').classList.remove('open');
+}
+function setHugoStmtRange(preset) {
+  const today = new Date();
+  const y = today.getFullYear(); const m = today.getMonth();
+  let from, to;
+  if (preset === 'month') { from = new Date(y, m, 1); to = today; }
+  else if (preset === 'last-month') { from = new Date(y, m - 1, 1); to = new Date(y, m, 0); }
+  else if (preset === 'ytd') { from = new Date(y, 0, 1); to = today; }
+  else if (preset === 'all') {
+    const dates = (state.events || []).filter(e => !e.deleted && e.date).map(e => e.date).sort();
+    from = dates[0] ? new Date(dates[0]) : new Date(y, 0, 1);
+    to = today;
+  }
+  document.getElementById('hs-from').value = from.toISOString().slice(0, 10);
+  document.getElementById('hs-to').value = to.toISOString().slice(0, 10);
+}
+// Hugo print version — quick implementation using same email HTML in a new window
+function generateHugoStatement() {
+  const from = document.getElementById('hs-from').value;
+  const to = document.getElementById('hs-to').value;
+  if (!from || !to) { alert('请填写日期范围'); return; }
+  const html = buildHugoStatementEmailHtml(from, to);
+  const printable = `<!DOCTYPE html><html><head><title>Hugo Commission ${from}—${to}</title><style>body{margin:0;}.tools{position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:99;}.tools button{padding:8px 14px;background:#0a0e1a;color:#fff;border:0;border-radius:999px;cursor:pointer;font-size:12px;font-weight:600;}.tools button.alt{background:#fff;color:#0a0e1a;border:1px solid #e2e8f0;}@media print{.tools{display:none;}}</style></head><body>${html.replace(/^[^<]*<body[^>]*>/, '').replace(/<\/body>[^>]*$/, '')}<div class="tools"><button onclick="window.print()">Download / Print PDF</button><button class="alt" onclick="window.close()">Close</button></div></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口'); return; }
+  w.document.open(); w.document.write(printable); w.document.close();
+}
+
 function openEmmaStatementModal() {
   // Default range: from earliest event to today
   const dates = (state.events || []).filter(e => !e.deleted && e.date).map(e => e.date).sort();
