@@ -2303,22 +2303,23 @@ function buildEmmaStatementEmailHtml(from, to) {
 
   const rowsHtml = data.rows.map(e => {
     if (e.type === 'transfer') {
+      const palletsStr = e.pallets ? ` (intended for ${e.pallets} pallet${e.pallets === 1 ? '' : 's'})` : '';
       const transferRow = `
         <tr>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;">Payment Sent to Supplier${e.note ? ' <span style="color:#94a3b8;">— ' + _pmEsc(e.note) + '</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PALLET</span><b>Pallet Payment</b>${palletsStr}${e.note ? ' <span style="color:#94a3b8;">— ' + _pmEsc(e.note) + '</span>' : ''}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#047857;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e.amount || 0)}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
         </tr>`;
       if (e.includesHugoFee && e.hugoFeeAmount > 0) {
         return transferRow + `
-        <tr>
-          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;font-style:italic;">Hugo Fee</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;text-align:right;font-variant-numeric:tabular-nums;">${_pmMoney(e.hugoFeeAmount)}</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;">—</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;">—</td>
+        <tr style="background:#fffbeb;">
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">HUGO</span><b>Hugo Pass-through</b> — please forward to Hugo as cash</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#854d0e;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e.hugoFeeAmount)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;">—</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;text-align:right;font-style:italic;">— (not credit)</td>
         </tr>`;
       }
       return transferRow;
@@ -2326,7 +2327,7 @@ function buildEmmaStatementEmailHtml(from, to) {
       return `
         <tr>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;">Pallets Collected — ${e.pallets || 0} @ ${_pmMoney(data.buyPrice)}${e.truck ? ' <span style="color:#94a3b8;">(' + _pmEsc(e.truck) + ')</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PICKUP</span><b>Pallets Collected</b> — ${e.pallets || 0} @ ${_pmMoney(data.buyPrice)}${e.truck ? ' <span style="color:#94a3b8;">(' + _pmEsc(e.truck) + ')</span>' : ''}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#b91c1c;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e._amount)}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
@@ -2401,7 +2402,14 @@ function buildEmmaStatementEmailHtml(from, to) {
         </table>
       </div>
 
-      ${data.totalHugoFee > 0 ? `<div style="padding:12px 36px 0;"><div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;font-size:12px;color:#854d0e;line-height:1.6;"><b>Hugo Fee Pass-through:</b> ${_pmMoney(data.totalHugoFee)} — included in transfers above as a pass-through. Please remit this to Hugo separately.</div></div>` : ''}
+      ${data.totalHugoFee > 0 ? `<div style="padding:12px 36px 0;"><div style="background:#fef3c7;border-left:4px solid #fbbf24;border-radius:8px;padding:14px 18px;font-size:12px;color:#713f12;line-height:1.7;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#854d0e;text-transform:uppercase;margin-bottom:8px;">💰 Bank Transfer Breakdown</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:12px;">
+          <tr><td style="padding:3px 0;">Total received via bank transfers:</td><td style="text-align:right;padding:3px 0;"><b>${_pmMoney(data.totalIn + data.totalHugoFee)}</b></td></tr>
+          <tr><td style="padding:3px 0;color:#1e40af;">└ Pallet credit (kept by you):</td><td style="text-align:right;padding:3px 0;color:#1e40af;"><b>${_pmMoney(data.totalIn)}</b></td></tr>
+          <tr><td style="padding:3px 0;color:#854d0e;">└ Hugo pass-through (forward as cash):</td><td style="text-align:right;padding:3px 0;color:#854d0e;"><b>${_pmMoney(data.totalHugoFee)}</b></td></tr>
+        </table>
+      </div></div>` : ''}
 
       <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;">
         <div style="font-size:12px;color:#475569;line-height:1.7;">
@@ -2771,36 +2779,36 @@ function generateEmmaStatement() {
 
   const rowsHtml = inRange.map(e => {
     if (e.type === 'transfer') {
-      let desc = 'Payment Sent to Supplier';
+      const palletsStr = e.pallets ? ` (intended for ${e.pallets} pallet${e.pallets === 1 ? '' : 's'})` : '';
+      let desc = `<b>Pallet Payment</b>${palletsStr}`;
       if (e.note) desc += ` <span class="muted">&mdash; ${esc(e.note)}</span>`;
       const transferRow = `<tr>
         <td class="date-col">${fmtDate(e.date)}</td>
-        <td>${desc}</td>
+        <td><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PALLET</span>${desc}</td>
         <td class="num pos">${money(e.amount || 0)}</td>
         <td class="num neg"></td>
         <td class="num bal">${money(e._balance)}</td>
       </tr>`;
-      // If this transfer included Hugo fee — render a SECOND row right after for Hugo,
-      // labeled simply "Hugo Fee" (per user's request — keep it clean, no per-pallet breakdown).
-      // Hugo fee does NOT change the running balance (it's pass-through to Hugo).
+      // If this transfer included Hugo fee — render a SECOND row right after for Hugo
+      // (pass-through, doesn't affect running balance with Emma).
       if (e.includesHugoFee && e.hugoFeeAmount > 0) {
-        const hugoRow = `<tr>
+        const hugoRow = `<tr style="background:#fffbeb;">
           <td class="date-col">${fmtDate(e.date)}</td>
-          <td><span style="color:#854d0e;">Hugo Fee</span></td>
+          <td><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">HUGO</span><span style="color:#854d0e;"><b>Hugo Pass-through</b> &mdash; please forward to Hugo as cash</span></td>
           <td class="num pos" style="color:#854d0e;">${money(e.hugoFeeAmount)}</td>
           <td class="num neg"></td>
-          <td class="num bal" style="color:var(--mute-2);">—</td>
+          <td class="num bal" style="color:var(--mute-2);">— <span style="font-size:9px;font-style:italic;">(not pallet credit)</span></td>
         </tr>`;
         return transferRow + hugoRow;
       }
       return transferRow;
     } else {
-      let desc = `Pallets Collected &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
+      let desc = `<b>Pallets Collected</b> &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
       if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
       if (e.note) desc += ` <span class="muted">&middot; ${esc(e.note)}</span>`;
       return `<tr>
         <td class="date-col">${fmtDate(e.date)}</td>
-        <td>${desc}</td>
+        <td><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PICKUP</span>${desc}</td>
         <td class="num pos"></td>
         <td class="num neg">${money(e._amount)}</td>
         <td class="num bal">${money(e._balance)}</td>
@@ -3041,9 +3049,9 @@ function generateEmmaStatement() {
       <div class="value">${money(opening)}</div>
     </div>
     <div class="sum-item">
-      <div class="label">Payments Sent</div>
+      <div class="label" style="color:#1e40af;">Pallet Payments</div>
       <div class="value pos">${money(totalIn)}</div>
-      <div class="sub">${totalTransfers} transfer${totalTransfers === 1 ? '' : 's'}</div>
+      <div class="sub">${totalTransfers} transfer${totalTransfers === 1 ? '' : 's'} · added to credit</div>
     </div>
     <div class="sum-item">
       <div class="label">Pallets Cost</div>
@@ -3051,9 +3059,9 @@ function generateEmmaStatement() {
       <div class="sub">${totalPallets} pallet${totalPallets === 1 ? '' : 's'}</div>
     </div>
     ${totalHugoFee > 0 ? `<div class="sum-item">
-      <div class="label" style="color:#854d0e;">Hugo Fee</div>
+      <div class="label" style="color:#854d0e;">Hugo Pass-through</div>
       <div class="value" style="color:#854d0e;">${money(totalHugoFee)}</div>
-      <div class="sub">to pay Hugo cash</div>
+      <div class="sub" style="color:#854d0e;">→ forward to Hugo cash</div>
     </div>` : '<div class="sum-item"></div>'}
     <div class="sum-item final">
       <div class="label">${balanceLabel}</div>
@@ -3061,6 +3069,24 @@ function generateEmmaStatement() {
       <div class="sub">as of ${fmtDate(to)}</div>
     </div>
   </div>
+
+  ${totalHugoFee > 0 ? `<div style="margin: 16px 48px 0; padding: 16px 20px; background: #fef3c7; border-radius: 8px; border-left: 4px solid #fbbf24;">
+    <div style="font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: #854d0e; text-transform: uppercase; margin-bottom: 6px;">Bank Transfer Breakdown</div>
+    <table style="width:100%; font-size:12px; color:#713f12;">
+      <tr>
+        <td style="padding:3px 0;">Total received via bank transfers (this period):</td>
+        <td style="text-align:right; padding:3px 0;"><b>${money(totalIn + totalHugoFee)}</b></td>
+      </tr>
+      <tr>
+        <td style="padding:3px 0;">└ Pallet credit (kept by you):</td>
+        <td style="text-align:right; padding:3px 0; color:#1e40af;"><b>${money(totalIn)}</b></td>
+      </tr>
+      <tr>
+        <td style="padding:3px 0;">└ Hugo pass-through (forward as cash):</td>
+        <td style="text-align:right; padding:3px 0; color:#854d0e;"><b>${money(totalHugoFee)}</b></td>
+      </tr>
+    </table>
+  </div>` : ''}
 
   <div class="tx-wrap">
     <div class="tx-title">Transaction History</div>
@@ -3329,10 +3355,16 @@ function updateTransferPreview() {
   const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (hugoRateEl) hugoRateEl.textContent = rate;
 
-  // Auto-fill base amount when pallets typed and amount empty (don't overwrite user's manual edit)
+  const bal = balance();              // Michael's current pallet credit at Emma
+  const grossGoodsCost = pallets * buyPrice;  // 100 × £245 = £24,500
+  const deficit = Math.max(0, grossGoodsCost - bal);  // 24500 - 1970 = £22,530
+
+  // Auto-fill base amount = deficit (NOT gross). User can manually override.
+  // This represents the actual pallet-credit amount Michael wires to Emma's bank
+  // (the Hugo passthrough is added separately via the checkbox).
   let baseAmount;
   if (pallets > 0 && (!amtEl.value || amtEl.dataset.autoFilled === 'true')) {
-    baseAmount = pallets * buyPrice;
+    baseAmount = deficit;
     amtEl.value = baseAmount;
     amtEl.dataset.autoFilled = 'true';
   } else {
@@ -3343,24 +3375,42 @@ function updateTransferPreview() {
   const hugoFee = includeHugo && pallets > 0 ? pallets * rate : 0;
   if (hugoAmountEl) hugoAmountEl.textContent = '£' + hugoFee.toLocaleString('en-GB');
 
-  const totalAmount = baseAmount + hugoFee;
-  if (!totalAmount) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+  const totalBank = baseAmount + hugoFee;
+  if (!totalBank && pallets === 0) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
 
-  const bal = balance();
-  const after = bal + Math.abs(baseAmount);  // Hugo fee passes through to Emma → Hugo, doesn't increase Michael's pallet credit
+  // After this transfer settles, Emma's pallet-credit balance grows by `baseAmount` only
+  // (Hugo fee is pass-through, doesn't increase Michael's credit).
+  const afterBal = bal + baseAmount;
+  const palletsCanLift = buyPrice > 0 ? Math.floor(afterBal / buyPrice) : 0;
+  // Sanity warning: if user typed pallets but baseAmount is way too low to cover the deficit
+  const balanceShortAfterPickup = afterBal < grossGoodsCost;
+
   box.classList.add('show');
-  box.classList.remove('danger');
+  box.classList.toggle('danger', balanceShortAfterPickup && pallets > 0);
 
+  // === Build preview rows ===
+  const palletsLine = pallets > 0
+    ? `
+    <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">想拉托盘</span><span class="pv-v">${pallets} 托 × £${buyPrice} = ${fmt(grossGoodsCost)}</span></div>
+    <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">Emma 当前余额</span><span class="pv-v">${fmt(bal)}</span></div>
+    <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">货款部分缺口(自动算)</span><span class="pv-v" style="color:${deficit > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(deficit)}</span></div>
+    <div style="border-top:1px dashed rgba(139,150,255,0.15);margin:6px 0;"></div>`
+    : '';
   const hugoLine = includeHugo && hugoFee > 0
     ? `<div class="pv-row"><span class="pv-k">+ Hugo 提成 (${pallets} × £${rate})</span><span class="pv-v" style="color:var(--amber);">+${fmt(hugoFee)}</span></div>`
     : '';
+  const warnHtml = balanceShortAfterPickup && pallets > 0
+    ? `<div class="pv-warning">⚠ 这笔基础金额(${fmt(baseAmount)}) + 余额还差 ${fmt(grossGoodsCost - afterBal)} 才够拉 ${pallets} 托。要么改大金额,要么少拉点托盘。</div>`
+    : '';
 
   box.innerHTML = `
+    ${palletsLine}
     <div class="pv-row"><span class="pv-k">基础转账(给 Emma 买货)</span><span class="pv-v pos">+${fmt(baseAmount)}</span></div>
     ${hugoLine}
-    <div class="pv-row" style="border-top:1px dashed rgba(139,150,255,0.18);padding-top:6px;margin-top:4px;"><span class="pv-k"><b>实际转账总额</b></span><span class="pv-v" style="font-size:14px;"><b>${fmt(totalAmount)}</b></span></div>
-    <div class="pv-row"><span class="pv-k">转账后余额(预付)</span><span class="pv-v pos">${fmt(after)}</span></div>
-    ${pallets > 0 ? `<div class="pv-row"><span class="pv-k">能拉托盘</span><span class="pv-v">${Math.floor(after / buyPrice)} 托盘</span></div>` : ''}
+    <div class="pv-row" style="border-top:1px dashed rgba(139,150,255,0.18);padding-top:6px;margin-top:4px;"><span class="pv-k"><b>实际银行转账总额</b></span><span class="pv-v" style="font-size:15px;"><b>${fmt(totalBank)}</b></span></div>
+    <div class="pv-row"><span class="pv-k">转账后 Emma 处余额(预付)</span><span class="pv-v pos">${fmt(afterBal)}</span></div>
+    ${pallets > 0 ? `<div class="pv-row"><span class="pv-k">够拉托盘</span><span class="pv-v">${palletsCanLift} 托盘${palletsCanLift >= pallets ? ' ✓' : ' (差 ' + (pallets - palletsCanLift) + ' 托)'}</span></div>` : ''}
+    ${warnHtml}
   `;
 }
 
