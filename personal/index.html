@@ -1474,6 +1474,51 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
+      <!-- 📦 SSS Supply Overview — yellow banner (all-time, live) -->
+      <div class="card mb-4" id="supply-overview-card" style="background:linear-gradient(135deg,rgba(251,191,36,0.10) 0%,rgba(251,191,36,0.04) 60%,rgba(244,114,182,0.04) 100%);border:1px solid rgba(251,191,36,0.32);box-shadow:0 4px 24px rgba(251,191,36,0.08);">
+        <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+          <!-- Title -->
+          <div style="display:flex;flex-direction:column;gap:2px;min-width:200px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:18px;">📦</span>
+              <div style="font-size:14px;font-weight:800;color:var(--amber);letter-spacing:0.4px;">SSS 取货总览</div>
+              <span class="badge" style="background:rgba(251,191,36,0.20);color:var(--amber);font-size:9px;letter-spacing:0.6px;font-weight:700;">累计</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);letter-spacing:0.2px;">从开始到今天 · 来自每日供货 · 实时更新</div>
+          </div>
+
+          <!-- 3 stat blocks -->
+          <div style="display:flex;gap:0;align-items:stretch;margin-left:auto;flex-wrap:wrap;">
+            <!-- TOTAL -->
+            <div style="padding:8px 22px;text-align:center;min-width:120px;">
+              <div style="font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.4px;font-weight:700;margin-bottom:2px;">总取货</div>
+              <div style="font-size:24px;font-weight:800;color:var(--amber);letter-spacing:-0.5px;line-height:1;font-variant-numeric:tabular-nums;" id="ov-total-pallets">0</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:4px;font-variant-numeric:tabular-nums;"><span id="ov-total-trucks">0</span> 车 · <span id="ov-total-days">0</span> 天</div>
+            </div>
+
+            <!-- divider -->
+            <div style="width:1px;background:linear-gradient(180deg,transparent,rgba(251,191,36,0.3),transparent);margin:6px 0;"></div>
+
+            <!-- MICHAEL -->
+            <div style="padding:8px 22px;text-align:center;min-width:120px;background:rgba(103,232,249,0.04);border-radius:10px;">
+              <div style="font-size:9px;color:#67e8f9;text-transform:uppercase;letter-spacing:1.4px;font-weight:700;margin-bottom:2px;">M · 我取的</div>
+              <div style="font-size:24px;font-weight:800;color:#67e8f9;letter-spacing:-0.5px;line-height:1;font-variant-numeric:tabular-nums;" id="ov-michael-pallets">0</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:4px;font-variant-numeric:tabular-nums;"><span id="ov-michael-trucks">0</span> 车 · <span id="ov-michael-pct">0%</span></div>
+            </div>
+
+            <!-- divider -->
+            <div style="width:1px;background:linear-gradient(180deg,transparent,rgba(251,191,36,0.3),transparent);margin:6px 0;"></div>
+
+            <!-- EMMA -->
+            <div style="padding:8px 22px;text-align:center;min-width:120px;background:rgba(244,114,182,0.04);border-radius:10px;">
+              <div style="font-size:9px;color:var(--pink);text-transform:uppercase;letter-spacing:1.4px;font-weight:700;margin-bottom:2px;">E · Emma 取的</div>
+              <div style="font-size:24px;font-weight:800;color:var(--pink);letter-spacing:-0.5px;line-height:1;font-variant-numeric:tabular-nums;" id="ov-emma-pallets">0</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-top:4px;font-variant-numeric:tabular-nums;"><span id="ov-emma-trucks">0</span> 车 · <span id="ov-emma-pct">0%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 🧠 Smart Alerts / Today's Todo -->
       <div class="card alerts-card mb-4" id="alerts-card" style="display:none;">
         <div class="row" style="align-items:center;flex-wrap:wrap;gap:12px;">
@@ -3024,6 +3069,56 @@ function partnershipLastMonthStats() {
 }
 
 // === Render the dashboard last-month cards (personal + partnership) ===
+// === All-time SSS supply totals (across all dailySupply records) ===
+function supplyAllTimeStats() {
+  const supply = Array.isArray(state.dailySupply) ? state.dailySupply : [];
+  let totalPallets = 0, totalTrucks = 0, totalDays = supply.length;
+  let michaelPallets = 0, michaelTrucks = 0, michaelDays = 0;
+  let emmaPallets = 0, emmaTrucks = 0, emmaDays = 0;
+  let otherPallets = 0, otherTrucks = 0, otherDays = 0;
+  for (const day of supply) {
+    const trucks = day.trucks || [];
+    const dayPallets = trucks.reduce((s, t) => s + (t.pallets || 0), 0);
+    const dayTrucks = trucks.length;
+    totalPallets += dayPallets;
+    totalTrucks += dayTrucks;
+    if (day.pickupBy === 'Michael') {
+      michaelPallets += dayPallets; michaelTrucks += dayTrucks; michaelDays++;
+    } else if (day.pickupBy === 'Emma') {
+      emmaPallets += dayPallets; emmaTrucks += dayTrucks; emmaDays++;
+    } else {
+      otherPallets += dayPallets; otherTrucks += dayTrucks; otherDays++;
+    }
+  }
+  return {
+    totalPallets, totalTrucks, totalDays,
+    michaelPallets, michaelTrucks, michaelDays,
+    emmaPallets, emmaTrucks, emmaDays,
+    otherPallets, otherTrucks, otherDays
+  };
+}
+
+// === Render the yellow SSS supply overview banner ===
+function renderSupplyOverview() {
+  const s = supplyAllTimeStats();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const fmtNum = n => (n || 0).toLocaleString('en-GB');
+
+  set('ov-total-pallets', fmtNum(s.totalPallets));
+  set('ov-total-trucks', fmtNum(s.totalTrucks));
+  set('ov-total-days', fmtNum(s.totalDays));
+
+  set('ov-michael-pallets', fmtNum(s.michaelPallets));
+  set('ov-michael-trucks', fmtNum(s.michaelTrucks));
+  const mPct = s.totalPallets > 0 ? Math.round(s.michaelPallets / s.totalPallets * 100) : 0;
+  set('ov-michael-pct', mPct + '%');
+
+  set('ov-emma-pallets', fmtNum(s.emmaPallets));
+  set('ov-emma-trucks', fmtNum(s.emmaTrucks));
+  const ePct = s.totalPallets > 0 ? Math.round(s.emmaPallets / s.totalPallets * 100) : 0;
+  set('ov-emma-pct', ePct + '%');
+}
+
 function renderLastMonthKpis() {
   const s = lastMonthStats();
   const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
@@ -8966,7 +9061,7 @@ function renderAll() {
   renderSettings();
   renderInsights();
   // Only render dashboard charts when on dashboard — prevents flicker
-  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); renderSmartAlerts(); renderLastMonthKpis(); }
+  if (currentViewName === 'dashboard') { renderCharts(); renderMonthlyHistory(); renderSmartAlerts(); renderLastMonthKpis(); renderSupplyOverview(); }
   // Only render supply view when it's the active tab — prevents chart flicker
   if (currentViewName === 'supply' && typeof renderSupply === 'function') renderSupply();
   if (currentCustomer) renderCustomerDetail();
