@@ -1623,6 +1623,56 @@ async function loadUserData() {
     state = emptyState();
     setSyncStatus('error');
   }
+  // Auto-enable Hugo split mode if there's already a Hugo prepay transfer
+  // but no cutoff date set yet (one-time migration for existing users).
+  try {
+    if (autoSetHugoCutoffIfNeeded()) {
+      console.log('[hugo] Auto-enabled split mode, cutoff =', state.params.hugoPrepayStartDate);
+      await saveUserDataNow();
+    }
+  } catch (e) { console.warn('[hugo] cutoff auto-set skipped:', e); }
+}
+
+// === Auto-set Hugo cutoff date based on first includesHugoFee transfer ===
+// Logic: cutoff = day AFTER first prepay transfer.
+//   This way same-day pickups (which happened BEFORE the prepay was made)
+//   stay in the LEGACY bucket (Michael owes Hugo cash for those).
+//   Prepay pool only covers pickups starting NEXT day forward.
+// Includes a migration: if cutoff was auto-set to the same date as a prepay
+// transfer (old buggy logic) AND user hasn't manually adjusted, bump to next day.
+function _addOneDay(iso) {
+  if (!iso) return null;
+  const d = new Date(iso + 'T12:00:00');
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function autoSetHugoCutoffIfNeeded() {
+  if (!state || !state.params) return false;
+  const firstHugoT = (state.events || [])
+    .filter(e => !e.deleted && e.type === 'transfer' && e.includesHugoFee && e.date)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
+  if (!firstHugoT) return false;
+  const desired = _addOneDay(firstHugoT.date);
+  if (!desired) return false;
+  if (state.params.hugoLegacyPaidCash == null) state.params.hugoLegacyPaidCash = 0;
+  // Case 1: cutoff not set → use desired
+  if (!state.params.hugoPrepayStartDate) {
+    state.params.hugoPrepayStartDate = desired;
+    return true;
+  }
+  // Case 2: cutoff matches a prepay transfer's date AND user hasn't manually
+  // set it → migration from old buggy auto-set to new "next day" logic.
+  if (!state.params.hugoCutoffManuallySet) {
+    const allHugoDates = (state.events || [])
+      .filter(e => !e.deleted && e.type === 'transfer' && e.includesHugoFee)
+      .map(e => e.date);
+    if (allHugoDates.indexOf(state.params.hugoPrepayStartDate) >= 0) {
+      state.params.hugoPrepayStartDate = desired;
+      return true;
+    }
+  }
+  return false;
 }
 
 // Realtime: refresh when another user writes the shared row
@@ -1820,14 +1870,33 @@ function renderKpis() {
     </div>
     <div class="kpi v5" data-drilldown="hugo">
       <div class="kpi-head"><div class="kpi-label">Hugo 提成</div><div class="kpi-icon">H</div></div>
-      ${hMath.mode === 'split' ? `
-        <div class="kpi-value" style="color:${hMath.legacyOutstanding > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hMath.legacyOutstanding)}</div>
-        <div class="kpi-sub" style="line-height:1.6;">
-          <div>${hMath.legacyOutstanding > 0 ? '需付 Hugo 现金(直接)' : '直接结清 ✓'}</div>
-          <div style="font-size:10.5px;">└ 应得 ${fmt(hMath.legacyDebt)} − 已付现金 ${fmt(hMath.legacyPaidCash)}</div>
-          <div style="font-size:10.5px;margin-top:4px;color:${hMath.prepayBalance < 0 ? 'var(--rose)' : 'var(--green)'};">└ Emma 预付池:${hMath.prepayBalance >= 0 ? '+' : ''}${fmt(hMath.prepayBalance)}</div>
-        </div>
-      ` : `
+      ${hMath.mode === 'split' ? (() => {
+        // Pool progress bar: filled portion = remaining; tinted red if depleted
+        const poolUsed = Math.max(0, hMath.prepayEarned);
+        const poolDeposited = Math.max(0, hMath.prepayDeposited);
+        const poolPctLeft = poolDeposited > 0 ? Math.max(0, Math.min(100, (hMath.prepayBalance / poolDeposited) * 100)) : 0;
+        const poolColor = hMath.prepayBalance < 0 ? 'var(--rose)' : (poolPctLeft < 20 ? 'var(--amber)' : 'var(--green)');
+        return `
+          <div class="kpi-value" style="color:${hMath.legacyOutstanding > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hMath.legacyOutstanding)}</div>
+          <div class="kpi-sub" style="line-height:1.55;">
+            <div style="font-size:11px;">${hMath.legacyOutstanding > 0 ? '<b>欠 Hugo 现金</b>(' + hMath.cutoff + ' 之前)' : '旧账已结清 ✓'}</div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">└ 应得 ${fmt(hMath.legacyDebt)} − 已付 ${fmt(hMath.legacyPaidCash)}</div>
+          </div>
+          <div style="margin-top:10px;padding:8px 10px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:0.4px;">
+              <span style="color:var(--amber);font-weight:700;">Emma 预付池</span>
+              <span style="color:${poolColor};font-weight:700;font-variant-numeric:tabular-nums;">${hMath.prepayBalance >= 0 ? '+' : '−'}${fmt(Math.abs(hMath.prepayBalance))}</span>
+            </div>
+            <div style="height:5px;border-radius:3px;background:rgba(255,255,255,0.06);overflow:hidden;margin-top:5px;">
+              <div style="height:100%;width:${poolPctLeft}%;background:${poolColor};transition:width 0.4s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--text-dim);margin-top:4px;font-variant-numeric:tabular-nums;">
+              <span>已用 ${fmt(poolUsed)}</span>
+              <span>共 ${fmt(poolDeposited)}</span>
+            </div>
+          </div>
+        `;
+      })() : `
         <div class="kpi-value" style="color:${hMath.owed > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hMath.owed)}</div>
         <div class="kpi-sub" style="line-height:1.6;">
           <div>${hMath.owed > 0 ? '还欠 Hugo' : '已结清'} · 应得 ${fmt(hMath.earned)}</div>
@@ -1995,21 +2064,39 @@ function buildDrilldownData(key) {
         });
       }
 
-      // === PREPAY bucket ===
-      rows.push({ date: '', desc: `<b style="color:var(--text-dim);">━━ 新账(${cutoff} 起) — 通过 Emma 预付池 ━━</b>`, amount: 0 });
-      for (const e of m.prepayPickups) {
-        rows.push({
-          date: e.date,
-          desc: `应得 ${e.pallets} 托 × £${m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}(预付池消耗)</span>`,
-          amount: (e.pallets || 0) * m.rate
-        });
-      }
-      for (const t of m.prepayTransfers) {
-        rows.push({
-          date: t.date,
-          desc: `<b style="color:var(--green);">+ 充值预付池</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾"包含 Hugo"</span>`,
-          amount: -(t.hugoFeeAmount || 0)
-        });
+      // === PREPAY bucket — chronological with running pool balance ===
+      rows.push({ date: '', desc: `<b style="color:var(--text-dim);">━━ 新账(${cutoff} 起) — Emma 预付池流水 ━━</b>`, amount: 0 });
+      // Combine all post-cutoff events, sort chronologically
+      const poolEvents = [
+        ...m.prepayTransfers.map(t => ({ kind: 'topup', date: t.date, ev: t })),
+        ...m.prepayPickups.map(p => ({ kind: 'consume', date: p.date, ev: p }))
+      ].sort((a, b) => {
+        const c = (a.date || '').localeCompare(b.date || '');
+        if (c !== 0) return c;
+        // Same date: top-ups before pickups (so pool is funded first)
+        return a.kind === 'topup' ? -1 : 1;
+      });
+      let runningPool = 0;
+      for (const item of poolEvents) {
+        if (item.kind === 'topup') {
+          const t = item.ev;
+          runningPool += (t.hugoFeeAmount || 0);
+          rows.push({
+            date: t.date,
+            desc: `<b style="color:var(--green);">+ 充值预付池</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾"包含 Hugo" → 池余 £${fmt0(runningPool)}</span>`,
+            amount: t.hugoFeeAmount || 0
+          });
+        } else {
+          const p = item.ev;
+          const cost = (p.pallets || 0) * m.rate;
+          runningPool -= cost;
+          const poolColor = runningPool < 0 ? 'var(--rose)' : (runningPool < cost ? 'var(--amber)' : 'var(--green)');
+          rows.push({
+            date: p.date,
+            desc: `<b style="color:var(--rose);">− 取货消耗</b> · ${p.pallets} 托 × £${m.rate} = £${fmt0(cost)}<br><span class="dim" style="font-size:11px;">${userInfo(p.createdBy).name} 取货${p.palletType ? ' · ' + p.palletType : ''} → 池余 <span style="color:${poolColor};font-weight:700;">${runningPool < 0 ? '−' : ''}£${fmt0(Math.abs(runningPool))}</span></span>`,
+            amount: -cost
+          });
+        }
       }
 
       const totalLine = m.totalOwed > 0
@@ -2417,29 +2504,58 @@ function computeEmmaStatementData(from, to) {
 function computeHugoStatementData(from, to) {
   const buyPrice = state.params.buyPrice || 245;
   const hugoRate = (state.params && state.params.hugoCommission) || 7;
+  const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
   const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
+
   let totalPallets = 0, totalCommission = 0;
-  let paidViaEmma = 0;
+  let legacyPallets = 0, legacyCommission = 0;
+  let prepayPallets = 0, prepayCommission = 0;
+  let prepayDeposited = 0;
+
   const pickupRows = [];
   const transferRows = [];
+
   for (const e of sorted) {
     if (e.date < from || e.date > to) continue;
     if (e.type === 'pickup') {
       const palls = e.pallets || 0;
       const commission = palls * hugoRate;
+      const isLegacy = cutoff ? (e.date < cutoff) : true;
       totalPallets += palls;
       totalCommission += commission;
-      pickupRows.push({ ...e, _commission: commission });
+      if (isLegacy) {
+        legacyPallets += palls;
+        legacyCommission += commission;
+      } else {
+        prepayPallets += palls;
+        prepayCommission += commission;
+      }
+      pickupRows.push({ ...e, _commission: commission, _bucket: isLegacy ? 'legacy' : 'prepay' });
     } else if (e.type === 'transfer' && e.includesHugoFee && e.hugoFeeAmount > 0) {
-      paidViaEmma += e.hugoFeeAmount;
+      prepayDeposited += e.hugoFeeAmount;
       transferRows.push({ ...e });
     }
   }
+
+  // Legacy debt minus any direct cash paid to Hugo
+  const legacyPaidCash = (state.params && state.params.hugoLegacyPaidCash) || 0;
+  const legacyOwedCash = Math.max(0, legacyCommission - legacyPaidCash);
+  // Pool balance: deposits − consumed by post-cutoff pickups
+  const prepayBalance = prepayDeposited - prepayCommission;
+  // Total still owed: legacy cash + any pool deficit
+  const totalOwed = legacyOwedCash + Math.max(0, -prepayBalance);
+
   return {
     pickupRows, transferRows,
-    totalPallets, totalCommission, paidViaEmma,
-    stillOwed: totalCommission - paidViaEmma,
-    rate: hugoRate, buyPrice
+    totalPallets, totalCommission,
+    legacyPallets, legacyCommission, legacyPaidCash, legacyOwedCash,
+    prepayPallets, prepayCommission, prepayDeposited, prepayBalance,
+    totalOwed,
+    cutoff,
+    rate: hugoRate, buyPrice,
+    // Backward-compat aliases
+    paidViaEmma: prepayDeposited,
+    stillOwed: totalOwed
   };
 }
 
@@ -2578,24 +2694,58 @@ function buildEmmaStatementEmailHtml(from, to) {
 </body></html>`;
 }
 
-// === Email-friendly Hugo commission HTML ===
+// === Email-friendly Hugo commission HTML — SPLIT MODE aware ===
 function buildHugoStatementEmailHtml(from, to) {
   const data = computeHugoStatementData(from, to);
   const company = state.company || {};
   const hugo = state.hugo || {};
   const headerColor = '#854d0e';
+  const split = !!data.cutoff;
 
-  const pickupRowsHtml = data.pickupRows.map(e => `
+  // Build chronological pool flow rows (only post-cutoff events)
+  let runningPool = 0;
+  const poolEvents = [
+    ...data.transferRows.map(t => ({ kind: 'topup', date: t.date, ev: t })),
+    ...data.pickupRows.filter(p => p._bucket === 'prepay').map(p => ({ kind: 'consume', date: p.date, ev: p }))
+  ].sort((a, b) => {
+    const c = (a.date || '').localeCompare(b.date || '');
+    if (c !== 0) return c;
+    return a.kind === 'topup' ? -1 : 1;
+  });
+  const poolFlowHtml = poolEvents.map(item => {
+    if (item.kind === 'topup') {
+      const t = item.ev;
+      runningPool += (t.hugoFeeAmount || 0);
+      return `<tr style="background:#ecfdf5;">
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;white-space:nowrap;">${_pmFmtDate(t.date)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#047857;"><span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.5px;background:#bbf7d0;color:#047857;padding:2px 6px;border-radius:4px;margin-right:6px;">+ TOP-UP</span><b>Bank transfer with Hugo fee</b> (${t.pallets || '?'} × ${_pmMoney(t.hugoFeeRate || data.rate)})</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#047857;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">+${_pmMoney(t.hugoFeeAmount || 0)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#1e293b;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${_pmMoney(runningPool)}</td>
+      </tr>`;
+    } else {
+      const p = item.ev;
+      runningPool -= p._commission;
+      return `<tr>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;white-space:nowrap;">${_pmFmtDate(p.date)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#b91c1c;"><span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.5px;background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;margin-right:6px;">− USED</span>Pallet collection — ${p.pallets} × ${_pmMoney(data.rate)}${p.palletType ? ' (' + p.palletType + ')' : ''}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#b91c1c;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">−${_pmMoney(p._commission)}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:${runningPool < 0 ? '#b91c1c' : '#1e293b'};text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${runningPool < 0 ? '−' : ''}${_pmMoney(Math.abs(runningPool))}</td>
+      </tr>`;
+    }
+  }).join('');
+
+  // Legacy pickups list (pre-cutoff)
+  const legacyRowsHtml = data.pickupRows.filter(p => p._bucket === 'legacy').map(e => `
     <tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;text-align:center;">${e.pallets || 0}</td>
-      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#1e293b;">${e.pallets || 0}${e.palletType ? ' · ' + e.palletType : ''}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
     </tr>`).join('');
 
   return `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;">
-  <div style="max-width:680px;margin:0 auto;padding:24px 16px;">
+  <div style="max-width:760px;margin:0 auto;padding:24px 16px;">
     <div style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(10,14,26,0.08);">
       <div style="padding:32px 36px 24px;background:linear-gradient(135deg,${headerColor} 0%,#a16207 100%);color:#ffffff;">
         <div style="font-size:22px;font-weight:700;letter-spacing:-0.3px;">${_pmEsc(company.name || 'CYPP UK LTD')}</div>
@@ -2607,48 +2757,131 @@ function buildHugoStatementEmailHtml(from, to) {
         Dear <b>${_pmEsc(hugo.name || 'Hugo')}</b>,<br>
         Here is your commission summary at <b>${_pmMoney(data.rate)}</b> per pallet for the period above.
       </div>
+
+      <!-- Top summary cards -->
       <div style="padding:18px 36px 0;">
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafbfc;border-radius:8px;border:1px solid #e2e8f0;">
           <tr>
-            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
-              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Pallets</div>
+            <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Total Pallets</div>
               <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${data.totalPallets}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">Total commission ${_pmMoney(data.totalCommission)}</div>
             </td>
-            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
-              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Total Commission</div>
-              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${_pmMoney(data.totalCommission)}</div>
+            <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#b91c1c;text-transform:uppercase;">Owed in Cash</div>
+              <div style="font-size:18px;font-weight:700;color:#b91c1c;margin-top:4px;">${_pmMoney(data.legacyOwedCash)}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">${split ? 'before ' + _pmFmtDate(data.cutoff) : 'all (no split)'}</div>
             </td>
-            <td style="padding:14px 18px;border-right:1px solid #e2e8f0;">
-              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;">Paid via Emma</div>
-              <div style="font-size:18px;font-weight:700;color:#047857;margin-top:4px;">${_pmMoney(data.paidViaEmma)}</div>
+            <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:${data.prepayBalance < 0 ? '#b91c1c' : '#047857'};text-transform:uppercase;">Pool at Emma</div>
+              <div style="font-size:18px;font-weight:700;color:${data.prepayBalance < 0 ? '#b91c1c' : '#047857'};margin-top:4px;">${data.prepayBalance >= 0 ? '+' : '−'}${_pmMoney(Math.abs(data.prepayBalance))}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">${_pmMoney(data.prepayDeposited)} in − ${_pmMoney(data.prepayCommission)} used</div>
             </td>
-            <td style="padding:14px 18px;text-align:right;background:${data.stillOwed > 0 ? '#b91c1c' : '#047857'};color:#fff;border-top-right-radius:7px;border-bottom-right-radius:7px;">
-              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.8);text-transform:uppercase;">${data.stillOwed > 0 ? 'Still Owed' : 'Settled'}</div>
-              <div style="font-size:18px;font-weight:800;margin-top:2px;">${_pmMoney(Math.max(0, data.stillOwed))}</div>
+            <td style="padding:14px 16px;text-align:right;background:${data.totalOwed > 0 ? '#b91c1c' : '#047857'};color:#fff;border-top-right-radius:7px;border-bottom-right-radius:7px;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.8);text-transform:uppercase;">${data.totalOwed > 0 ? 'Total Outstanding' : 'Settled'}</div>
+              <div style="font-size:18px;font-weight:800;margin-top:2px;">${_pmMoney(data.totalOwed)}</div>
             </td>
           </tr>
         </table>
       </div>
-      <div style="padding:24px 36px 8px;">
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#64748b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">Pallet Collections in Period</div>
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-          <thead>
-            <tr>
-              <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
-              <th style="padding:8px 10px;text-align:center;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pallets</th>
-              <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Commission</th>
-            </tr>
-          </thead>
-          <tbody>${pickupRowsHtml || '<tr><td colspan="3" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No pallet collections in this period.</td></tr>'}</tbody>
+
+      ${split ? `
+      <!-- Two buckets: legacy + prepay -->
+      <div style="padding:24px 36px 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-spacing:14px 0;">
+          <tr>
+            <!-- LEGACY -->
+            <td style="vertical-align:top;width:50%;background:#fef2f2;border-radius:8px;padding:14px 16px;">
+              <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#991b1b;text-transform:uppercase;margin-bottom:6px;">⚠ Legacy debt (cash)</div>
+              <div style="font-size:11px;color:#7f1d1d;line-height:1.6;margin-bottom:10px;">Pickups before <b>${_pmFmtDate(data.cutoff)}</b>. Michael will pay you in cash directly.</div>
+              <table width="100%" style="font-size:11px;">
+                <tr><td style="padding:3px 0;color:#7f1d1d;">Pallets:</td><td style="text-align:right;padding:3px 0;color:#7f1d1d;font-weight:700;">${data.legacyPallets}</td></tr>
+                <tr><td style="padding:3px 0;color:#7f1d1d;">Commission:</td><td style="text-align:right;padding:3px 0;color:#7f1d1d;font-weight:700;">${_pmMoney(data.legacyCommission)}</td></tr>
+                <tr><td style="padding:3px 0;color:#047857;">Cash already paid:</td><td style="text-align:right;padding:3px 0;color:#047857;font-weight:700;">−${_pmMoney(data.legacyPaidCash)}</td></tr>
+                <tr style="border-top:1px dashed #fca5a5;"><td style="padding:6px 0 0;color:#7f1d1d;font-weight:800;">Still owed:</td><td style="text-align:right;padding:6px 0 0;color:#7f1d1d;font-weight:800;font-size:14px;">${_pmMoney(data.legacyOwedCash)}</td></tr>
+              </table>
+            </td>
+            <!-- PREPAY POOL -->
+            <td style="vertical-align:top;width:50%;background:#ecfdf5;border-radius:8px;padding:14px 16px;">
+              <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;margin-bottom:6px;">💰 Prepay Pool (via Emma)</div>
+              <div style="font-size:11px;color:#065f46;line-height:1.6;margin-bottom:10px;">Pickups from <b>${_pmFmtDate(data.cutoff)}</b> onwards. Commission is covered by the £-per-pallet prepayment Emma holds.</div>
+              <table width="100%" style="font-size:11px;">
+                <tr><td style="padding:3px 0;color:#065f46;">Pool topped up:</td><td style="text-align:right;padding:3px 0;color:#065f46;font-weight:700;">+${_pmMoney(data.prepayDeposited)}</td></tr>
+                <tr><td style="padding:3px 0;color:#7f1d1d;">Used by ${data.prepayPallets} pallets:</td><td style="text-align:right;padding:3px 0;color:#7f1d1d;font-weight:700;">−${_pmMoney(data.prepayCommission)}</td></tr>
+                <tr style="border-top:1px dashed #6ee7b7;"><td style="padding:6px 0 0;color:#065f46;font-weight:800;">Pool balance:</td><td style="text-align:right;padding:6px 0 0;color:${data.prepayBalance < 0 ? '#b91c1c' : '#065f46'};font-weight:800;font-size:14px;">${data.prepayBalance >= 0 ? '+' : '−'}${_pmMoney(Math.abs(data.prepayBalance))}</td></tr>
+              </table>
+            </td>
+          </tr>
         </table>
       </div>
+
+      ${legacyRowsHtml ? `
+      <div style="padding:20px 36px 0;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#991b1b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #fee2e2;">Legacy pickups (before ${_pmFmtDate(data.cutoff)})</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <thead><tr>
+            <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+            <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pallets</th>
+            <th style="padding:6px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Commission</th>
+          </tr></thead>
+          <tbody>${legacyRowsHtml}</tbody>
+          <tfoot><tr style="background:#fef2f2;">
+            <td colspan="2" style="padding:8px 10px;font-size:11px;color:#991b1b;font-weight:700;">Total legacy</td>
+            <td style="padding:8px 10px;text-align:right;font-size:13px;color:#991b1b;font-weight:800;">${_pmMoney(data.legacyCommission)}</td>
+          </tr></tfoot>
+        </table>
+      </div>` : ''}
+
+      ${poolFlowHtml ? `
+      <div style="padding:20px 36px 0;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #d1fae5;">Prepay pool flow (from ${_pmFmtDate(data.cutoff)})</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <thead><tr>
+            <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+            <th style="padding:6px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Type</th>
+            <th style="padding:6px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Δ</th>
+            <th style="padding:6px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pool</th>
+          </tr></thead>
+          <tbody>${poolFlowHtml}</tbody>
+          <tfoot><tr style="background:${data.prepayBalance < 0 ? '#fef2f2' : '#ecfdf5'};">
+            <td colspan="3" style="padding:8px 10px;font-size:11px;color:${data.prepayBalance < 0 ? '#991b1b' : '#047857'};font-weight:700;">Pool balance at end</td>
+            <td style="padding:8px 10px;text-align:right;font-size:13px;color:${data.prepayBalance < 0 ? '#991b1b' : '#047857'};font-weight:800;">${data.prepayBalance >= 0 ? '+' : '−'}${_pmMoney(Math.abs(data.prepayBalance))}</td>
+          </tr></tfoot>
+        </table>
+      </div>` : ''}
+
+      ` : `
+      <!-- Unified mode (no cutoff): single table -->
+      <div style="padding:24px 36px 0;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#64748b;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e2e8f0;">Pallet Collections in Period</div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <thead><tr>
+            <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+            <th style="padding:8px 10px;text-align:center;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pallets</th>
+            <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Commission</th>
+          </tr></thead>
+          <tbody>${data.pickupRows.map(e => `
+            <tr>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;text-align:center;">${e.pallets || 0}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
+            </tr>`).join('') || '<tr><td colspan="3" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No pallet collections in this period.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      `}
+
       <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;font-size:12px;color:#475569;line-height:1.7;">
-        ${data.stillOwed > 0 ? `Outstanding amount of <b>${_pmMoney(data.stillOwed)}</b> will be paid through Emma in the next transfer.` : 'All commission for this period has been settled. Thank you.'}
+        ${data.totalOwed > 0
+          ? (split
+            ? `Outstanding cash directly to Hugo: <b>${_pmMoney(data.legacyOwedCash)}</b>` + (data.prepayBalance < 0 ? ` · Pool needs top-up: <b>${_pmMoney(-data.prepayBalance)}</b>` : ` · Pool covers future pickups (balance ${_pmMoney(data.prepayBalance)})`) + '.'
+            : `Outstanding amount of <b>${_pmMoney(data.totalOwed)}</b> will be paid through Emma in the next transfer.`)
+          : 'All commission for this period has been settled. Thank you.'}
       </div>
       <div style="padding:24px 36px 0;font-size:13px;color:#0a0e1a;font-weight:600;">Best regards,</div>
       <div style="padding:0 36px 24px;font-size:14px;color:#0a0e1a;font-weight:700;">CYPP UK LTD</div>
       <div style="padding:14px 36px;background:#0a0e1a;color:rgba(255,255,255,0.6);font-size:10px;letter-spacing:0.4px;">
-        Hugo Commission &nbsp;·&nbsp; ${_pmFmtDate(from)} &mdash; ${_pmFmtDate(to)} &nbsp;·&nbsp; Rate: ${_pmMoney(data.rate)} / pallet
+        Hugo Commission &nbsp;·&nbsp; ${_pmFmtDate(from)} &mdash; ${_pmFmtDate(to)} &nbsp;·&nbsp; Rate: ${_pmMoney(data.rate)}/pallet${split ? ' &nbsp;·&nbsp; Split mode (cutoff ' + _pmFmtDate(data.cutoff) + ')' : ''}
       </div>
     </div>
     <div style="text-align:center;font-size:11px;color:#94a3b8;margin-top:14px;letter-spacing:0.3px;">CYPP UK LTD &nbsp;·&nbsp; United Kingdom</div>
@@ -3615,6 +3848,16 @@ function addTransfer() {
     createdAt: new Date().toISOString()
   });
 
+  // Auto-enable Hugo split mode the FIRST time user prepays Hugo.
+  // Cutoff = day AFTER this transfer (so same-day pickups stay in legacy bucket).
+  let autoEnabledMsg = '';
+  if (includeHugo && hugoFee > 0 && !state.params.hugoPrepayStartDate) {
+    const cutoffDate = _addOneDay(date);
+    state.params.hugoPrepayStartDate = cutoffDate;
+    if (state.params.hugoLegacyPaidCash == null) state.params.hugoLegacyPaidCash = 0;
+    autoEnabledMsg = ' · ✓ 已自动启用 Hugo 预付分账模式(从 ' + cutoffDate + ' 起的取货消耗预付池)';
+  }
+
   // Reset form
   document.getElementById('t-amount').value = '';
   document.getElementById('t-amount').dataset.autoFilled = '';
@@ -3623,7 +3866,7 @@ function addTransfer() {
   document.getElementById('t-include-hugo').checked = false;
   save(); renderAll();
   const totalSent = baseAmount + hugoFee;
-  flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : ''));
+  flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : '') + autoEnabledMsg);
 }
 
 function addPickup() {
@@ -3681,6 +3924,7 @@ function saveSettings() {
   const cutEl = document.getElementById('s-hugo-cutoff');
   const cutVal = (cutEl && cutEl.value || '').trim();
   state.params.hugoPrepayStartDate = cutVal || null;
+  state.params.hugoCutoffManuallySet = !!cutVal;  // protect from auto-migration
   const lpEl = document.getElementById('s-hugo-legacy-paid');
   const lpVal = parseFloat(lpEl && lpEl.value);
   state.params.hugoLegacyPaidCash = (isNaN(lpVal) || lpVal < 0) ? 0 : lpVal;
