@@ -1774,7 +1774,10 @@ function hugoMath() {
   // Split mode
   const legacyPickups = pickupsAll.filter(e => (e.date || '') < cutoff);
   const prepayPickups = pickupsAll.filter(e => (e.date || '') >= cutoff);
-  const prepayTransfers = transfersHugoAll.filter(t => (t.date || '') >= cutoff);
+  // POOL DEPOSITS: ALL hugoFee transfers fund the pool, regardless of date.
+  // (The cutoff only determines which PICKUPS consume the pool — legacy pickups
+  // don't touch it; they're owed in cash directly.)
+  const prepayTransfers = transfersHugoAll;
 
   const legacyDebt = legacyPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
   const legacyPaidCash = (state.params && state.params.hugoLegacyPaidCash) || 0;
