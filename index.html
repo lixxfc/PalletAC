@@ -1237,6 +1237,18 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="form-row"><label>买价 £/托盘</label><input type="number" id="s-buy"></div>
           <div class="form-row"><label>Hugo 提成 £/托盘</label><input type="number" id="s-commission" step="0.1"></div>
         </div>
+
+        <div style="margin-top:18px;padding:14px 16px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:10px;">
+          <div style="font-size:12px;font-weight:700;color:var(--amber);letter-spacing:0.5px;margin-bottom:4px;">💰 Hugo 预付模式(分账)</div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.7;margin-bottom:12px;">
+            从某天起,你转账给 Emma 时附带 Hugo £7/托(由 Emma 给 Hugo 现金)。这个日期之前的旧账,需要 Michael 直接付现金给 Hugo,<b>不能</b>用预付池抵扣。
+          </div>
+          <div class="form-grid">
+            <div class="form-row"><label>Hugo 预付起始日期 <span class="page-sub" style="font-size:10px;">(留空 = 旧的统一模式)</span></label><input type="date" id="s-hugo-cutoff"></div>
+            <div class="form-row"><label>已直接付现金给 Hugo £ <span class="page-sub" style="font-size:10px;">(用于抵扣旧账)</span></label><input type="number" id="s-hugo-legacy-paid" min="0" step="0.01" placeholder="0"></div>
+          </div>
+        </div>
+
         <div class="row mt-4">
           <button class="btn primary" onclick="saveSettings()">保存参数</button>
           <button class="btn ghost danger" onclick="resetAll()">清空全部数据</button>
@@ -1677,6 +1689,67 @@ function hugoMonth(ymStr) {
   return pallets * hugoRate();
 }
 
+// === NEW Hugo accounting model ===
+// Two separate buckets:
+//   1. LEGACY (pickups before hugoPrepayStartDate): owed in cash directly to Hugo.
+//      Reduced only by manual entries in state.params.hugoLegacyPaidCash.
+//   2. PREPAY (pickups on/after cutoff): consume the prepay pool funded by transfers
+//      with includesHugoFee on/after cutoff. Pool balance can be positive (extra prepaid)
+//      or negative (Michael needs to top up next transfer).
+//
+// If no cutoff is configured, the function falls back to the legacy unified model
+// (sum-earned − sum-paid-via-Emma), so existing data behaves the same.
+function hugoMath() {
+  const rate = hugoRate();
+  const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
+  const pickupsAll = getPickups();
+  const transfersHugoAll = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
+
+  if (!cutoff) {
+    // Unified mode (backward compatible)
+    const earned = pickupsAll.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const paid = transfersHugoAll.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+    return {
+      mode: 'unified',
+      rate,
+      earned, paid,
+      owed: earned - paid,
+      // Aliases for KPI rendering compatibility
+      legacyDebt: earned, legacyPaidCash: 0, legacyOutstanding: earned - paid,
+      prepayEarned: 0, prepayDeposited: 0, prepayBalance: 0,
+      totalOwed: earned - paid
+    };
+  }
+
+  // Split mode
+  const legacyPickups = pickupsAll.filter(e => (e.date || '') < cutoff);
+  const prepayPickups = pickupsAll.filter(e => (e.date || '') >= cutoff);
+  const prepayTransfers = transfersHugoAll.filter(t => (t.date || '') >= cutoff);
+
+  const legacyDebt = legacyPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  const legacyPaidCash = (state.params && state.params.hugoLegacyPaidCash) || 0;
+  const legacyOutstanding = Math.max(0, legacyDebt - legacyPaidCash);
+
+  const prepayEarned = prepayPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  const prepayDeposited = prepayTransfers.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+  const prepayBalance = prepayDeposited - prepayEarned;  // + = extra at Emma, − = need top-up
+
+  // Total Michael needs to settle:
+  //   legacy outstanding (cash directly to Hugo)
+  // + any prepay deficit (top-up Emma so she has cash for Hugo)
+  const totalOwed = legacyOutstanding + Math.max(0, -prepayBalance);
+
+  return {
+    mode: 'split',
+    cutoff,
+    rate,
+    legacyPickups, prepayPickups, prepayTransfers,
+    legacyDebt, legacyPaidCash, legacyOutstanding,
+    prepayEarned, prepayDeposited, prepayBalance,
+    totalOwed
+  };
+}
+
 function monthlyAgg() {
   const map = {};
   const ensure = k => (map[k] = map[k] || { month: k, transfer: 0, pallets: 0, spent: 0 });
@@ -1722,11 +1795,9 @@ function renderKpis() {
   const hm = hugoMonth(ym);
   const rate = hugoRate();
 
-  // Hugo: 总应得 (基于托盘) - 已通过 Emma 付 = Michael 还欠 Hugo
-  const hugoPaidViaEmma = getTransfersAll()
-    .filter(t => !t.deleted && t.includesHugoFee)
-    .reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
-  const hugoOwed = ht - hugoPaidViaEmma;
+  // === NEW: split-mode Hugo math ===
+  const hMath = hugoMath();
+  const hugoPaidViaEmma = hMath.prepayDeposited || (hMath.paid || 0);  // for legacy alerts
 
   document.getElementById('kpi-grid').innerHTML = `
     <div class="kpi v4" data-drilldown="balance">
@@ -1749,11 +1820,20 @@ function renderKpis() {
     </div>
     <div class="kpi v5" data-drilldown="hugo">
       <div class="kpi-head"><div class="kpi-label">Hugo 提成</div><div class="kpi-icon">H</div></div>
-      <div class="kpi-value" style="color:${hugoOwed > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hugoOwed)}</div>
-      <div class="kpi-sub" style="line-height:1.6;">
-        <div>${hugoOwed > 0 ? '还欠 Hugo' : '已结清'} · 应得 ${fmt(ht)}</div>
-        <div style="font-size:10.5px;">↳ 通过 Emma 付:${fmt(hugoPaidViaEmma)}</div>
-      </div>
+      ${hMath.mode === 'split' ? `
+        <div class="kpi-value" style="color:${hMath.legacyOutstanding > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hMath.legacyOutstanding)}</div>
+        <div class="kpi-sub" style="line-height:1.6;">
+          <div>${hMath.legacyOutstanding > 0 ? '需付 Hugo 现金(直接)' : '直接结清 ✓'}</div>
+          <div style="font-size:10.5px;">└ 应得 ${fmt(hMath.legacyDebt)} − 已付现金 ${fmt(hMath.legacyPaidCash)}</div>
+          <div style="font-size:10.5px;margin-top:4px;color:${hMath.prepayBalance < 0 ? 'var(--rose)' : 'var(--green)'};">└ Emma 预付池:${hMath.prepayBalance >= 0 ? '+' : ''}${fmt(hMath.prepayBalance)}</div>
+        </div>
+      ` : `
+        <div class="kpi-value" style="color:${hMath.owed > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hMath.owed)}</div>
+        <div class="kpi-sub" style="line-height:1.6;">
+          <div>${hMath.owed > 0 ? '还欠 Hugo' : '已结清'} · 应得 ${fmt(hMath.earned)}</div>
+          <div style="font-size:10.5px;">↳ 通过 Emma 付:${fmt(hMath.paid)}</div>
+        </div>
+      `}
       <button class="kpi-info" title="数据来源" onclick="openDrilldown('hugo')">ⓘ</button>
     </div>
     <div class="kpi v2" data-drilldown="month-pallets">
@@ -1893,39 +1973,104 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'hugo') {
-    const ht = hugoTotal();
-    const tp = totalPallets();
-    const paidViaEmma = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee).reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
-    const owed = ht - paidViaEmma;
+    const m = hugoMath();
     const rows = [];
-    // Show pickup-side accruals
+
+    if (m.mode === 'split') {
+      const cutoff = m.cutoff;
+      // === LEGACY bucket ===
+      rows.push({ date: '', desc: `<b style="color:var(--text-dim);">━━ 旧账(${cutoff} 之前) — 直接付现金给 Hugo ━━</b>`, amount: 0 });
+      for (const e of m.legacyPickups) {
+        rows.push({
+          date: e.date,
+          desc: `应得 ${e.pallets} 托 × £${m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}</span>`,
+          amount: (e.pallets || 0) * m.rate
+        });
+      }
+      if (m.legacyPaidCash > 0) {
+        rows.push({
+          date: '',
+          desc: `<b style="color:var(--green);">已直接付现金给 Hugo</b><br><span class="dim" style="font-size:11px;">来自 设置 → Hugo 已付现金</span>`,
+          amount: -m.legacyPaidCash
+        });
+      }
+
+      // === PREPAY bucket ===
+      rows.push({ date: '', desc: `<b style="color:var(--text-dim);">━━ 新账(${cutoff} 起) — 通过 Emma 预付池 ━━</b>`, amount: 0 });
+      for (const e of m.prepayPickups) {
+        rows.push({
+          date: e.date,
+          desc: `应得 ${e.pallets} 托 × £${m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}(预付池消耗)</span>`,
+          amount: (e.pallets || 0) * m.rate
+        });
+      }
+      for (const t of m.prepayTransfers) {
+        rows.push({
+          date: t.date,
+          desc: `<b style="color:var(--green);">+ 充值预付池</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾"包含 Hugo"</span>`,
+          amount: -(t.hugoFeeAmount || 0)
+        });
+      }
+
+      const totalLine = m.totalOwed > 0
+        ? `<div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Michael 待结算</b></span><span class="v total" style="float:right;color:var(--rose);">£${fmt0(m.totalOwed)}</span><div style="font-size:11px;color:var(--text-dim);margin-top:4px;">直接付现金 £${fmt0(m.legacyOutstanding)} + 预付池补差 £${fmt0(Math.max(0, -m.prepayBalance))}</div></div>`
+        : `<div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Hugo 已结清 ✓</b></span><span class="v total" style="float:right;color:var(--green);">£0</span></div>`;
+
+      return {
+        title: 'Hugo 提成 · 数据来源(分账模式)',
+        sub: `直接欠 £${fmt0(m.legacyOutstanding)} · 预付池 ${m.prepayBalance >= 0 ? '+' : ''}£${fmt0(m.prepayBalance)} · 总待结 £${fmt0(m.totalOwed)}`,
+        formula: `
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;letter-spacing:0.4px;">━━ 旧账(${cutoff} 之前)━━</div>
+          <div><span class="k">应得(Pre-cutoff)</span><span class="v" style="float:right;">£${fmt0(m.legacyDebt)}</span><div style="font-size:11px;color:var(--text-dim);">${m.legacyPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${m.rate}</div></div>
+          <div style="margin-top:6px;"><span class="k">已直接付现金给 Hugo</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(m.legacyPaidCash)}</span></div>
+          <div style="margin-top:6px;background:rgba(251,113,133,0.08);padding:6px 8px;border-radius:6px;"><span class="k"><b>直接欠 Hugo 现金</b></span><span class="v" style="float:right;color:var(--rose);font-weight:700;">£${fmt0(m.legacyOutstanding)}</span></div>
+
+          <div style="font-size:11px;color:var(--text-dim);margin:14px 0 8px;letter-spacing:0.4px;">━━ 新账(${cutoff} 起 · 预付池在 Emma 那里)━━</div>
+          <div><span class="k">已转入 Emma(预付)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(m.prepayDeposited)}</span></div>
+          <div style="margin-top:6px;"><span class="k">已被取货消耗</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(m.prepayEarned)}</span><div style="font-size:11px;color:var(--text-dim);">${m.prepayPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${m.rate}</div></div>
+          <div style="margin-top:6px;background:${m.prepayBalance >= 0 ? 'rgba(34,211,165,0.08)' : 'rgba(251,113,133,0.08)'};padding:6px 8px;border-radius:6px;"><span class="k"><b>预付池余额</b></span><span class="v" style="float:right;color:${m.prepayBalance >= 0 ? 'var(--green)' : 'var(--rose)'};font-weight:700;">${m.prepayBalance >= 0 ? '+' : ''}£${fmt0(m.prepayBalance)}</span><div style="font-size:11px;color:var(--text-dim);">${m.prepayBalance >= 0 ? '可覆盖未来 ' + Math.floor(m.prepayBalance / m.rate) + ' 托盘' : '需要补差再转给 Emma'}</div></div>
+
+          ${totalLine}
+
+          <div style="font-size:11px;color:var(--text-dim);margin-top:12px;line-height:1.7;background:rgba(139,150,255,0.05);padding:10px 12px;border-radius:8px;">
+            <b>逻辑:</b><br>
+            · <b>旧账:</b> ${cutoff} 之前的取货,Hugo 提成累加,<b>不能</b>用 Emma 预付池抵扣,只能 Michael 直接付现金。<br>
+            · <b>新账:</b> ${cutoff} 起,Michael 给 Emma 转账时附带 Hugo £${m.rate}/托,Emma 收到后给 Hugo 现金 — 与具体哪一托盘对应。<br>
+            · 设置里可改 <b>Hugo 预付起始日期</b> 和 <b>已直接付现金</b>。
+          </div>`,
+        rows
+      };
+    }
+
+    // Unified mode (no cutoff)
     rows.push({ date: '', desc: '<b style="color:var(--text-dim);">━━ 应得明细(按取货)━━</b>', amount: 0 });
     for (const e of pickups) {
       rows.push({
         date: e.date,
-        desc: `应得 ${e.pallets} 托 × £${rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}</span>`,
-        amount: (e.pallets || 0) * rate
+        desc: `应得 ${e.pallets} 托 × £${m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(e.createdBy).name} 取货${e.palletType ? ' · ' + e.palletType : ''}</span>`,
+        amount: (e.pallets || 0) * m.rate
       });
     }
-    // Then show "paid via Emma" transfers
     const hugoTransfers = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
     if (hugoTransfers.length) {
       rows.push({ date: '', desc: '<b style="color:var(--text-dim);">━━ 已通过 Emma 支付 ━━</b>', amount: 0 });
       for (const t of hugoTransfers) {
         rows.push({
           date: t.date,
-          desc: `<b>通过 Emma 转给 Hugo</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾选了"包含 Hugo"</span>`,
+          desc: `<b>通过 Emma 转给 Hugo</b> · ${t.pallets || '?'} 托 × £${t.hugoFeeRate || m.rate}<br><span class="dim" style="font-size:11px;">${userInfo(t.createdBy).name} 转账时勾选了"包含 Hugo"</span>`,
           amount: -(t.hugoFeeAmount || 0)
         });
       }
     }
     return {
       title: 'Hugo 提成 · 数据来源',
-      sub: `应得 £${fmt0(ht)} − 已付 £${fmt0(paidViaEmma)} = ${owed >= 0 ? '欠 Hugo' : 'Hugo 已多收'} £${fmt0(Math.abs(owed))}`,
-      formula: `<div><span class="k">Hugo 总应得</span><span class="v" style="float:right;">£${fmt0(ht)}</span><div style="font-size:11px;color:var(--text-dim);">${tp} 托 × £${rate}</div></div>
-                <div style="margin-top:8px;"><span class="k">已通过 Emma 转付</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paidViaEmma)}</span></div>
-                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>${owed >= 0 ? 'Michael 欠 Hugo' : 'Hugo 多拿'}</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(Math.abs(owed))}</span></div>
-                <div style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7;">注:转账给 Emma 时如果勾"包含 Hugo",这笔 Hugo 提成就当成已通过 Emma 支付了 Hugo。剩下的"欠 Hugo" Michael 还要直接结清(或下次转账勾上)。</div>`,
+      sub: `应得 £${fmt0(m.earned)} − 已付 £${fmt0(m.paid)} = ${m.owed >= 0 ? '欠 Hugo' : 'Hugo 已多收'} £${fmt0(Math.abs(m.owed))}`,
+      formula: `<div><span class="k">Hugo 总应得</span><span class="v" style="float:right;">£${fmt0(m.earned)}</span><div style="font-size:11px;color:var(--text-dim);">${totalPallets()} 托 × £${m.rate}</div></div>
+                <div style="margin-top:8px;"><span class="k">已通过 Emma 转付</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(m.paid)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>${m.owed >= 0 ? 'Michael 欠 Hugo' : 'Hugo 多拿'}</b></span><span class="v total" style="float:right;color:${m.owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(Math.abs(m.owed))}</span></div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.7;background:rgba(251,191,36,0.08);padding:10px 12px;border-radius:8px;">
+                  <b>提示:</b>建议在 设置 里启用 <b>Hugo 预付模式</b>,把"旧账(直接欠现金)"和"新账(通过 Emma 预付池)"分开算,避免预付的钱抵消了之前的债。
+                </div>`,
       rows
     };
   }
@@ -2144,6 +2289,10 @@ function renderSettings() {
   document.getElementById('s-commission').value = state.params.hugoCommission;
   document.getElementById('calc-buy').textContent = state.params.buyPrice;
   document.getElementById('calc-commission').textContent = state.params.hugoCommission;
+  const cutEl = document.getElementById('s-hugo-cutoff');
+  if (cutEl) cutEl.value = state.params.hugoPrepayStartDate || '';
+  const lpEl = document.getElementById('s-hugo-legacy-paid');
+  if (lpEl) lpEl.value = state.params.hugoLegacyPaidCash || '';
   fillCompanyInfo();
   fillEmmaInfo();
   fillHugoInfo();
@@ -3528,6 +3677,13 @@ function saveSettings() {
   state.params.buyPrice = parseFloat(document.getElementById('s-buy').value) || 245;
   const c = parseFloat(document.getElementById('s-commission').value);
   state.params.hugoCommission = (isNaN(c) || c < 0) ? 7 : c;
+  // Hugo prepay split mode
+  const cutEl = document.getElementById('s-hugo-cutoff');
+  const cutVal = (cutEl && cutEl.value || '').trim();
+  state.params.hugoPrepayStartDate = cutVal || null;
+  const lpEl = document.getElementById('s-hugo-legacy-paid');
+  const lpVal = parseFloat(lpEl && lpEl.value);
+  state.params.hugoLegacyPaidCash = (isNaN(lpVal) || lpVal < 0) ? 0 : lpVal;
   // Recompute existing pickup amounts based on new price? NO — keep historical amounts intact.
   save(); renderAll();
   flash('参数已保存');
