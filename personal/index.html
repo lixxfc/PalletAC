@@ -1466,6 +1466,7 @@ select option { background: var(--bg-2); color: var(--text); }
           <div class="page-sub">今日：<span id="today-date"></span> · 所有核心指标实时更新</div>
         </div>
         <div class="row">
+          <button class="btn primary" onclick="openSmartEntry()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(139,92,246,0.25);">⚡ 今日取货录入</button>
           <span class="sync-badge" id="sync-badge"><span class="dot"></span><span id="sync-text">已同步</span></span>
           <button class="btn sm ghost" onclick="exportJson()">⇣ 导出</button>
           <button class="btn sm ghost" onclick="document.getElementById('import-file').click()">⇡ 导入</button>
@@ -2204,6 +2205,81 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="form-row" style="grid-column: 1/-1;"><label>客户名称</label><input type="text" id="new-cust-name" placeholder="如：老王"></div>
     </div>
     <div class="row mt-4"><button class="btn primary" onclick="createCustomer()">创建</button></div>
+  </div>
+</div>
+
+<!-- ⚡ Smart Pickup Entry Modal — one form, syncs to 3 places -->
+<div class="modal-backdrop" id="smart-entry-modal">
+  <div class="modal" style="max-width: 760px; max-height: 92vh; overflow: auto;">
+    <div class="modal-head">
+      <div class="modal-title">⚡ 今日取货录入 <span class="badge" style="background:linear-gradient(135deg,rgba(139,92,246,0.18),rgba(0,229,255,0.18));color:#c4b5fd;font-size:9px;letter-spacing:0.6px;font-weight:700;margin-left:6px;">智能 · 三处同步</span></div>
+      <button class="modal-close" onclick="closeSmartEntry()">×</button>
+    </div>
+    <div class="page-sub mb-4">填一次,系统自动同步:<b style="color:var(--green);">每日供货</b> · <b style="color:var(--cyan);">合伙账(SSS)</b> · <b style="color:var(--violet);">客户账本(自动开 INV)</b></div>
+
+    <div class="form-grid mt-4" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="form-row"><label>日期</label><input type="date" id="se-date" oninput="onSmartEntryDateChange()"></div>
+      <div class="form-row"><label>谁取的</label>
+        <select id="se-pickup-by" onchange="onSmartEntryOwnerChange()">
+          <option value="Michael">Michael · 我</option>
+          <option value="Emma">Emma</option>
+        </select>
+      </div>
+      <div class="form-row"><label>默认客户 <span class="page-sub" style="font-size:10px;">(下面每车可以单独改)</span></label>
+        <select id="se-default-customer">
+          <option value="">— 不分配(进库存)—</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="se-warning" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.3);border-radius:8px;font-size:12px;color:var(--amber);"></div>
+
+    <div class="row mt-6" style="align-items:center;">
+      <div class="grow">
+        <div style="font-size:12px;font-weight:700;color:var(--text);letter-spacing:0.4px;">🚚 卡车清单</div>
+        <div class="page-sub" style="font-size:11px;">每车一行,可以分配给不同客户。Swap = 跟 Emma 换的(单价 £<span id="se-swap-price-hint">295</span>)</div>
+      </div>
+      <button class="btn sm" onclick="addSmartEntryTruck()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">＋ 加一车</button>
+    </div>
+
+    <div class="table-wrap mt-4" style="border-color:rgba(139,92,246,0.18);">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px;">类型</th>
+            <th style="width:80px;">托盘数</th>
+            <th style="width:90px;">车次</th>
+            <th style="width:90px;">Swap?</th>
+            <th>客户</th>
+            <th style="width:110px;">该车金额</th>
+            <th style="width:50px;"></th>
+          </tr>
+        </thead>
+        <tbody id="se-trucks-body"></tbody>
+        <tfoot>
+          <tr style="background:rgba(139,92,246,0.06);border-top:2px solid rgba(139,92,246,0.3);">
+            <td><b style="font-size:11px;color:var(--text-dim);letter-spacing:0.5px;">合计</b></td>
+            <td><b id="se-total-pallets" style="font-variant-numeric:tabular-nums;">0 托</b></td>
+            <td colspan="2"><b id="se-total-trucks" style="font-variant-numeric:tabular-nums;">0 车</b></td>
+            <td class="dim" style="font-size:11px;">客户应付</td>
+            <td colspan="2"><b id="se-total-amount" style="font-variant-numeric:tabular-nums;color:var(--green);">£0</b></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Live preview of what will happen -->
+    <div id="se-preview" style="margin-top:14px;padding:14px 16px;background:rgba(5,6,15,0.55);border:1px solid rgba(139,150,255,0.18);border-radius:10px;font-size:12px;line-height:1.7;display:none;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:var(--text-dim);text-transform:uppercase;margin-bottom:8px;">保存后会做这些事</div>
+      <div id="se-preview-body"></div>
+    </div>
+
+    <div class="row mt-4" style="gap:8px;justify-content:flex-end;">
+      <button class="btn ghost" onclick="closeSmartEntry()">取消</button>
+      <button class="btn primary" id="se-save-btn" onclick="saveSmartPickup()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">
+        <span id="se-save-text">保存到所有账目</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -3117,6 +3193,403 @@ function renderSupplyOverview() {
   set('ov-emma-trucks', fmtNum(s.emmaTrucks));
   const ePct = s.totalPallets > 0 ? Math.round(s.emmaPallets / s.totalPallets * 100) : 0;
   set('ov-emma-pct', ePct + '%');
+}
+
+// ============================================================
+// ⚡ SMART PICKUP ENTRY — One form, syncs to 3 places:
+//   1. state.dailySupply (personal "每日供货")
+//   2. customer.ledger pickup entry + auto INV  (personal "客户账本")
+//   3. partnership_data.events pickup           (合伙账, cross-table write)
+//
+// All records share a `_linkSupplyId` UUID so future edits/deletes can
+// cascade if needed. Existing addPickup / addLedger / openSupplyEditor
+// flows are NOT touched — this is purely additive.
+// ============================================================
+let _seTrucks = [];  // draft trucks in the modal
+
+function openSmartEntry() {
+  // Fresh state every time
+  _seTrucks = [{
+    type: 'TT',
+    pallets: 25,
+    truckNum: '',
+    isSwap: false,
+    customerId: '',  // will fill below
+    note: ''
+  }];
+  // Default values
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('se-date').value = today;
+  // Pickup-by: try to use rotation if available, else Michael
+  let defaultBy = 'Michael';
+  try { if (typeof rotationPickupBy === 'function') defaultBy = rotationPickupBy(today); } catch (e) {}
+  document.getElementById('se-pickup-by').value = defaultBy;
+
+  // Build customer dropdown
+  const sel = document.getElementById('se-default-customer');
+  const customers = (state.customers || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  sel.innerHTML = '<option value="">— 不分配(进库存)—</option>'
+    + customers.map(c => `<option value="${c.id}">${escapeHtml(c.name || '?')}</option>`).join('');
+  // Auto-select if user has only 1 customer
+  if (customers.length === 1) {
+    sel.value = customers[0].id;
+    _seTrucks[0].customerId = customers[0].id;
+  }
+
+  document.getElementById('se-swap-price-hint').textContent = (state.params.sellPrice || 265) + swapTtPremium();
+
+  // Listen for default customer change → propagate to trucks
+  sel.onchange = () => {
+    const v = sel.value;
+    for (const t of _seTrucks) {
+      if (!t._customerLocked) t.customerId = v;
+    }
+    renderSmartEntryTrucks();
+    updateSmartEntryPreview();
+  };
+
+  renderSmartEntryTrucks();
+  updateSmartEntryPreview();
+  checkSmartEntryDayCollision();
+  document.getElementById('smart-entry-modal').classList.add('open');
+}
+
+function closeSmartEntry() {
+  document.getElementById('smart-entry-modal').classList.remove('open');
+  _seTrucks = [];
+}
+
+function onSmartEntryDateChange() {
+  const date = document.getElementById('se-date').value;
+  // Recompute rotation owner suggestion (don't override if user already changed)
+  try {
+    if (typeof rotationPickupBy === 'function') {
+      document.getElementById('se-pickup-by').value = rotationPickupBy(date);
+    }
+  } catch (e) {}
+  checkSmartEntryDayCollision();
+  updateSmartEntryPreview();
+}
+
+function onSmartEntryOwnerChange() {
+  checkSmartEntryDayCollision();
+  updateSmartEntryPreview();
+}
+
+// Warn if existing dailySupply record for this date has a different pickupBy
+function checkSmartEntryDayCollision() {
+  const date = document.getElementById('se-date').value;
+  const owner = document.getElementById('se-pickup-by').value;
+  const warnEl = document.getElementById('se-warning');
+  const supply = Array.isArray(state.dailySupply) ? state.dailySupply : [];
+  const existing = supply.find(d => d.date === date);
+  if (!existing) {
+    warnEl.style.display = 'none';
+    return;
+  }
+  if (existing.pickupBy !== owner) {
+    warnEl.style.display = '';
+    warnEl.innerHTML = `⚠ <b>${escapeHtml(date)}</b> 已经有一条记录(取货人:<b>${escapeHtml(existing.pickupBy || '?')}</b>)。这次新增的车会<b>合并</b>到那一条 — 取货人会保持原来的(<b>${escapeHtml(existing.pickupBy || '?')}</b>),不是你这里选的(${escapeHtml(owner)})。如果你要分开记,请改个日期或先去"每日供货"删掉那条。`;
+  } else {
+    warnEl.style.display = '';
+    warnEl.style.background = 'rgba(34,211,165,0.08)';
+    warnEl.style.borderColor = 'rgba(34,211,165,0.3)';
+    warnEl.style.color = 'var(--green)';
+    warnEl.innerHTML = `✓ <b>${escapeHtml(date)}</b> 已有 <b>${escapeHtml(owner)}</b> 的记录(${(existing.trucks || []).length} 车),这次的新车会<b>合并</b>进那条记录里。`;
+  }
+}
+
+function addSmartEntryTruck() {
+  const defCust = document.getElementById('se-default-customer').value;
+  _seTrucks.push({
+    type: 'TT',
+    pallets: 25,
+    truckNum: '',
+    isSwap: false,
+    customerId: defCust,
+    note: ''
+  });
+  renderSmartEntryTrucks();
+  updateSmartEntryPreview();
+}
+
+function removeSmartEntryTruck(idx) {
+  if (_seTrucks.length <= 1) return;
+  _seTrucks.splice(idx, 1);
+  renderSmartEntryTrucks();
+  updateSmartEntryPreview();
+}
+
+function updateSmartEntryTruck(idx, field, val) {
+  if (!_seTrucks[idx]) return;
+  if (field === 'pallets') _seTrucks[idx][field] = parseInt(val) || 0;
+  else if (field === 'isSwap') _seTrucks[idx][field] = !!val;
+  else if (field === 'customerId') {
+    _seTrucks[idx][field] = val;
+    _seTrucks[idx]._customerLocked = true;  // user manually changed this row
+  } else _seTrucks[idx][field] = val;
+  renderSmartEntryTrucks();
+  updateSmartEntryPreview();
+}
+
+function renderSmartEntryTrucks() {
+  const tb = document.getElementById('se-trucks-body');
+  if (!tb) return;
+  const sellPrice = state.params.sellPrice || 265;
+  const swapPrem = swapTtPremium();
+  const customers = (state.customers || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const custOptions = (selectedId) =>
+    '<option value="">— 不分配(进库存)—</option>'
+    + customers.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name || '?')}</option>`).join('');
+
+  let totalPallets = 0, totalAmount = 0;
+  tb.innerHTML = _seTrucks.map((t, idx) => {
+    const unitPrice = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
+    const amount = (t.pallets || 0) * unitPrice;
+    if (t.customerId) totalAmount += amount;
+    totalPallets += (t.pallets || 0);
+    return `<tr>
+      <td>
+        <select onchange="updateSmartEntryTruck(${idx}, 'type', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;">
+          <option value="TT" ${t.type === 'TT' ? 'selected' : ''}>TT</option>
+          <option value="AMAZON" ${t.type === 'AMAZON' ? 'selected' : ''}>AMAZON</option>
+        </select>
+      </td>
+      <td><input type="number" min="0" value="${t.pallets || 0}" oninput="updateSmartEntryTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td><input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="T-001" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+          <input type="checkbox" ${t.isSwap ? 'checked' : ''} onchange="updateSmartEntryTruck(${idx}, 'isSwap', this.checked)">
+          <span style="color:${t.isSwap ? 'var(--pink)' : 'var(--text-dim)'};font-weight:${t.isSwap ? '700' : '400'};">${t.isSwap ? '🔁 SWAP' : '保留'}</span>
+        </label>
+      </td>
+      <td>
+        <select onchange="updateSmartEntryTruck(${idx}, 'customerId', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;">
+          ${custOptions(t.customerId)}
+        </select>
+      </td>
+      <td style="font-variant-numeric:tabular-nums;text-align:right;font-weight:600;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};">
+        ${t.customerId ? fmt(amount) : '—'}
+        ${t.customerId ? `<div style="font-size:9.5px;color:var(--text-dim);font-weight:400;">${t.pallets || 0} × £${unitPrice}</div>` : '<div style="font-size:9.5px;color:var(--text-dim);font-weight:400;">进库存</div>'}
+      </td>
+      <td><button class="btn sm danger" onclick="removeSmartEntryTruck(${idx})" ${_seTrucks.length === 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>×</button></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('se-total-pallets').textContent = totalPallets + ' 托';
+  document.getElementById('se-total-trucks').textContent = _seTrucks.length + ' 车';
+  document.getElementById('se-total-amount').textContent = fmt(totalAmount);
+}
+
+function updateSmartEntryPreview() {
+  const box = document.getElementById('se-preview');
+  if (!box) return;
+  const trucksWithCustomer = _seTrucks.filter(t => t.customerId && t.pallets > 0);
+  const trucksToInventory = _seTrucks.filter(t => !t.customerId && t.pallets > 0);
+  const totalPallets = _seTrucks.reduce((s, t) => s + (t.pallets || 0), 0);
+  if (totalPallets === 0) { box.style.display = 'none'; return; }
+  const buyPrice = state.params.buyPrice || 245;
+  const sellPrice = state.params.sellPrice || 265;
+  const swapPrem = swapTtPremium();
+  const rate = 7;  // Hugo
+  const hugoCommission = totalPallets * rate;
+  // Customer breakdown
+  const byCust = {};
+  for (const t of trucksWithCustomer) {
+    const c = state.customers.find(x => x.id === t.customerId);
+    const name = c ? c.name : '?';
+    if (!byCust[name]) byCust[name] = { pallets: 0, amount: 0, trucks: 0 };
+    const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
+    byCust[name].pallets += (t.pallets || 0);
+    byCust[name].amount += (t.pallets || 0) * unit;
+    byCust[name].trucks += 1;
+  }
+  const custLines = Object.entries(byCust).map(([n, v]) =>
+    `<div style="margin-left:14px;">└ <b style="color:var(--violet);">${escapeHtml(n)}</b>: ${v.pallets} 托(${v.trucks} 车)→ 扣 ${fmt(v.amount)} · 自动开 INV</div>`
+  ).join('');
+  const inventoryLine = trucksToInventory.length > 0
+    ? `<div style="margin-left:14px;color:var(--amber);">└ ${trucksToInventory.length} 车进库存(无客户)</div>`
+    : '';
+  box.style.display = '';
+  document.getElementById('se-preview-body').innerHTML = `
+    <div><b>📦 每日供货:</b> 加 ${_seTrucks.length} 车 / ${totalPallets} 托</div>
+    <div style="margin-top:6px;"><b>🤝 合伙账:</b> 加 ${_seTrucks.length} 个 pickup event · Emma 余额扣 <span style="color:var(--rose);">-${fmt(totalPallets * buyPrice)}</span> · Hugo 提成消耗 <span style="color:var(--amber);">-${fmt(hugoCommission)}</span></div>
+    <div style="margin-top:6px;"><b>👥 客户账本:</b></div>
+    ${custLines || '<div style="margin-left:14px;color:var(--text-dim);">无</div>'}
+    ${inventoryLine}
+  `;
+}
+
+// === MAIN: save smart pickup ===
+async function saveSmartPickup() {
+  const btn = document.getElementById('se-save-btn');
+  const txt = document.getElementById('se-save-text');
+  const date = document.getElementById('se-date').value;
+  const formPickupBy = document.getElementById('se-pickup-by').value || 'Michael';
+  if (!date) { alert('请填写日期'); return; }
+  const validTrucks = _seTrucks.filter(t => (t.pallets || 0) > 0);
+  if (!validTrucks.length) { alert('至少要填一车托盘 > 0'); return; }
+
+  const linkId = crypto.randomUUID();
+  const sellPrice = state.params.sellPrice || 265;
+  const buyPrice = state.params.buyPrice || 245;
+  const swapPrem = swapTtPremium();
+  const userEmail = (currentUser && currentUser.email) ? currentUser.email : 'harreds.ceo@gmail.com';
+
+  // ============================================
+  // Build all records IN MEMORY first
+  // ============================================
+  ensureSupplyArray();
+  ensureInvoicesArray();
+  ensureReceiptsArray();
+
+  // 1) Daily supply day record (merge into existing or create)
+  let dayRec = state.dailySupply.find(d => d.date === date);
+  let usedPickupBy;
+  if (dayRec) {
+    usedPickupBy = dayRec.pickupBy || formPickupBy;
+  } else {
+    dayRec = {
+      id: crypto.randomUUID(),
+      date,
+      pickupBy: formPickupBy,
+      manualOverride: false,
+      trucks: [],
+      note: '',
+      _linkSupplyId: linkId
+    };
+    usedPickupBy = formPickupBy;
+    state.dailySupply.push(dayRec);
+  }
+  // Append trucks (new copies, not references)
+  for (const t of validTrucks) {
+    dayRec.trucks.push({
+      type: t.type,
+      pallets: t.pallets,
+      swapped: !!t.isSwap,
+      truckNum: t.truckNum || '',
+      note: t.note || '',
+      _linkSupplyId: linkId
+    });
+  }
+
+  // 2) Customer ledger entries + auto-INV (per truck with customer)
+  const newCustomerEntries = [];  // for rollback if partnership write fails
+  for (const t of validTrucks) {
+    if (!t.customerId) continue;
+    const customer = state.customers.find(c => c.id === t.customerId);
+    if (!customer) continue;
+    const isSwap = !!t.isSwap;
+    const unitPrice = isSwap ? (sellPrice + swapPrem) : sellPrice;
+    const ledgerEntry = {
+      id: crypto.randomUUID(),
+      date,
+      type: 'pickup',
+      amount: t.pallets * unitPrice,
+      unitPrice,
+      isSwap,
+      swapPremium: isSwap ? swapPrem : 0,
+      palletType: isSwap ? 'TT' : t.type,
+      pallets: t.pallets,
+      truck: t.truckNum || '',
+      note: t.note || '',
+      _linkSupplyId: linkId
+    };
+    customer.ledger.push(ledgerEntry);
+    newCustomerEntries.push({ customer, entry: ledgerEntry });
+    // Auto-INV
+    try {
+      if (typeof generateInvoiceForPickup === 'function') {
+        generateInvoiceForPickup(customer, ledgerEntry, 'auto-smart-pickup');
+      }
+    } catch (e) { console.warn('[smart-entry] INV gen failed:', e); }
+  }
+
+  // 3) Partnership pickup events (one per truck) — staged for cross-table write
+  const newPartEvents = validTrucks.map(t => ({
+    id: crypto.randomUUID(),
+    type: 'pickup',
+    date,
+    pallets: t.pallets,
+    palletType: t.isSwap ? 'TT' : t.type,
+    amount: t.pallets * buyPrice,
+    truck: t.truckNum || '',
+    note: t.note || '智能录入',
+    isSwap: !!t.isSwap,
+    createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,
+    createdAt: new Date().toISOString(),
+    _linkSupplyId: linkId
+  }));
+
+  // ============================================
+  // Cross-table write — partnership_data first
+  // ============================================
+  btn.disabled = true; btn.style.opacity = '0.6'; txt.textContent = '保存中…';
+
+  let partnershipWriteOk = false;
+  try {
+    // Re-fetch latest partnership_data so we don't overwrite Emma's concurrent edits
+    const { data: latestRow, error: readErr } = await db
+      .from('partnership_data')
+      .select('data')
+      .eq('workspace_id', 'main')
+      .maybeSingle();
+    if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
+
+    const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
+    if (!Array.isArray(latestData.events)) latestData.events = [];
+    // Append our new events (not overwrite the array)
+    latestData.events = latestData.events.concat(newPartEvents);
+
+    const { error: writeErr } = await db
+      .from('partnership_data')
+      .update({ data: latestData, updated_at: new Date().toISOString() })
+      .eq('workspace_id', 'main');
+    if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
+
+    partnershipWriteOk = true;
+    // Update local cache so dashboard partnership KPIs refresh immediately
+    if (typeof _partnershipCache !== 'undefined') {
+      try { _partnershipCache = latestData; } catch (e) {}
+    }
+  } catch (err) {
+    // ROLLBACK personal in-memory changes (didn't save yet)
+    console.error('[smart-entry] partnership write failed, rolling back:', err);
+    // Remove the trucks we appended to dayRec
+    if (dayRec) {
+      dayRec.trucks = (dayRec.trucks || []).filter(t => t._linkSupplyId !== linkId);
+      // If we created a new dayRec just for this and it's now empty, drop it
+      if (dayRec.trucks.length === 0 && dayRec._linkSupplyId === linkId) {
+        state.dailySupply = state.dailySupply.filter(d => d !== dayRec);
+      }
+    }
+    // Remove customer ledger entries we added
+    for (const { customer, entry } of newCustomerEntries) {
+      customer.ledger = (customer.ledger || []).filter(e => e.id !== entry.id);
+    }
+    // Remove auto-generated INVs that pointed at our new pickups
+    state.invoices = (state.invoices || []).filter(inv =>
+      !newCustomerEntries.some(({ entry }) => entry.id === inv.linkedPickupId)
+    );
+
+    btn.disabled = false; btn.style.opacity = ''; txt.textContent = '保存到所有账目';
+    alert('保存失败:' + (err.message || err) + '\n\n所有改动已回滚,你的数据没有变化。请重试。');
+    return;
+  }
+
+  // ============================================
+  // Personal save
+  // ============================================
+  try {
+    save();  // existing personal-data save
+    renderAll();
+    closeSmartEntry();
+    const customerCount = newCustomerEntries.length;
+    const totalPallets = validTrucks.reduce((s, t) => s + (t.pallets || 0), 0);
+    flash(`✓ 已录入 ${validTrucks.length} 车 / ${totalPallets} 托 · 同步到 ${customerCount > 0 ? '3' : '2'} 个账目`);
+  } catch (err) {
+    console.error('[smart-entry] personal save failed (partnership already saved):', err);
+    alert('个人账保存失败,但合伙账已保存。请刷新页面以恢复一致状态。错误:' + (err.message || err));
+  }
 }
 
 function renderLastMonthKpis() {
