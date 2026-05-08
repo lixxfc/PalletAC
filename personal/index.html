@@ -3403,6 +3403,34 @@ function renderSmartEntryTrucks() {
   document.getElementById('se-total-amount').textContent = fmt(totalAmount);
 }
 
+// === Helpers reading partnership cache ===
+function _seGetPartBalance() {
+  if (!_partnershipCache) return null;
+  const events = _partnershipCache.events || [];
+  let bal = 0;
+  for (const e of events) {
+    if (e.deleted) continue;
+    if (e.type === 'transfer') bal += (e.amount || 0);
+    else if (e.type === 'pickup') bal -= (e.amount || 0);
+  }
+  return bal;
+}
+function _seGetHugoPool() {
+  // Returns { cutoff, deposited, used, balance } or null if no cache
+  if (!_partnershipCache) return null;
+  const params = _partnershipCache.params || {};
+  const cutoff = params.hugoPrepayStartDate || null;
+  const rate = params.hugoCommission || 7;
+  const events = _partnershipCache.events || [];
+  let deposited = 0, used = 0;
+  for (const e of events) {
+    if (e.deleted) continue;
+    if (e.type === 'transfer' && e.includesHugoFee) deposited += (e.hugoFeeAmount || 0);
+    else if (e.type === 'pickup' && cutoff && e.date >= cutoff) used += (e.pallets || 0) * rate;
+  }
+  return { cutoff, deposited, used, balance: deposited - used, rate };
+}
+
 function updateSmartEntryPreview() {
   const box = document.getElementById('se-preview');
   if (!box) return;
@@ -3410,36 +3438,155 @@ function updateSmartEntryPreview() {
   const trucksToInventory = _seTrucks.filter(t => !t.customerId && t.pallets > 0);
   const totalPallets = _seTrucks.reduce((s, t) => s + (t.pallets || 0), 0);
   if (totalPallets === 0) { box.style.display = 'none'; return; }
+
+  const date = document.getElementById('se-date').value;
   const buyPrice = state.params.buyPrice || 245;
   const sellPrice = state.params.sellPrice || 265;
+  const myFee = state.params.myFee || 31;
+  const hugoFeeRate = state.params.hugoFee || 7;
+  const vFeeRate = state.params.vFee || 2;
   const swapPrem = swapTtPremium();
-  const rate = 7;  // Hugo
-  const hugoCommission = totalPallets * rate;
-  // Customer breakdown
+
+  // Per-truck profit (incl swap bonus) + totals
+  const swapPallets = _seTrucks.filter(t => t.isSwap).reduce((s, t) => s + (t.pallets || 0), 0);
+  const normalPallets = totalPallets - swapPallets;
+  const baseProfit = totalPallets * (sellPrice + myFee - buyPrice);   // = pallets × £51
+  const swapBonus = swapPallets * swapPrem;                           // swap pallets × £30
+  const totalProfit = baseProfit + swapBonus;
+
+  // Cost & customer payment
+  const totalCostToEmma = totalPallets * buyPrice;
+  const customerLedgerCharge = _seTrucks.reduce((s, t) => {
+    if (!t.customerId) return s;
+    const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
+    return s + (t.pallets || 0) * unit;
+  }, 0);
+
+  // Hugo / V cash flows
+  const hugoCommission = totalPallets * hugoFeeRate;
+  const vCommission = totalPallets * vFeeRate;
+  const myFeeKept = totalPallets * myFee;
+  const cashFromCustomer = myFeeKept + hugoCommission + vCommission;
+
+  // Partnership balance (Emma) before/after — from cache
+  const emmaBalBefore = _seGetPartBalance();
+  const emmaBalAfter = (emmaBalBefore != null) ? (emmaBalBefore - totalCostToEmma) : null;
+  const emmaCanLiftAfter = (emmaBalAfter != null && buyPrice > 0) ? Math.floor(Math.max(0, emmaBalAfter) / buyPrice) : null;
+
+  // Hugo pool — from cache
+  const hugoPool = _seGetHugoPool();
+  const isPostCutoff = (hugoPool && hugoPool.cutoff && date >= hugoPool.cutoff);
+  const hugoPoolAfter = (hugoPool && isPostCutoff) ? (hugoPool.balance - hugoCommission) : null;
+
+  // Customer balances before/after (per customer)
   const byCust = {};
   for (const t of trucksWithCustomer) {
     const c = state.customers.find(x => x.id === t.customerId);
-    const name = c ? c.name : '?';
-    if (!byCust[name]) byCust[name] = { pallets: 0, amount: 0, trucks: 0 };
+    if (!c) continue;
+    if (!byCust[c.id]) {
+      const balBefore = customerBalance(c);
+      byCust[c.id] = { name: c.name, pallets: 0, amount: 0, trucks: 0, balBefore, swapPallets: 0 };
+    }
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    byCust[name].pallets += (t.pallets || 0);
-    byCust[name].amount += (t.pallets || 0) * unit;
-    byCust[name].trucks += 1;
+    byCust[c.id].pallets += (t.pallets || 0);
+    byCust[c.id].amount += (t.pallets || 0) * unit;
+    byCust[c.id].trucks += 1;
+    if (t.isSwap) byCust[c.id].swapPallets += (t.pallets || 0);
   }
-  const custLines = Object.entries(byCust).map(([n, v]) =>
-    `<div style="margin-left:14px;">└ <b style="color:var(--violet);">${escapeHtml(n)}</b>: ${v.pallets} 托(${v.trucks} 车)→ 扣 ${fmt(v.amount)} · 自动开 INV</div>`
-  ).join('');
-  const inventoryLine = trucksToInventory.length > 0
-    ? `<div style="margin-left:14px;color:var(--amber);">└ ${trucksToInventory.length} 车进库存(无客户)</div>`
+
+  const sec = (icon, title, inner, accentColor) => `
+    <div style="margin-bottom:14px;padding:10px 12px;background:rgba(5,6,15,0.35);border-left:3px solid ${accentColor};border-radius:8px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;color:${accentColor};margin-bottom:6px;">${icon} ${title}</div>
+      <div style="font-size:12px;line-height:1.85;color:var(--text);">${inner}</div>
+    </div>`;
+
+  const swapHint = swapPallets > 0
+    ? ` <span style="color:var(--pink);font-size:10.5px;">(${swapPallets} 托 Swap +£${swapPrem}/托)</span>`
     : '';
+
+  // Build sections
+  const supplySection = sec('📦', '每日供货 + SSS 取货总览', `
+    加 <b>${_seTrucks.length}</b> 车 / <b>${totalPallets}</b> 托${swapHint}<br>
+    黄卡"SSS 取货总览":${document.getElementById('se-pickup-by').value} 这边 +${totalPallets} 托
+  `, 'var(--green)');
+
+  const emmaSection = sec('🤝', '合伙账 — Emma 余额', `
+    取货成本:${totalPallets} × £${buyPrice} = <b style="color:var(--rose);">-${fmt(totalCostToEmma)}</b><br>
+    ${emmaBalBefore != null ? `Emma 当前余额 <b>${fmt(emmaBalBefore)}</b> → 取货后 <b style="color:${emmaBalAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(emmaBalAfter)}</b>${emmaCanLiftAfter != null ? ` (够拉 ${emmaCanLiftAfter} 托)` : ''}` : '<span style="color:var(--text-dim);">(合伙账缓存还没加载,刷新页面)</span>'}
+  `, 'var(--cyan)');
+
+  const hugoBucket = isPostCutoff ? '消耗 Emma 预付池' : (hugoPool && hugoPool.cutoff ? `累加旧账(取货日 ${date} 早于 cutoff ${hugoPool.cutoff})` : '累加 Hugo 累计应得');
+  const hugoBucketColor = isPostCutoff ? 'var(--green)' : 'var(--amber)';
+  const hugoSection = sec('💰', '合伙账 — Hugo 提成', `
+    应得:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b><br>
+    去向:<b style="color:${hugoBucketColor};">${hugoBucket}</b><br>
+    ${isPostCutoff && hugoPool ? `预付池:${fmt(hugoPool.balance)} → <b style="color:${hugoPoolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hugoPoolAfter)}</b>` : ''}
+  `, 'var(--amber)');
+
+  let custInner = '';
+  for (const cd of Object.values(byCust)) {
+    const after = cd.balBefore - cd.amount;
+    const canLift = sellPrice > 0 ? Math.floor(Math.max(0, after) / sellPrice) : 0;
+    custInner += `
+      <div style="margin-bottom:8px;${Object.values(byCust).length > 1 ? 'padding-bottom:8px;border-bottom:1px dashed rgba(139,150,255,0.18);' : ''}">
+        <div><b style="color:var(--violet);">${escapeHtml(cd.name)}</b> · ${cd.pallets} 托(${cd.trucks} 车${cd.swapPallets > 0 ? ` · ${cd.swapPallets} 托 Swap` : ''})</div>
+        <div>客户账本扣 <b style="color:var(--rose);">-${fmt(cd.amount)}</b>(单价 £${sellPrice}${cd.swapPallets > 0 ? '/£' + (sellPrice + swapPrem) + ' Swap' : ''})</div>
+        <div>当前余额 <b>${fmt(cd.balBefore)}</b> → 取货后 <b style="color:${after < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(after)}</b> (够拉 ${canLift} 托)</div>
+        <div style="color:var(--green);">✓ 自动开 <b>INV-${date.split('-').reverse().join('')}-NNN</b>(7 天到期)</div>
+      </div>`;
+  }
+  if (trucksToInventory.length > 0) {
+    custInner += `<div style="color:var(--amber);">⚠ ${trucksToInventory.length} 车进库存(没分配客户)</div>`;
+  }
+  if (!custInner) custInner = '<span style="color:var(--text-dim);">(没有客户分配)</span>';
+  const custSection = sec('👥', '客户账本(自动开 INV)', custInner, 'var(--violet)');
+
+  const profitFormula = swapPallets > 0
+    ? `普通:${normalPallets} × £51 = ${fmt(normalPallets * 51)}<br>Swap:${swapPallets} × £81(£51 + £30 加成)= ${fmt(swapPallets * 81)}<br>合计 = <b>${fmt(totalProfit)}</b>`
+    : `${totalPallets} × £51(£${sellPrice} + £${myFee} - £${buyPrice})= <b>${fmt(totalProfit)}</b>`;
+
+  const profitSection = sec('💵', '你的实际利润(自动累加到所有 KPI)', `
+    <div style="background:rgba(34,211,165,0.06);padding:10px 12px;border-radius:6px;margin-bottom:8px;">
+      <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">公式 (每托)</div>
+      <div style="font-family:'SF Mono',monospace;font-size:11px;line-height:1.7;">
+        卖价 £${sellPrice} <span style="color:var(--text-dim);">(进客户账本)</span><br>
+        + 你费 £${myFee} <span style="color:var(--text-dim);">(客户当面付现金)</span><br>
+        - 买价 £${buyPrice} <span style="color:var(--text-dim);">(付给 Emma)</span><br>
+        = <b style="color:var(--green);">£51 / 托</b> 净利润
+        ${swapPallets > 0 ? '<br>+ Swap £30 / 托(只针对 Swap 托盘)' : ''}
+      </div>
+    </div>
+    <div>本次:${profitFormula}</div>
+    <div style="margin-top:8px;color:var(--green);">
+      ✓ "累计净利润" KPI · "本周利润" KPI · "上月利润" KPI · 客户"累计利润" · 月度走势图 — <b>全部立刻 +${fmt(totalProfit)}</b>
+    </div>
+  `, 'var(--green)');
+
+  const cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${(myFee + hugoFeeRate + vFeeRate) * totalPallets} — 提醒别忘了)`, `
+    <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £51 利润里)</td></tr>
+      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo(过路钱)</td></tr>
+      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
+      <tr style="border-top:1px dashed rgba(139,150,255,0.2);"><td style="padding:6px 0 0;font-weight:700;">总计客户现金</td><td style="padding:6px 0 0;text-align:right;font-weight:700;color:var(--text);">${fmt(cashFromCustomer)}</td><td></td></tr>
+    </table>
+  `, 'var(--text-dim)');
+
+  const linkedSection = sec('📊', '其他自动联动(零代码,免费送)', `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:11.5px;">
+      <div>✓ "营收/成本/利润 走势图"</div>
+      <div>✓ "客户余额分布"饼图</div>
+      <div>✓ "上月合伙账"卡片</div>
+      <div>✓ "客户累计取货 / 利润"</div>
+      <div>✓ Emma 对账单(下次打开)</div>
+      <div>✓ Hugo 对账单(下次打开)</div>
+      <div>✓ 客户内页 5 张 KPI 卡</div>
+      <div>✓ 周/月度利润表</div>
+    </div>
+  `, '#67e8f9');
+
   box.style.display = '';
-  document.getElementById('se-preview-body').innerHTML = `
-    <div><b>📦 每日供货:</b> 加 ${_seTrucks.length} 车 / ${totalPallets} 托</div>
-    <div style="margin-top:6px;"><b>🤝 合伙账:</b> 加 ${_seTrucks.length} 个 pickup event · Emma 余额扣 <span style="color:var(--rose);">-${fmt(totalPallets * buyPrice)}</span> · Hugo 提成消耗 <span style="color:var(--amber);">-${fmt(hugoCommission)}</span></div>
-    <div style="margin-top:6px;"><b>👥 客户账本:</b></div>
-    ${custLines || '<div style="margin-left:14px;color:var(--text-dim);">无</div>'}
-    ${inventoryLine}
-  `;
+  document.getElementById('se-preview-body').innerHTML =
+    supplySection + emmaSection + hugoSection + custSection + profitSection + cashSection + linkedSection;
 }
 
 // === MAIN: save smart pickup ===
