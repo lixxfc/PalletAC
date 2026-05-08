@@ -3271,6 +3271,15 @@ function openSmartEntry() {
   updateSmartEntryPreview();
   checkSmartEntryDayCollision();
   document.getElementById('smart-entry-modal').classList.add('open');
+
+  // Fetch partnership data in background to populate Emma balance + Hugo pool
+  // in the preview. The first updateSmartEntryPreview above just shows "缓存未加载";
+  // once this resolves, we re-render to show real numbers.
+  _seFetchPartnershipCache().then(() => {
+    if (document.getElementById('smart-entry-modal').classList.contains('open')) {
+      updateSmartEntryPreview();
+    }
+  });
 }
 
 function closeSmartEntry() {
@@ -3401,6 +3410,27 @@ function renderSmartEntryTrucks() {
   document.getElementById('se-total-pallets').textContent = totalPallets + ' 托';
   document.getElementById('se-total-trucks').textContent = _seTrucks.length + ' 车';
   document.getElementById('se-total-amount').textContent = fmt(totalAmount);
+}
+
+// === Partnership cache (read-only) — populated lazily by smart entry ===
+// Note: previously populated by fetchPartnershipForDashboard (since removed).
+// Now filled by _seFetchPartnershipCache() on smart-entry open + saveSmartPickup write.
+// Helpers below safely return null when cache is empty; preview shows "缓存未加载".
+let _partnershipCache = null;
+
+// Lazy fetch — call once when the smart entry opens to populate balance/pool numbers
+async function _seFetchPartnershipCache() {
+  try {
+    const { data, error } = await db
+      .from('partnership_data')
+      .select('data')
+      .eq('workspace_id', 'main')
+      .maybeSingle();
+    if (error) { console.warn('[smart-entry] partnership read failed:', error.message); return; }
+    _partnershipCache = (data && data.data) || null;
+  } catch (e) {
+    console.warn('[smart-entry] partnership fetch error:', e);
+  }
 }
 
 // === Helpers reading partnership cache ===
@@ -3718,9 +3748,7 @@ async function saveSmartPickup() {
 
     partnershipWriteOk = true;
     // Update local cache so dashboard partnership KPIs refresh immediately
-    if (typeof _partnershipCache !== 'undefined') {
-      try { _partnershipCache = latestData; } catch (e) {}
-    }
+    _partnershipCache = latestData;
   } catch (err) {
     // ROLLBACK personal in-memory changes (didn't save yet)
     console.error('[smart-entry] partnership write failed, rolling back:', err);
