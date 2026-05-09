@@ -1103,14 +1103,61 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div class="card-title">新增转账</div>
         <div class="form-grid">
           <div class="form-row"><label>日期</label><input type="date" id="t-date"></div>
-          <div class="form-row"><label>这次转账够买多少托盘</label><input type="number" id="t-pallets" placeholder="例如 72" min="0" oninput="updateTransferPreview()"></div>
-          <div class="form-row"><label>金额 £ <span class="page-sub" style="font-size:10px;">(可手动改)</span></label><input type="number" id="t-amount" placeholder="自动按托盘数 × £245" min="0" step="0.01" oninput="updateTransferPreview()"></div>
+          <div class="form-row"><label>这次转账够买多少托盘</label><input type="number" id="t-pallets" placeholder="例如 72" min="0" oninput="onTransferPalletsChange()"></div>
+          <div class="form-row">
+            <label>金额 £ <span class="page-sub" style="font-size:10px;color:var(--green);">可手动改 ✎</span></label>
+            <input type="number" id="t-amount" placeholder="自动按下面模式算" min="0" step="0.01" oninput="onTransferAmountChange()">
+          </div>
+
+          <!-- Emma transfer mode toggle -->
+          <div class="form-row" style="grid-column:1/-1;">
+            <label>Emma 转账模式 <span class="page-sub" style="font-size:10px;">(决定上面"金额"怎么自动算)</span></label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <label class="t-mode-pill" style="flex:1;min-width:240px;display:flex;align-items:center;gap:10px;padding:11px 14px;background:rgba(0,229,255,0.06);border:1px solid rgba(0,229,255,0.25);border-radius:10px;cursor:pointer;">
+                <input type="radio" name="t-emma-mode" value="deficit" checked oninput="onTransferModeChange()" style="margin:0;">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--cyan);">缺口模式 <span class="badge" style="background:rgba(0,229,255,0.18);color:var(--cyan);font-size:9px;">默认</span></div>
+                  <div style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">托盘 × £245 - Emma 余额(只补差)</div>
+                </div>
+              </label>
+              <label class="t-mode-pill" style="flex:1;min-width:240px;display:flex;align-items:center;gap:10px;padding:11px 14px;background:rgba(34,211,165,0.06);border:1px solid rgba(34,211,165,0.25);border-radius:10px;cursor:pointer;">
+                <input type="radio" name="t-emma-mode" value="pure" oninput="onTransferModeChange()" style="margin:0;">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--green);">纯增加</div>
+                  <div style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">直接加 托盘 × £245(不扣余额)</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div class="form-row" style="grid-column:1/-1;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(251,191,36,0.06);border:1px dashed rgba(251,191,36,0.3);border-radius:10px;">
-              <input type="checkbox" id="t-include-hugo" oninput="updateTransferPreview()">
+              <input type="checkbox" id="t-include-hugo" oninput="onTransferModeChange()">
               <span><b>💰 包含 Hugo 提成 (£<span id="t-hugo-rate">7</span>/托)</b> — 转账金额追加 <span id="t-hugo-amount">£0</span>,Emma 收到后转给 Hugo</span>
             </label>
           </div>
+
+          <!-- Hugo mode toggle (visible only when Hugo checkbox checked) -->
+          <div class="form-row" id="t-hugo-mode-row" style="grid-column:1/-1;display:none;">
+            <label>Hugo 模式 <span class="page-sub" style="font-size:10px;">(决定追加多少 Hugo)</span></label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <label class="t-mode-pill" style="flex:1;min-width:240px;display:flex;align-items:center;gap:10px;padding:11px 14px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);border-radius:10px;cursor:pointer;">
+                <input type="radio" name="t-hugo-mode" value="pure" checked oninput="onTransferModeChange()" style="margin:0;">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--amber);">纯增加 <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;">默认</span></div>
+                  <div style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">直接追加 托盘 × £7(不扣预付池)</div>
+                </div>
+              </label>
+              <label class="t-mode-pill" style="flex:1;min-width:240px;display:flex;align-items:center;gap:10px;padding:11px 14px;background:rgba(244,114,182,0.06);border:1px solid rgba(244,114,182,0.25);border-radius:10px;cursor:pointer;">
+                <input type="radio" name="t-hugo-mode" value="deficit" oninput="onTransferModeChange()" style="margin:0;">
+                <div>
+                  <div style="font-size:12px;font-weight:700;color:var(--pink);">缺口模式</div>
+                  <div style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">托盘 × £7 - 预付池余额(只补差)</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div class="form-row" style="grid-column:1/-1;"><label>备注（可选）</label><input type="text" id="t-note" placeholder="银行转账 / 现金 / …"></div>
         </div>
         <div id="t-preview" class="preview-box"></div>
@@ -3725,6 +3772,58 @@ function updateEmmaQuote() {
 }
 
 // ===== PREVIEW =====
+// Helpers — read selected mode (radio button)
+function getEmmaMode() {
+  const el = document.querySelector('input[name="t-emma-mode"]:checked');
+  return (el && el.value) || 'deficit';
+}
+function getHugoMode() {
+  const el = document.querySelector('input[name="t-hugo-mode"]:checked');
+  return (el && el.value) || 'pure';
+}
+
+// Compute Hugo prepay pool balance from current state.events
+function hugoPoolBalance() {
+  const transfersHugoAll = (state.events || []).filter(e => !e.deleted && e.type === 'transfer' && e.includesHugoFee);
+  const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
+  const rate = (state.params && state.params.hugoCommission) || 7;
+  const pickups = (state.events || []).filter(e => !e.deleted && e.type === 'pickup');
+  const deposited = transfersHugoAll.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+  const used = cutoff
+    ? pickups.filter(e => (e.date || '') >= cutoff).reduce((s, e) => s + (e.pallets || 0) * rate, 0)
+    : pickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  return { deposited, used, balance: deposited - used };
+}
+
+// === Input handlers (separate so we know who triggered the change) ===
+function onTransferPalletsChange() {
+  // When pallets change, we want to RE-AUTO-FILL the amount based on selected mode
+  // — UNLESS user has manually edited the amount (userEdited flag set).
+  const amtEl = document.getElementById('t-amount');
+  if (amtEl.dataset.userEdited !== 'true') {
+    amtEl.value = '';  // clear so updateTransferPreview will re-auto-fill
+  }
+  updateTransferPreview();
+}
+
+function onTransferAmountChange() {
+  // User typed in the amount field — flag as user-edited so we don't overwrite.
+  document.getElementById('t-amount').dataset.userEdited = 'true';
+  updateTransferPreview();
+}
+
+function onTransferModeChange() {
+  // Mode toggle clicked OR Hugo checkbox toggled — recompute amount auto-fill
+  // unless user has manually edited it.
+  const amtEl = document.getElementById('t-amount');
+  if (amtEl.dataset.userEdited !== 'true') amtEl.value = '';
+  // Show/hide Hugo mode row based on checkbox
+  const hugoOn = document.getElementById('t-include-hugo').checked;
+  const hugoRow = document.getElementById('t-hugo-mode-row');
+  if (hugoRow) hugoRow.style.display = hugoOn ? '' : 'none';
+  updateTransferPreview();
+}
+
 function updateTransferPreview() {
   const box = document.getElementById('t-preview');
   if (!box) return;
@@ -3740,57 +3839,71 @@ function updateTransferPreview() {
   const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (hugoRateEl) hugoRateEl.textContent = rate;
 
-  const bal = balance();              // Michael's current pallet credit at Emma
-  const grossGoodsCost = pallets * buyPrice;  // 100 × £245 = £24,500
-  const deficit = Math.max(0, grossGoodsCost - bal);  // 24500 - 1970 = £22,530
+  const emmaMode = getEmmaMode();
+  const hugoMode = getHugoMode();
+  const bal = balance();                       // current Emma pallet credit
+  const grossGoodsCost = pallets * buyPrice;
+  const deficit = Math.max(0, grossGoodsCost - bal);
 
-  // Auto-fill base amount = deficit (NOT gross). User can manually override.
-  // This represents the actual pallet-credit amount Michael wires to Emma's bank
-  // (the Hugo passthrough is added separately via the checkbox).
+  // Auto-compute base amount based on Emma mode (unless user manually edited)
   let baseAmount;
-  if (pallets > 0 && (!amtEl.value || amtEl.dataset.autoFilled === 'true')) {
-    baseAmount = deficit;
+  const userEdited = amtEl.dataset.userEdited === 'true';
+  if (pallets > 0 && !userEdited) {
+    baseAmount = (emmaMode === 'pure') ? grossGoodsCost : deficit;
     amtEl.value = baseAmount;
-    amtEl.dataset.autoFilled = 'true';
   } else {
     baseAmount = parseFloat(amtEl.value) || 0;
   }
 
   const includeHugo = !!(includeHugoEl && includeHugoEl.checked);
-  const hugoFee = includeHugo && pallets > 0 ? pallets * rate : 0;
+  const hugoPool = hugoPoolBalance();
+  const hugoNeeded = pallets * rate;
+  const hugoDeficit = Math.max(0, hugoNeeded - hugoPool.balance);
+  let hugoFee = 0;
+  if (includeHugo && pallets > 0) {
+    hugoFee = (hugoMode === 'deficit') ? hugoDeficit : hugoNeeded;
+  }
   if (hugoAmountEl) hugoAmountEl.textContent = '£' + hugoFee.toLocaleString('en-GB');
 
   const totalBank = baseAmount + hugoFee;
   if (!totalBank && pallets === 0) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
 
-  // After this transfer settles, Emma's pallet-credit balance grows by `baseAmount` only
-  // (Hugo fee is pass-through, doesn't increase Michael's credit).
   const afterBal = bal + baseAmount;
   const palletsCanLift = buyPrice > 0 ? Math.floor(afterBal / buyPrice) : 0;
-  // Sanity warning: if user typed pallets but baseAmount is way too low to cover the deficit
-  const balanceShortAfterPickup = afterBal < grossGoodsCost;
+  const balanceShortAfterPickup = pallets > 0 && afterBal < grossGoodsCost;
+  const hugoPoolAfter = hugoPool.balance + hugoFee - hugoNeeded;
 
   box.classList.add('show');
-  box.classList.toggle('danger', balanceShortAfterPickup && pallets > 0);
+  box.classList.toggle('danger', balanceShortAfterPickup);
 
   // === Build preview rows ===
+  const emmaModeLabel = emmaMode === 'pure'
+    ? `<span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);font-size:9px;letter-spacing:0.5px;">纯增加</span>`
+    : `<span class="badge" style="background:rgba(0,229,255,0.18);color:var(--cyan);font-size:9px;letter-spacing:0.5px;">缺口</span>`;
+  const hugoModeLabel = hugoMode === 'pure'
+    ? `<span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;letter-spacing:0.5px;">纯增加</span>`
+    : `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;letter-spacing:0.5px;">缺口</span>`;
+
   const palletsLine = pallets > 0
     ? `
     <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">想拉托盘</span><span class="pv-v">${pallets} 托 × £${buyPrice} = ${fmt(grossGoodsCost)}</span></div>
     <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">Emma 当前余额</span><span class="pv-v">${fmt(bal)}</span></div>
-    <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">货款部分缺口(自动算)</span><span class="pv-v" style="color:${deficit > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(deficit)}</span></div>
+    <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">货款部分缺口</span><span class="pv-v" style="color:${deficit > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(deficit)}</span></div>
+    ${userEdited ? '<div class="pv-row" style="font-size:11px;color:var(--amber);"><span class="pv-k">⚠ 金额已手动修改</span><span class="pv-v">不再自动算</span></div>' : ''}
     <div style="border-top:1px dashed rgba(139,150,255,0.15);margin:6px 0;"></div>`
     : '';
   const hugoLine = includeHugo && hugoFee > 0
-    ? `<div class="pv-row"><span class="pv-k">+ Hugo 提成 (${pallets} × £${rate})</span><span class="pv-v" style="color:var(--amber);">+${fmt(hugoFee)}</span></div>`
-    : '';
-  const warnHtml = balanceShortAfterPickup && pallets > 0
-    ? `<div class="pv-warning">⚠ 这笔基础金额(${fmt(baseAmount)}) + 余额还差 ${fmt(grossGoodsCost - afterBal)} 才够拉 ${pallets} 托。要么改大金额,要么少拉点托盘。</div>`
+    ? `<div class="pv-row"><span class="pv-k">+ Hugo 提成 ${hugoModeLabel} (${pallets} × £${rate}${hugoMode === 'deficit' ? ' − 池余 ' + fmt(hugoPool.balance) : ''})</span><span class="pv-v" style="color:var(--amber);">+${fmt(hugoFee)}</span></div>
+       <div class="pv-row" style="font-size:11px;color:var(--mute-2);"><span class="pv-k">└ 预付池</span><span class="pv-v">${fmt(hugoPool.balance)} → ${fmt(hugoPool.balance + hugoFee)} <span style="color:${hugoPoolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">(取货后:${fmt(hugoPoolAfter)})</span></span></div>`
+    : (includeHugo && pallets > 0 ? `<div class="pv-row" style="font-size:11px;color:var(--green);"><span class="pv-k">+ Hugo 提成 ${hugoModeLabel}</span><span class="pv-v">£0(池余 ${fmt(hugoPool.balance)} 已够覆盖 ${pallets} 托)</span></div>` : '');
+
+  const warnHtml = balanceShortAfterPickup
+    ? `<div class="pv-warning">⚠ 这笔基础金额(${fmt(baseAmount)}) + 余额还差 ${fmt(grossGoodsCost - afterBal)} 才够拉 ${pallets} 托。换"纯增加"模式或加大金额。</div>`
     : '';
 
   box.innerHTML = `
     ${palletsLine}
-    <div class="pv-row"><span class="pv-k">基础转账(给 Emma 买货)</span><span class="pv-v pos">+${fmt(baseAmount)}</span></div>
+    <div class="pv-row"><span class="pv-k">基础转账 ${emmaModeLabel} (给 Emma 买货)</span><span class="pv-v pos">+${fmt(baseAmount)}</span></div>
     ${hugoLine}
     <div class="pv-row" style="border-top:1px dashed rgba(139,150,255,0.18);padding-top:6px;margin-top:4px;"><span class="pv-k"><b>实际银行转账总额</b></span><span class="pv-v" style="font-size:15px;"><b>${fmt(totalBank)}</b></span></div>
     <div class="pv-row"><span class="pv-k">转账后 Emma 处余额(预付)</span><span class="pv-v pos">${fmt(afterBal)}</span></div>
@@ -3831,12 +3944,24 @@ function addTransfer() {
   const pallets = parseInt(document.getElementById('t-pallets').value) || 0;
   const includeHugo = !!document.getElementById('t-include-hugo').checked;
   const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
-  const hugoFee = includeHugo && pallets > 0 ? pallets * rate : 0;
+  const hugoMode = getHugoMode();
+  const emmaMode = getEmmaMode();
+
+  // Hugo fee — same logic as preview (mode-aware)
+  let hugoFee = 0;
+  if (includeHugo && pallets > 0) {
+    if (hugoMode === 'deficit') {
+      const pool = hugoPoolBalance();
+      hugoFee = Math.max(0, pallets * rate - pool.balance);
+    } else {
+      hugoFee = pallets * rate;
+    }
+  }
 
   if (!date) { alert('请选择日期'); return; }
   if (!baseAmount || baseAmount <= 0) { alert('金额必须 > 0'); return; }
 
-  // The "amount" stored is the base (matches buyPrice × pallets), used for Michael's credit with Emma.
+  // The "amount" stored is the base (Emma pallet-credit deposit, regardless of mode).
   // Hugo fee is stored separately so we know how much "passed through" Emma to Hugo.
   state.events.push({
     id: crypto.randomUUID(),
@@ -3846,13 +3971,14 @@ function addTransfer() {
     includesHugoFee: includeHugo && hugoFee > 0,
     hugoFeeAmount: hugoFee,                       // snapshot
     hugoFeeRate: rate,                            // snapshot of rate at time of transfer
+    transferMode: emmaMode,                       // 'deficit' or 'pure' — for audit trail
+    hugoMode: includeHugo ? hugoMode : null,
     note,
     createdBy: currentEmail(),
     createdAt: new Date().toISOString()
   });
 
   // Auto-enable Hugo split mode the FIRST time user prepays Hugo.
-  // Cutoff = day AFTER this transfer (so same-day pickups stay in legacy bucket).
   let autoEnabledMsg = '';
   if (includeHugo && hugoFee > 0 && !state.params.hugoPrepayStartDate) {
     const cutoffDate = _addOneDay(date);
@@ -3862,11 +3988,21 @@ function addTransfer() {
   }
 
   // Reset form
-  document.getElementById('t-amount').value = '';
-  document.getElementById('t-amount').dataset.autoFilled = '';
+  const amtEl = document.getElementById('t-amount');
+  amtEl.value = '';
+  amtEl.dataset.userEdited = '';
+  amtEl.dataset.autoFilled = '';
   document.getElementById('t-pallets').value = '';
   document.getElementById('t-note').value = '';
   document.getElementById('t-include-hugo').checked = false;
+  // Reset modes to defaults
+  const emmaDeficit = document.querySelector('input[name="t-emma-mode"][value="deficit"]');
+  if (emmaDeficit) emmaDeficit.checked = true;
+  const hugoPure = document.querySelector('input[name="t-hugo-mode"][value="pure"]');
+  if (hugoPure) hugoPure.checked = true;
+  const hugoRow = document.getElementById('t-hugo-mode-row');
+  if (hugoRow) hugoRow.style.display = 'none';
+
   save(); renderAll();
   const totalSent = baseAmount + hugoFee;
   flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : '') + autoEnabledMsg);
