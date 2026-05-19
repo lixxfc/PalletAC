@@ -1025,14 +1025,100 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <div class="page-head">
         <div>
           <h1 class="page-title"><span class="gradient">仪表盘</span></h1>
-          <div class="page-sub">共享工作区 · Michael · Emma · Hugo 都能看到同一份账</div>
+          <div class="page-sub" id="dash-sub">共享工作区 · Michael · Emma · Hugo 都能看到同一份账</div>
         </div>
         <div class="row">
+          <!-- Mode toggle (visible only after switch) -->
+          <div id="mode-toggle" style="display:none;margin-right:10px;">
+            <button class="btn sm" id="btn-mode-new" onclick="setViewMode('new')" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;">新模式</button>
+            <button class="btn sm ghost" id="btn-mode-history" onclick="setViewMode('history')">📜 历史</button>
+          </div>
           <button class="btn sm" onclick="openEmmaStatementModal()">📄 Emma 对账单</button>
           <button class="btn sm" onclick="openHugoStatementModal()" style="margin-left:6px;">📄 Hugo 提成</button>
         </div>
       </div>
-      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <!-- 🚀 Mode switch banner — only shown if mode='old' -->
+      <div id="mode-switch-banner" style="display:none;margin-bottom:18px;padding:18px 22px;background:linear-gradient(135deg,rgba(139,92,246,0.10) 0%,rgba(0,229,255,0.08) 60%,rgba(34,211,165,0.06) 100%);border:1px solid rgba(139,92,246,0.30);border-radius:14px;box-shadow:0 4px 24px rgba(139,92,246,0.10);">
+        <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:280px;">
+            <div style="font-size:14px;font-weight:800;color:#c4b5fd;letter-spacing:0.4px;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:22px;">🚀</span><span>合伙账新模式准备好了</span>
+            </div>
+            <div style="font-size:12px;color:var(--mute-2);margin-top:8px;line-height:1.7;">
+              切换后:<b style="color:var(--green);">钱 Emma 转给你</b> · <b style="color:var(--cyan);">你预付 SSS</b> · <b style="color:var(--amber);">Hugo 现金周/月结</b>。<br>
+              系统自动开 <b>SINV-Emma 销售发票</b> 和 <b>PINV-SSS 付款凭证</b>。<br>
+              <b style="color:var(--rose);">不可撤销</b> — 切换前请先把今天取货录完。
+            </div>
+          </div>
+          <button class="btn primary" onclick="openModeSwitchModal()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;padding:12px 22px;font-size:14px;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(139,92,246,0.30);">⚡ 切换到新模式</button>
+        </div>
+      </div>
+
+      <!-- ============== NEW MODE CONTENT (hidden until switch + view=new) ============== -->
+      <div id="new-mode-dashboard" style="display:none;">
+
+        <!-- 1. 资金池余额 — big banner card -->
+        <div class="card mb-4" style="background:linear-gradient(135deg,rgba(34,211,165,0.10) 0%,rgba(0,229,255,0.06) 60%,rgba(139,92,246,0.06) 100%);border:1px solid rgba(34,211,165,0.32);box-shadow:0 4px 24px rgba(34,211,165,0.08);">
+          <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">💰</span>
+                <div style="font-size:13px;font-weight:800;color:var(--green);letter-spacing:0.4px;">资金池余额</div>
+                <span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);font-size:9px;font-weight:700;">实时</span>
+              </div>
+              <div id="nm-pool-value" style="font-size:34px;font-weight:800;color:var(--green);letter-spacing:-1px;margin-top:8px;font-variant-numeric:tabular-nums;">£0</div>
+              <div id="nm-pool-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">入 - 出 = 当前你银行账户上的钱</div>
+            </div>
+            <div style="flex:2;min-width:280px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div style="padding:10px 14px;background:rgba(34,211,165,0.05);border:1px solid rgba(34,211,165,0.18);border-radius:8px;">
+                <div style="font-size:9.5px;color:var(--green);letter-spacing:1px;text-transform:uppercase;font-weight:700;">📥 累计入金</div>
+                <div id="nm-pool-inflow" style="font-size:18px;font-weight:700;color:var(--green);margin-top:3px;font-variant-numeric:tabular-nums;">£0</div>
+                <div id="nm-pool-inflow-sub" style="font-size:10px;color:var(--mute-2);margin-top:2px;">客户 £0 + Emma £0</div>
+              </div>
+              <div style="padding:10px 14px;background:rgba(251,113,133,0.05);border:1px solid rgba(251,113,133,0.18);border-radius:8px;">
+                <div style="font-size:9.5px;color:var(--rose);letter-spacing:1px;text-transform:uppercase;font-weight:700;">📤 累计出金</div>
+                <div id="nm-pool-outflow" style="font-size:18px;font-weight:700;color:var(--rose);margin-top:3px;font-variant-numeric:tabular-nums;">£0</div>
+                <div id="nm-pool-outflow-sub" style="font-size:10px;color:var(--mute-2);margin-top:2px;">SSS £0 + Hugo £0</div>
+              </div>
+            </div>
+            <button class="kpi-info" onclick="openDrilldown('nm-pool')" title="数据来源" style="align-self:flex-start;margin-top:6px;">ⓘ</button>
+          </div>
+        </div>
+
+        <!-- 2-5. 4 KPI cards: SSS / Emma / Hugo / 本月托盘 -->
+        <div class="kpi-grid" id="nm-kpi-grid">
+          <div class="kpi v3" data-drilldown="nm-sss">
+            <div class="kpi-head"><div class="kpi-label">🏭 SSS 那边余额</div><div class="kpi-icon">S</div></div>
+            <div class="kpi-value" id="nm-sss-value">£0</div>
+            <div class="kpi-sub" id="nm-sss-sub">够拉 0 托</div>
+            <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-sss')">ⓘ</button>
+          </div>
+          <div class="kpi v4" data-drilldown="nm-emma">
+            <div class="kpi-head"><div class="kpi-label">👩 Emma 余额(在我这)</div><div class="kpi-icon">E</div></div>
+            <div class="kpi-value" id="nm-emma-value" style="color:var(--pink);">£0</div>
+            <div class="kpi-sub" id="nm-emma-sub">她够拉 0 托</div>
+            <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-emma')">ⓘ</button>
+          </div>
+          <div class="kpi v5" data-drilldown="nm-hugo">
+            <div class="kpi-head"><div class="kpi-label">🧑 Hugo 应付</div><div class="kpi-icon">H</div></div>
+            <div class="kpi-value" id="nm-hugo-value">£0</div>
+            <div class="kpi-sub" id="nm-hugo-sub">应得 £0 − 已付 £0</div>
+            <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-hugo')">ⓘ</button>
+          </div>
+          <div class="kpi v2" data-drilldown="nm-month">
+            <div class="kpi-head"><div class="kpi-label">📦 本月托盘</div><div class="kpi-icon">▦</div></div>
+            <div class="kpi-value" id="nm-month-value">0</div>
+            <div class="kpi-sub" id="nm-month-sub">Michael 0 · Emma 0</div>
+            <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-month')">ⓘ</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ============== OLD MODE / HISTORY CONTENT (always present, hidden in new view) ============== -->
+      <div id="old-mode-dashboard">
+        <div class="kpi-grid" id="kpi-grid"></div>
 
       <!-- Quick Quote: how much more to send Emma for X pallets -->
       <div class="quote-card">
@@ -1089,6 +1175,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         </div>
         <div class="month-history-grid" id="month-history-grid"></div>
       </div>
+      </div><!-- /#old-mode-dashboard -->
     </section>
 
     <!-- ===== Transfer ===== -->
@@ -1356,6 +1443,24 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         </div>
       </div>
 
+      <!-- SSS Supplier Info — for new mode PINV-SSS payment vouchers -->
+      <div class="card mt-4">
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+          <span>🏭 SSS 供应商信息</span>
+          <span class="badge" style="background:rgba(139,92,246,0.18);color:#c4b5fd;font-size:10px;letter-spacing:0.4px;">SUPPLIER · HK</span>
+          <span class="page-sub" style="font-size:11px;font-weight:400;margin-left:auto;">(香港公司 · 用于自动生成 PINV-SSS 付款凭证)</span>
+        </div>
+        <div class="form-grid mt-4">
+          <div class="form-row"><label>公司名称(英文)</label><input type="text" id="s-sss-name" placeholder="SSS Pallets Co., Ltd" onchange="saveSssInfo()"></div>
+          <div class="form-row"><label>联系人</label><input type="text" id="s-sss-contact" placeholder="联系人姓名" onchange="saveSssInfo()"></div>
+          <div class="form-row"><label>电话</label><input type="text" id="s-sss-phone" placeholder="+852 xxxx xxxx" onchange="saveSssInfo()"></div>
+          <div class="form-row"><label>邮箱</label><input type="email" id="s-sss-email" placeholder="contact@example.hk" onchange="saveSssInfo()"></div>
+          <div class="form-row" style="grid-column: 1/-1;"><label>地址(香港)</label><input type="text" id="s-sss-address" placeholder="Address line · District · HK" onchange="saveSssInfo()"></div>
+          <div class="form-row"><label>邮编(可选)</label><input type="text" id="s-sss-postcode" placeholder="HK postcode" onchange="saveSssInfo()"></div>
+          <div class="form-row" style="grid-column: 1/-1;"><label>银行信息(可选)</label><input type="text" id="s-sss-bank" placeholder="Bank · Acc · Swift" onchange="saveSssInfo()"></div>
+        </div>
+      </div>
+
       <div class="card mt-4">
         <div class="card-title">导入 / 导出</div>
         <div class="row mt-4">
@@ -1399,6 +1504,52 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
     <button class="btn ghost sm" onclick="drilldownCopy()">📋 复制(Markdown)</button>
     <button class="btn ghost sm" onclick="drilldownExportCsv()">⇣ 导出 CSV</button>
     <button class="btn ghost sm" onclick="closeDrilldown()" style="margin-left:auto;">关闭</button>
+  </div>
+</div>
+
+<!-- ⚡ Mode Switch Confirmation Modal -->
+<div class="modal-backdrop" id="mode-switch-modal">
+  <div class="modal-card" style="max-width: 640px;">
+    <div class="modal-head">
+      <div class="modal-title">⚡ 切换到新合伙账模式</div>
+      <button class="modal-close" onclick="closeModeSwitchModal()">×</button>
+    </div>
+    <div style="font-size:13px;line-height:1.8;color:var(--text);margin-bottom:12px;">
+      切换后,合伙账从<b>旧模式</b>(Michael → Emma → SSS)转到<b>新模式</b>(钱汇集到 Michael,他付 SSS/Hugo)。
+    </div>
+
+    <div style="margin-top:14px;padding:14px 16px;background:rgba(5,6,15,0.55);border:1px solid rgba(139,150,255,0.22);border-radius:10px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;color:var(--mute-2);text-transform:uppercase;margin-bottom:10px;">切换瞬间会发生</div>
+      <div style="font-size:12.5px;line-height:1.9;">
+        ① <b>快照 Hugo 期初欠款</b>:把"Michael 待结算 Hugo"那个数字冻结,作为新模式的起点<br>
+        ② <b>记 Emma 返还 £21</b>:自动新建一条 <code style="background:rgba(139,150,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px;">in-emma £21</code> 事件(Emma 把旧池子剩的钱还给你)<br>
+        ③ <b>切换日期写入</b>:<code style="background:rgba(139,150,255,0.08);padding:1px 5px;border-radius:3px;font-size:11px;">partnershipNewModeDate</code> = 今天<br>
+        ④ <b>仪表盘翻新</b>:5 张新 KPI 卡(资金池/SSS/Emma/Hugo/托盘),旧的进 "📜 历史" 子页<br>
+        ⑤ <b>旧数据保留</b>:不删任何东西,旧 events 还在,只是 UI 切换
+      </div>
+    </div>
+
+    <div style="margin-top:12px;padding:12px 14px;background:rgba(251,113,133,0.08);border:1px solid rgba(251,113,133,0.30);border-radius:10px;">
+      <div style="font-size:11.5px;color:var(--rose);line-height:1.7;">
+        ⚠ <b>不可一键撤销</b>。切换前请确认:<br>
+        · 今天的取货已经录完(Hugo 期初数才准确)<br>
+        · Emma 已经同意按新模式给你转钱<br>
+        · SSS 已经联系好开始预付<br>
+        · 你打算今晚 / 明早开始按新流程跑账
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding:12px 14px;background:rgba(34,211,165,0.06);border:1px solid rgba(34,211,165,0.25);border-radius:10px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;color:var(--green);margin-bottom:6px;">📸 切换瞬间的数字快照(实时算)</div>
+      <div id="switch-preview" style="font-size:12px;line-height:1.85;color:var(--text);">(loading…)</div>
+    </div>
+
+    <div class="row mt-4" style="gap:10px;justify-content:flex-end;">
+      <button class="btn ghost" onclick="closeModeSwitchModal()">取消(我再想想)</button>
+      <button class="btn primary" id="mode-switch-confirm-btn" onclick="executeModeSwitch()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;">
+        <span id="mode-switch-confirm-text">⚡ 立刻切换</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -1629,15 +1780,166 @@ function showApp() {
 
 // ===== DATA =====
 function emptyState() {
-  return { params: { buyPrice: 245, hugoCommission: 7 }, events: [] };
+  return {
+    params: {
+      buyPrice: 245,
+      hugoCommission: 7,
+      // === Mode switch (new model, set when user clicks 切换到新模式) ===
+      partnershipMode: 'old',        // 'old' | 'new'
+      partnershipNewModeDate: null,  // YYYY-MM-DD when switched
+      hugoOpeningOwed: 0,            // snapshot of Michael 待结算 Hugo at switch
+      emmaOpeningCredit: 0,          // Emma's credit at Michael at switch (should be 0 usually)
+      sssOpeningCredit: 0            // Michael's prepay at SSS at switch (0 = fresh start)
+    },
+    events: [],
+    // SSS supplier info (Hong Kong company — fill in settings later)
+    sss: { name: '', address: '', postcode: '', phone: '', email: '', contact: '', bank: '' },
+    // Hugo info (already exists in newer state, ensured here)
+    hugo: { name: '', phone: '', mobile: '', email: '', address: '', postcode: '' },
+    // Partnership invoices (SINV-Emma + PINV-SSS) — created in new mode
+    partnershipInvoices: []
+  };
 }
 function normalizeState(s) {
   if (!s || typeof s !== 'object') s = {};
   if (!s.params) s.params = {};
   if (typeof s.params.buyPrice !== 'number') s.params.buyPrice = 245;
   if (typeof s.params.hugoCommission !== 'number') s.params.hugoCommission = 7;
+  // === New mode defaults ===
+  if (s.params.partnershipMode !== 'new') s.params.partnershipMode = 'old';
+  if (!('partnershipNewModeDate' in s.params)) s.params.partnershipNewModeDate = null;
+  if (typeof s.params.hugoOpeningOwed !== 'number') s.params.hugoOpeningOwed = 0;
+  if (typeof s.params.emmaOpeningCredit !== 'number') s.params.emmaOpeningCredit = 0;
+  if (typeof s.params.sssOpeningCredit !== 'number') s.params.sssOpeningCredit = 0;
   if (!Array.isArray(s.events)) s.events = [];
+  // === SSS / Hugo / Invoices ===
+  if (!s.sss || typeof s.sss !== 'object') s.sss = { name: '', address: '', postcode: '', phone: '', email: '', contact: '', bank: '' };
+  if (!s.hugo || typeof s.hugo !== 'object') s.hugo = { name: '', phone: '', mobile: '', email: '', address: '', postcode: '' };
+  if (!Array.isArray(s.partnershipInvoices)) s.partnershipInvoices = [];
   return s;
+}
+
+// === Helpers — mode check ===
+function isNewMode() { return state && state.params && state.params.partnershipMode === 'new'; }
+function newModeStartDate() { return state && state.params && state.params.partnershipNewModeDate; }
+
+// =====================================================
+// NEW MODE CALCULATORS (only meaningful after switch)
+// =====================================================
+
+// Cross-app: customer prepays from personal_data (Michael's customer ledger)
+// Cached, refreshed on dashboard load. Used to aggregate customer deposits
+// since the switch date into Michael's cash pool.
+let _personalCustomerCache = null;
+let _personalCacheAt = null;
+
+async function fetchPersonalCustomerCache() {
+  if (!currentUser) return null;
+  try {
+    const { data, error } = await db
+      .from('personal_data')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (error) { console.warn('[new-mode] personal read failed:', error.message); return null; }
+    _personalCustomerCache = (data && data.data) || null;
+    _personalCacheAt = new Date();
+    return _personalCustomerCache;
+  } catch (e) { console.warn('[new-mode] personal fetch error:', e); return null; }
+}
+
+// Customer deposits since the new-mode switch date (sum across all customers)
+function customerDepositsSinceSwitch() {
+  if (!_personalCustomerCache) return 0;
+  const sw = newModeStartDate();
+  if (!sw) return 0;
+  const customers = _personalCustomerCache.customers || [];
+  let total = 0;
+  for (const c of customers) {
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'deposit' || !e.date || e.date < sw) continue;
+      total += (e.amount || 0);
+    }
+  }
+  return total;
+}
+
+// Filter helper: post-switch events only (or all if no switch yet)
+function _newModeEvents() {
+  const sw = newModeStartDate();
+  return (state.events || []).filter(e => !e.deleted && e.date && (!sw || e.date >= sw));
+}
+
+// 1. Cash pool = (in-emma events + in-customer manual + customer deposits from personal) − (out-supplier + out-hugo)
+function cashPoolBalance() {
+  const evs = _newModeEvents();
+  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0;
+  for (const e of evs) {
+    if (e.type === 'in-emma') inEmma += (e.amount || 0);
+    else if (e.type === 'in-customer') inCustomerManual += (e.amount || 0);
+    else if (e.type === 'out-supplier') outSss += (e.amount || 0);
+    else if (e.type === 'out-hugo') outHugo += (e.amount || 0);
+  }
+  const inCustomerFromPersonal = customerDepositsSinceSwitch();
+  return inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo;
+}
+
+// 2. SSS balance = my prepay to SSS − cost of all post-switch pickups
+function sssBalance() {
+  const evs = _newModeEvents();
+  const buyPrice = state.params.buyPrice || 245;
+  let paid = 0, used = 0;
+  for (const e of evs) {
+    if (e.type === 'out-supplier') paid += (e.amount || 0);
+    else if (e.type === 'pickup') used += (e.pallets || 0) * buyPrice;
+  }
+  const opening = state.params.sssOpeningCredit || 0;
+  return opening + paid - used;
+}
+
+// 3. Emma balance at Michael = her transfers − her pickups × buyPrice
+function emmaBalanceNew() {
+  const evs = _newModeEvents();
+  const buyPrice = state.params.buyPrice || 245;
+  let transferred = 0, used = 0;
+  for (const e of evs) {
+    if (e.type === 'in-emma') transferred += (e.amount || 0);
+    else if (e.type === 'pickup' && (e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk')) {
+      used += (e.pallets || 0) * buyPrice;
+    }
+  }
+  const opening = state.params.emmaOpeningCredit || 0;
+  return opening + transferred - used;
+}
+
+// 4. Hugo owed (new mode) = opening + post-switch pickups × £7 − cash paid
+function hugoOwedNew() {
+  const evs = _newModeEvents();
+  const rate = state.params.hugoCommission || 7;
+  let accrued = 0, paid = 0;
+  for (const e of evs) {
+    if (e.type === 'pickup') accrued += (e.pallets || 0) * rate;
+    else if (e.type === 'out-hugo') paid += (e.amount || 0);
+  }
+  const opening = state.params.hugoOpeningOwed || 0;
+  return opening + accrued - paid;
+}
+
+// 5. Month pallets (post-switch, split by who)
+function monthPalletsNew(ymStr) {
+  const evs = _newModeEvents();
+  let michael = 0, emma = 0, other = 0;
+  for (const e of evs) {
+    if (e.type !== 'pickup') continue;
+    if (!e.date || !e.date.startsWith(ymStr)) continue;
+    const palls = e.pallets || 0;
+    const isEmma = e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk';
+    const isMichael = e.pickedUpBy === 'Michael' || e.createdBy === 'harreds.ceo@gmail.com';
+    if (isEmma) emma += palls;
+    else if (isMichael) michael += palls;
+    else other += palls;
+  }
+  return { michael, emma, other, total: michael + emma + other };
 }
 
 function setSyncStatus(status) {
@@ -1678,6 +1980,14 @@ async function loadUserData() {
       await saveUserDataNow();
     }
   } catch (e) { console.warn('[hugo] cutoff auto-set skipped:', e); }
+
+  // Fetch personal_data customer ledger to compute customer deposits for new-mode cash pool.
+  // (Only runs if user is in new mode; safe to skip if in old mode.)
+  try {
+    if (isNewMode()) {
+      await fetchPersonalCustomerCache();
+    }
+  } catch (e) { console.warn('[new-mode] personal cache load skipped:', e); }
 }
 
 // === Auto-set Hugo cutoff date based on first includesHugoFee transfer ===
@@ -2091,6 +2401,154 @@ function buildDrilldownData(key) {
     };
   }
 
+  // ============================================================
+  // NEW MODE DRILLDOWNS (post-switch)
+  // ============================================================
+  if (key === 'nm-pool' && isNewMode()) {
+    const evs = _newModeEvents();
+    const rows = [];
+    let running = 0;
+    // Customer deposits from personal_data (lump sum, no per-event detail since they live in personal app)
+    const inCustFromPersonal = customerDepositsSinceSwitch();
+    if (inCustFromPersonal > 0) {
+      running += inCustFromPersonal;
+      rows.push({ date: '—', desc: `<b>📥 客户预付汇总</b>(从个人账客户账本)<br><span class="dim" style="font-size:11px;">所有客户切换后的 deposit 总和</span>`, amount: inCustFromPersonal });
+    }
+    // All in-emma / in-customer / out-supplier / out-hugo events, chronological
+    const cashFlow = evs.filter(e => ['in-emma','in-customer','out-supplier','out-hugo'].includes(e.type))
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    for (const e of cashFlow) {
+      const sign = (e.type === 'in-emma' || e.type === 'in-customer') ? 1 : -1;
+      running += sign * (e.amount || 0);
+      const labels = {
+        'in-emma': '👩 Emma 转入',
+        'in-customer': '👥 客户手动转入',
+        'out-supplier': '🏭 付 SSS',
+        'out-hugo': '🧑 付 Hugo 现金'
+      };
+      rows.push({
+        date: e.date,
+        desc: `<b>${labels[e.type] || e.type}</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}<br><span class="dim" style="font-size:11px;">池余 → £${fmt0(running)}</span>`,
+        amount: sign * (e.amount || 0)
+      });
+    }
+    return {
+      title: '💰 资金池余额 · 数据来源',
+      sub: `从 ${newModeStartDate()} 起 · 入 £${fmt0(running > 0 ? running : 0)} - 出`,
+      formula: `<div><span class="k">入金合计</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(cashPoolBalance() + cashFlow.filter(e=>e.type.startsWith('out')).reduce((s,e)=>s+(e.amount||0),0) + 0)}</span></div>
+                <div><span class="k">出金合计</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(cashFlow.filter(e=>e.type.startsWith('out')).reduce((s,e)=>s+(e.amount||0),0))}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>资金池余额</b></span><span class="v total" style="float:right;color:var(--green);">£${fmt0(cashPoolBalance())}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-sss' && isNewMode()) {
+    const buyPrice = state.params.buyPrice || 245;
+    const opening = state.params.sssOpeningCredit || 0;
+    const paid = _newModeEvents().filter(e => e.type === 'out-supplier').reduce((s,e) => s + (e.amount || 0), 0);
+    const pickupRows = _newModeEvents().filter(e => e.type === 'pickup');
+    const used = pickupRows.reduce((s,e) => s + (e.pallets || 0) * buyPrice, 0);
+    const total = sssBalance();
+    const rows = [
+      ..._newModeEvents().filter(e => e.type === 'out-supplier').map(e => ({
+        date: e.date,
+        desc: `<b style="color:var(--green);">+ 付 SSS</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`,
+        amount: e.amount || 0
+      })),
+      ...pickupRows.map(e => ({
+        date: e.date,
+        desc: `<b style="color:var(--rose);">− 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}(${(e.pickedUpBy || e.createdBy) ? userInfo(e.createdBy || e.pickedUpBy).name : '?'} 取)`,
+        amount: -(e.pallets || 0) * buyPrice
+      }))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '🏭 SSS 那边余额 · 数据来源',
+      sub: total >= 0 ? `预付了 £${fmt0(paid)} · 已用 £${fmt0(used)} · 还能拉 ${Math.floor(total / buyPrice)} 托` : `透支 £${fmt0(Math.abs(total))}`,
+      formula: `<div><span class="k">期初(切换日)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 累计付 SSS</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(paid)}</span></div>
+                <div><span class="k">− 累计取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>SSS 那边余额</b></span><span class="v total" style="float:right;">£${fmt0(total)}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-emma' && isNewMode()) {
+    const buyPrice = state.params.buyPrice || 245;
+    const transfersIn = _newModeEvents().filter(e => e.type === 'in-emma');
+    const emmaPickups = _newModeEvents().filter(e => e.type === 'pickup' && (e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk'));
+    const transferred = transfersIn.reduce((s, e) => s + (e.amount || 0), 0);
+    const used = emmaPickups.reduce((s, e) => s + (e.pallets || 0) * buyPrice, 0);
+    const total = emmaBalanceNew();
+    const opening = state.params.emmaOpeningCredit || 0;
+    const rows = [
+      ...transfersIn.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ Emma 转入</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
+      ...emmaPickups.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '👩 Emma 余额(在我这)· 数据来源',
+      sub: total >= 0 ? `她预付 £${fmt0(transferred)} · 取了 £${fmt0(used)} · 还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `她欠你 £${fmt0(Math.abs(total))}`,
+      formula: `<div><span class="k">期初</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 累计 Emma 转入</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(transferred)}</span></div>
+                <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 余额</b></span><span class="v total" style="float:right;color:${total < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(total)}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-hugo' && isNewMode()) {
+    const rate = state.params.hugoCommission || 7;
+    const opening = state.params.hugoOpeningOwed || 0;
+    const pickupRows = _newModeEvents().filter(e => e.type === 'pickup');
+    const payRows = _newModeEvents().filter(e => e.type === 'out-hugo');
+    const accrued = pickupRows.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const paid = payRows.reduce((s, e) => s + (e.amount || 0), 0);
+    const owed = hugoOwedNew();
+    const rows = [
+      { date: '—', desc: `<b>📌 期初欠款</b>(切换日快照)`, amount: opening },
+      ...pickupRows.map(e => ({
+        date: e.date,
+        desc: `<b style="color:var(--amber);">+ 取货应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)}`,
+        amount: (e.pallets || 0) * rate
+      })),
+      ...payRows.map(e => ({
+        date: e.date,
+        desc: `<b style="color:var(--green);">− 付 Hugo 现金</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`,
+        amount: -(e.amount || 0)
+      }))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '🧑 Hugo 应付 · 数据来源',
+      sub: `期初 £${fmt0(opening)} + 累计 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
+      formula: `<div><span class="k">期初(切换日)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 切换后累计应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accrued)}</span></div>
+                <div><span class="k">− 已付现金</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paid)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>还欠 Hugo</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(owed)}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-month' && isNewMode()) {
+    const ym = new Date().toISOString().slice(0, 7);
+    const mp = monthPalletsNew(ym);
+    const rate = state.params.hugoCommission || 7;
+    const monthPickups = _newModeEvents().filter(e => e.type === 'pickup' && (e.date || '').startsWith(ym));
+    const rows = monthPickups.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => ({
+      date: e.date,
+      desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''} · <b style="color:${(e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk') ? 'var(--pink)' : '#67e8f9'};">${(e.pickedUpBy || (e.createdBy === 'emma@maomail.uk' ? 'Emma' : 'Michael'))}</b>`,
+      amount: e.pallets || 0
+    }));
+    return {
+      title: '📦 本月托盘 · 数据来源',
+      sub: `${ym} · Michael ${mp.michael} 托 · Emma ${mp.emma} 托 · 合计 ${mp.total} 托`,
+      formula: `<div><span class="k">Michael 取</span><span class="v" style="float:right;color:#67e8f9;">${mp.michael} 托</span></div>
+                <div><span class="k">Emma 取</span><span class="v" style="float:right;color:var(--pink);">${mp.emma} 托</span></div>
+                ${mp.other ? `<div><span class="k">未知</span><span class="v" style="float:right;color:var(--text-dim);">${mp.other} 托</span></div>` : ''}
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>合计</b></span><span class="v total" style="float:right;">${mp.total} 托</span></div>
+                <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Hugo 应付:${mp.total} × £${rate} = £${fmt0(mp.total * rate)}</div>`,
+      rows
+    };
+  }
+
   if (key === 'hugo') {
     const m = hugoMath();
     const rows = [];
@@ -2433,6 +2891,27 @@ function renderSettings() {
   fillCompanyInfo();
   fillEmmaInfo();
   fillHugoInfo();
+  fillSssInfo();
+}
+
+// ============ SSS SUPPLIER INFO (Hong Kong company) ============
+function saveSssInfo() {
+  if (!state.sss) state.sss = {};
+  state.sss.name     = (document.getElementById('s-sss-name').value || '').trim();
+  state.sss.contact  = (document.getElementById('s-sss-contact').value || '').trim();
+  state.sss.phone    = (document.getElementById('s-sss-phone').value || '').trim();
+  state.sss.email    = (document.getElementById('s-sss-email').value || '').trim();
+  state.sss.address  = (document.getElementById('s-sss-address').value || '').trim();
+  state.sss.postcode = (document.getElementById('s-sss-postcode').value || '').trim();
+  state.sss.bank     = (document.getElementById('s-sss-bank').value || '').trim();
+  save();
+}
+function fillSssInfo() {
+  const s = state.sss || {};
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('s-sss-name', s.name); set('s-sss-contact', s.contact); set('s-sss-phone', s.phone);
+  set('s-sss-email', s.email); set('s-sss-address', s.address); set('s-sss-postcode', s.postcode);
+  set('s-sss-bank', s.bank);
 }
 
 // ============ COMPANY INFO (my business) ============
@@ -4261,8 +4740,179 @@ function switchView(name) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// =====================================================
+// ⚡ MODE SWITCH — OLD → NEW partnership accounting model
+// =====================================================
+// View mode (which UI to show in new mode):
+//   'new'     — show new KPIs + new forms (default after switch)
+//   'history' — show old KPIs + old transfer form (read-only history)
+let _viewMode = 'new';
+function setViewMode(m) {
+  _viewMode = m;
+  document.getElementById('btn-mode-new').classList.toggle('ghost', m !== 'new');
+  document.getElementById('btn-mode-history').classList.toggle('ghost', m === 'new');
+  renderModeVisibility();
+}
+function getViewMode() { return _viewMode; }
+
+// Render the visibility of switch banner / mode toggle / new vs old sections
+function renderModeVisibility() {
+  const banner = document.getElementById('mode-switch-banner');
+  const toggle = document.getElementById('mode-toggle');
+  const sub = document.getElementById('dash-sub');
+  const newDash = document.getElementById('new-mode-dashboard');
+  const oldDash = document.getElementById('old-mode-dashboard');
+  if (!state || !state.params) return;
+  if (isNewMode()) {
+    if (banner) banner.style.display = 'none';
+    if (toggle) toggle.style.display = '';
+    if (sub) sub.innerHTML = `新模式已启用 · 从 <b style="color:#c4b5fd;">${escapeHtml(newModeStartDate() || '')}</b> 起 · <span style="color:var(--green);">私人账</span>`;
+    // Show new dashboard when view='new', show old when view='history'
+    const showNew = (_viewMode === 'new');
+    if (newDash) newDash.style.display = showNew ? '' : 'none';
+    if (oldDash) oldDash.style.display = showNew ? 'none' : '';
+    if (showNew) renderNewModeKpis();
+  } else {
+    if (banner) banner.style.display = '';
+    if (toggle) toggle.style.display = 'none';
+    if (sub) sub.textContent = '共享工作区 · Michael · Emma · Hugo 都能看到同一份账';
+    if (newDash) newDash.style.display = 'none';
+    if (oldDash) oldDash.style.display = '';
+  }
+}
+
+// === Render the 5 new-mode KPI cards ===
+function renderNewModeKpis() {
+  if (!isNewMode()) return;
+  const buyPrice = state.params.buyPrice || 245;
+  const rate = state.params.hugoCommission || 7;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  // 1. Cash pool
+  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0;
+  for (const e of _newModeEvents()) {
+    if (e.type === 'in-emma') inEmma += (e.amount || 0);
+    else if (e.type === 'in-customer') inCustomerManual += (e.amount || 0);
+    else if (e.type === 'out-supplier') outSss += (e.amount || 0);
+    else if (e.type === 'out-hugo') outHugo += (e.amount || 0);
+  }
+  const inCustomerFromPersonal = customerDepositsSinceSwitch();
+  const inCustTotal = inCustomerFromPersonal + inCustomerManual;
+  const inflow = inEmma + inCustTotal;
+  const outflow = outSss + outHugo;
+  const pool = inflow - outflow;
+  set('nm-pool-value', fmt(pool));
+  set('nm-pool-inflow', fmt(inflow));
+  set('nm-pool-outflow', fmt(outflow));
+  set('nm-pool-inflow-sub', `客户 ${fmt(inCustTotal)} + Emma ${fmt(inEmma)}`);
+  set('nm-pool-outflow-sub', `SSS ${fmt(outSss)} + Hugo ${fmt(outHugo)}`);
+
+  // 2. SSS balance
+  const sss = sssBalance();
+  const sssEl = document.getElementById('nm-sss-value');
+  if (sssEl) {
+    sssEl.textContent = fmt(sss);
+    sssEl.style.color = sss < 0 ? 'var(--rose)' : (sss < buyPrice * 10 ? 'var(--amber)' : 'var(--green)');
+  }
+  set('nm-sss-sub', sss >= 0 ? `够拉 ${Math.floor(sss / buyPrice)} 托` : `透支 ${fmt(Math.abs(sss))}`);
+
+  // 3. Emma balance
+  const emma = emmaBalanceNew();
+  set('nm-emma-value', fmt(emma));
+  set('nm-emma-sub', emma >= 0 ? `她够拉 ${Math.floor(emma / buyPrice)} 托` : `她欠你 ${fmt(Math.abs(emma))}`);
+
+  // 4. Hugo owed
+  const opening = state.params.hugoOpeningOwed || 0;
+  const accrued = _newModeEvents().filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  const paid = _newModeEvents().filter(e => e.type === 'out-hugo').reduce((s, e) => s + (e.amount || 0), 0);
+  const hugo = hugoOwedNew();
+  const hugoEl = document.getElementById('nm-hugo-value');
+  if (hugoEl) {
+    hugoEl.textContent = fmt(hugo);
+    hugoEl.style.color = hugo > 0 ? 'var(--rose)' : 'var(--green)';
+  }
+  set('nm-hugo-sub', `期初 ${fmt(opening)} + 新累计 ${fmt(accrued)} − 已付 ${fmt(paid)}`);
+
+  // 5. Month pallets
+  const ym = new Date().toISOString().slice(0, 7);
+  const mp = monthPalletsNew(ym);
+  set('nm-month-value', mp.total);
+  set('nm-month-sub', `Michael ${mp.michael} · Emma ${mp.emma}${mp.other ? ' · 未知 ' + mp.other : ''}`);
+}
+
+// === Open mode switch confirmation modal ===
+function openModeSwitchModal() {
+  // Build preview snapshot
+  const m = (typeof hugoMath === 'function') ? hugoMath() : null;
+  const owedNow = m ? m.totalOwed : 0;
+  const emmaBalNow = (typeof balance === 'function') ? balance() : 0;
+  // Old pool remainder (what Emma still has of Hugo's money)
+  const poolBalance = m && m.mode === 'split' ? m.prepayBalance : 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const preview = document.getElementById('switch-preview');
+  if (preview) {
+    preview.innerHTML = `
+      <div><b>今天日期:</b> ${today}(将作为 partnershipNewModeDate)</div>
+      <div style="margin-top:6px;"><b>Hugo 期初欠款:</b> <span style="color:var(--rose);font-weight:700;">£${fmt(owedNow)}</span>(从现在的"Michael 待结算 Hugo"快照)</div>
+      <div style="margin-top:6px;"><b>Emma 旧余额:</b> £${fmt(emmaBalNow)}(Michael 在 Emma 那里的旧预付,新模式从 0 起步)</div>
+      <div style="margin-top:6px;"><b>Hugo 预付池剩余:</b> ${poolBalance >= 0 ? '£' : '−£'}${fmt(Math.abs(poolBalance))}${poolBalance > 0 ? '(Emma 还会还给你)' : (poolBalance < 0 ? '(已亏空,折进欠款)' : '')}</div>
+      ${poolBalance > 0 ? `<div style="margin-top:6px;color:var(--green);">✓ 自动新建 <code style="background:rgba(34,211,165,0.10);padding:1px 5px;border-radius:3px;">in-emma £${fmt(poolBalance)}</code> 事件 — Emma 还你池子剩余</div>` : ''}
+    `;
+  }
+  document.getElementById('mode-switch-modal').classList.add('open');
+}
+function closeModeSwitchModal() {
+  document.getElementById('mode-switch-modal').classList.remove('open');
+}
+
+// === Execute the switch (irreversible) ===
+async function executeModeSwitch() {
+  const btn = document.getElementById('mode-switch-confirm-btn');
+  const txt = document.getElementById('mode-switch-confirm-text');
+  btn.disabled = true; btn.style.opacity = '0.6'; txt.textContent = '切换中…';
+
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    // 1. Snapshot Hugo opening owed
+    const m = (typeof hugoMath === 'function') ? hugoMath() : null;
+    const hugoOpening = m ? m.totalOwed : 0;
+    // 2. Pool remainder → in-emma event (Emma returns it to Michael)
+    const poolBalance = m && m.mode === 'split' ? m.prepayBalance : 0;
+    if (poolBalance > 0) {
+      state.events.push({
+        id: crypto.randomUUID(),
+        type: 'in-emma',
+        date: today,
+        amount: poolBalance,
+        note: '切换新模式: Emma 返还旧 Hugo 预付池剩余',
+        pallets: null,
+        createdBy: currentEmail(),
+        createdAt: new Date().toISOString(),
+        _autoFromModeSwitch: true
+      });
+    }
+    // 3. Update state.params
+    state.params.partnershipMode = 'new';
+    state.params.partnershipNewModeDate = today;
+    state.params.hugoOpeningOwed = hugoOpening;
+    state.params.emmaOpeningCredit = 0;  // new mode starts fresh
+    state.params.sssOpeningCredit = 0;
+    // 4. Save + render
+    await saveUserDataNow();
+    _viewMode = 'new';
+    renderAll();
+    closeModeSwitchModal();
+    flash('✓ 已切换到新模式 · ' + today);
+  } catch (err) {
+    console.error('[mode-switch] failed:', err);
+    alert('切换失败: ' + (err.message || err));
+    btn.disabled = false; btn.style.opacity = ''; txt.textContent = '⚡ 立刻切换';
+  }
+}
+
 function renderAll() {
   document.getElementById('today-date').textContent = new Date().toISOString().slice(0, 10);
+  renderModeVisibility();  // show/hide banner + toggle
   renderKpis();
   renderTransfers();
   renderPickups();
