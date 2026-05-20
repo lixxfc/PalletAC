@@ -3206,9 +3206,10 @@ function renderPickups() {
   const body = all.map(r => {
     const cls = r.deleted ? ' class="row-deleted"' : '';
     const isMpick = isMichaelPickup(r);
-    // In new mode, show "改归属" button to flip pickup-by between Michael / Emma
+    // In new mode, show "改归属" + "重新同步" buttons
     const reassignBtn = (!r.deleted && isNewMode())
-      ? `<button class="btn sm ghost" onclick="reassignPickupOwner('${r.id}')" title="改归属(Michael ↔ Emma)" style="margin-right:4px;">${isMpick ? '→Emma' : '→Michael'}</button>`
+      ? `<button class="btn sm ghost" onclick="reassignPickupOwner('${r.id}')" title="改归属(Michael ↔ Emma)· 同时同步到个人 App" style="margin-right:4px;">${isMpick ? '→Emma' : '→Michael'}</button>` +
+        `<button class="btn sm ghost" onclick="resyncPickupToPersonal('${r.id}')" title="只同步到个人 App(不翻转)" style="margin-right:4px;">🔄</button>`
       : '';
     const btn = r.deleted
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
@@ -5624,6 +5625,92 @@ function delEvent(id) {
   save(); renderAll();
 }
 
+// Push a partnership pickup event's owner to personal_data dailySupply
+// (find the matching truck by linkSupplyId + type + pallets, split out to
+// a separate day record with the partnership event's pickedUpBy).
+// Returns { ok, error }
+async function _syncPickupOwnerToPersonal(ev) {
+  if (!currentUser || !currentUser.id) return { ok: false, error: '未登录' };
+  const targetOwner = isMichaelPickup(ev) ? 'Michael' : 'Emma';
+  try {
+    const { data: row, error: readErr } = await db
+      .from('personal_data')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (readErr) return { ok: false, error: readErr.message };
+    if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
+    const pdata = row.data;
+    if (!Array.isArray(pdata.dailySupply)) pdata.dailySupply = [];
+    const linkId = ev._linkSupplyId;
+    let foundDayRec = null;
+    let truck = null;
+    for (const dayRec of pdata.dailySupply) {
+      if (dayRec.date !== ev.date) continue;
+      if (!Array.isArray(dayRec.trucks)) continue;
+      const candidates = dayRec.trucks.filter(t => {
+        if (linkId && t._linkSupplyId === linkId) {
+          const typeMatch = (t.type === ev.palletType);
+          return typeMatch && t.pallets === ev.pallets;
+        }
+        if (!linkId) {
+          return t.type === ev.palletType && t.pallets === ev.pallets && (t.truckNum || '') === (ev.truck || '');
+        }
+        return false;
+      });
+      if (candidates.length === 0) continue;
+      foundDayRec = dayRec;
+      truck = candidates[0];
+      break;
+    }
+    if (!foundDayRec || !truck) return { ok: false, error: '个人账找不到对应卡车(date+type+pallets)' };
+    const currentOwner = foundDayRec.pickupBy || 'Michael';
+    if (currentOwner === targetOwner) {
+      return { ok: true, message: '已经是 ' + targetOwner + ',无需同步' };
+    }
+    // Move the truck to a record with targetOwner
+    foundDayRec.trucks = foundDayRec.trucks.filter(t => t !== truck);
+    let target = pdata.dailySupply.find(d => d.date === ev.date && (d.pickupBy || 'Michael') === targetOwner);
+    if (!target) {
+      target = {
+        id: crypto.randomUUID(),
+        date: ev.date,
+        pickupBy: targetOwner,
+        manualOverride: false,
+        trucks: [],
+        note: ''
+      };
+      pdata.dailySupply.push(target);
+    }
+    target.trucks.push(truck);
+    if (foundDayRec.trucks.length === 0) {
+      pdata.dailySupply = pdata.dailySupply.filter(d => d !== foundDayRec);
+    }
+    const { error: writeErr } = await db
+      .from('personal_data')
+      .update({ data: pdata, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id);
+    if (writeErr) return { ok: false, error: writeErr.message };
+    _personalCustomerCache = pdata;
+    return { ok: true, message: '已同步到个人 App: ' + targetOwner };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+// Just sync (no flip) — useful for fixing previously-reassigned events
+// that didn't get the personal_data update.
+async function resyncPickupToPersonal(id) {
+  const ev = state.events.find(e => e.id === id);
+  if (!ev || ev.type !== 'pickup') { flash('找不到取货记录'); return; }
+  const owner = isMichaelPickup(ev) ? 'Michael' : 'Emma';
+  if (!confirm(`把这条取货按合伙账的归属(${owner})同步到个人 App?\n\n${ev.pallets} 托 · ${ev.palletType || ''}\n\n如果个人 App 那边显示的归属不对,这能修复。`)) return;
+  const res = await _syncPickupOwnerToPersonal(ev);
+  if (res.ok) flash('✓ ' + (res.message || '同步成功'));
+  else alert('同步失败:' + res.error);
+  renderAll();
+}
+
 // Flip a pickup event's owner between Michael and Emma.
 // Used to correct mis-tagged pickups (e.g., the unified-entry bug where Emma's
 // pickup got merged into Michael's day record before the bug was fixed).
@@ -5648,86 +5735,14 @@ async function reassignPickupOwner(id) {
   ev._reassignedAt = new Date().toISOString();
   ev._reassignedBy = (currentUser && currentUser.email) || '?';
 
-  // 2) Cross-app: update personal_data dailySupply
-  let personalUpdateOk = false;
-  let personalUpdateErr = '';
-  try {
-    if (!currentUser || !currentUser.id) throw new Error('未登录');
-    const { data: row, error: readErr } = await db
-      .from('personal_data')
-      .select('data')
-      .eq('user_id', currentUser.id)
-      .maybeSingle();
-    if (readErr) throw new Error(readErr.message);
-    if (!row || !row.data) throw new Error('找不到 personal_data');
-    const pdata = row.data;
-    if (!Array.isArray(pdata.dailySupply)) pdata.dailySupply = [];
-    // Find day record containing trucks matching this event's linkSupplyId + type + pallets
-    const linkId = ev._linkSupplyId;
-    let foundDayRec = null;
-    let movedTrucks = [];
-    for (const dayRec of pdata.dailySupply) {
-      if (dayRec.date !== ev.date) continue;
-      if (!Array.isArray(dayRec.trucks)) continue;
-      // Match by linkSupplyId (preferred) + type + pallets
-      const matchPredicate = (t) => {
-        if (linkId && t._linkSupplyId === linkId) {
-          // Disambiguate within same linkId: same type + same pallets
-          const typeMatch = (t.type === ev.palletType) || (!ev.palletType && !t.type);
-          return typeMatch && t.pallets === ev.pallets;
-        }
-        // Fallback: match by type + pallets + truckNum (no linkId)
-        if (!linkId) {
-          return t.type === ev.palletType && t.pallets === ev.pallets && (t.truckNum || '') === (ev.truck || '');
-        }
-        return false;
-      };
-      const matches = dayRec.trucks.filter(matchPredicate);
-      if (matches.length === 0) continue;
-      // Take only the first match if multiple (rare)
-      const truck = matches[0];
-      foundDayRec = dayRec;
-      movedTrucks = [truck];
-      dayRec.trucks = dayRec.trucks.filter(t => t !== truck);
-      break;
-    }
-    if (!foundDayRec) throw new Error('个人账里找不到对应卡车(date+type+pallets)');
-    // Find or create target day record for new owner
-    let target = pdata.dailySupply.find(d => d.date === ev.date && (d.pickupBy || 'Michael') === newOwner);
-    if (!target) {
-      target = {
-        id: crypto.randomUUID(),
-        date: ev.date,
-        pickupBy: newOwner,
-        manualOverride: false,
-        trucks: [],
-        note: ''
-      };
-      pdata.dailySupply.push(target);
-    }
-    for (const t of movedTrucks) target.trucks.push(t);
-    // If source day record now has no trucks, remove it
-    if (foundDayRec.trucks.length === 0) {
-      pdata.dailySupply = pdata.dailySupply.filter(d => d !== foundDayRec);
-    }
-    // Write back
-    const { error: writeErr } = await db
-      .from('personal_data')
-      .update({ data: pdata, updated_at: new Date().toISOString() })
-      .eq('user_id', currentUser.id);
-    if (writeErr) throw new Error(writeErr.message);
-    _personalCustomerCache = pdata;  // refresh cache
-    personalUpdateOk = true;
-  } catch (e) {
-    personalUpdateErr = e.message || String(e);
-    console.warn('[reassign] personal_data sync failed:', e);
-  }
+  // 2) Cross-app: sync to personal_data (uses shared helper)
+  const syncRes = await _syncPickupOwnerToPersonal(ev);
 
   save(); renderAll();
-  if (personalUpdateOk) {
+  if (syncRes.ok) {
     flash('✓ 已改成 ' + newOwner + ' · 合伙账 + 个人账都已同步');
   } else {
-    flash('⚠ 合伙账已改成 ' + newOwner + ',但个人账同步失败: ' + personalUpdateErr);
+    flash('⚠ 合伙账已改成 ' + newOwner + ',但个人账同步失败: ' + syncRes.error);
   }
 }
 
