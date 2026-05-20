@@ -2229,10 +2229,15 @@ select option { background: var(--bg-2); color: var(--text); }
           <option value="Emma">Emma</option>
         </select>
       </div>
-      <div class="form-row"><label>默认客户 <span class="page-sub" style="font-size:10px;">(下面每车可单独改)</span></label>
+      <div class="form-row" id="se-default-customer-wrap"><label>默认客户 <span class="page-sub" style="font-size:10px;">(下面每车可单独改)</span></label>
         <select id="se-default-customer">
           <option value="">— 不分配(进库存)—</option>
         </select>
+      </div>
+      <div class="form-row" id="se-emma-mode-banner" style="display:none;grid-column:3/4;align-self:end;">
+        <div style="padding:10px 14px;background:rgba(244,114,182,0.10);border:1px solid rgba(244,114,182,0.30);border-radius:10px;font-size:11.5px;color:#f472b6;line-height:1.6;">
+          <b>🔁 Emma 模式</b> — 不分配你的客户,不开 INV。<br>仅记录托盘 → 合伙账,Emma 自己跟 Hugo / V / 她客户结算。
+        </div>
       </div>
     </div>
 
@@ -2259,8 +2264,8 @@ select option { background: var(--bg-2); color: var(--text); }
             <th style="width:74px;text-align:center;">托盘</th>
             <th style="width:90px;">车次</th>
             <th style="width:96px;text-align:center;">Swap?</th>
-            <th>客户</th>
-            <th style="width:120px;text-align:right;padding-right:14px;">该车金额</th>
+            <th class="se-col-customer">客户</th>
+            <th style="width:120px;text-align:right;padding-right:14px;" class="se-col-amount">该车金额</th>
             <th style="width:42px;"></th>
           </tr>
         </thead>
@@ -3268,6 +3273,7 @@ function openSmartEntry() {
   };
 
   renderSmartEntryTrucks();
+  applySmartEntryOwnerMode();   // hide customer column if default = Emma
   updateSmartEntryPreview();
   checkSmartEntryDayCollision();
   document.getElementById('smart-entry-modal').classList.add('open');
@@ -3295,13 +3301,41 @@ function onSmartEntryDateChange() {
       document.getElementById('se-pickup-by').value = rotationPickupBy(date);
     }
   } catch (e) {}
+  applySmartEntryOwnerMode();
   checkSmartEntryDayCollision();
   updateSmartEntryPreview();
 }
 
 function onSmartEntryOwnerChange() {
+  applySmartEntryOwnerMode();
   checkSmartEntryDayCollision();
   updateSmartEntryPreview();
+}
+
+// Toggle customer column visibility based on pickup owner
+function applySmartEntryOwnerMode() {
+  const owner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
+  const isEmma = (owner === 'Emma');
+  // Show/hide default customer wrap and Emma banner
+  const wrap = document.getElementById('se-default-customer-wrap');
+  const banner = document.getElementById('se-emma-mode-banner');
+  if (wrap) wrap.style.display = isEmma ? 'none' : '';
+  if (banner) banner.style.display = isEmma ? '' : 'none';
+  // When Emma picks up, clear all customer assignments
+  if (isEmma) {
+    for (const t of _seTrucks) {
+      t.customerId = '';
+      t._customerLocked = true;  // don't auto-default again
+    }
+  }
+  // Show / hide customer column (header + cells + total)
+  document.querySelectorAll('.se-col-customer, .se-col-amount').forEach(el => {
+    el.style.display = isEmma ? 'none' : '';
+  });
+  // Update footer label
+  const lbl = document.querySelector('#se-total-amount');
+  if (lbl) lbl.style.display = isEmma ? 'none' : '';
+  renderSmartEntryTrucks();
 }
 
 // Warn if existing dailySupply record for this date has a different pickupBy
@@ -3391,12 +3425,12 @@ function renderSmartEntryTrucks() {
           <span style="color:${t.isSwap ? 'var(--pink)' : 'var(--text-dim)'};font-weight:${t.isSwap ? '700' : '500'};white-space:nowrap;">${t.isSwap ? '🔁 SWAP' : '保留'}</span>
         </label>
       </td>
-      <td style="padding:10px 8px;">
+      <td style="padding:10px 8px;" class="se-col-customer">
         <select onchange="updateSmartEntryTruck(${idx}, 'customerId', this.value)" style="width:100%;padding:7px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.22);border-radius:7px;color:var(--text);font-size:12px;">
           ${custOptions(t.customerId)}
         </select>
       </td>
-      <td style="padding:10px 14px 10px 8px;font-variant-numeric:tabular-nums;text-align:right;">
+      <td style="padding:10px 14px 10px 8px;font-variant-numeric:tabular-nums;text-align:right;" class="se-col-amount">
         <div style="font-size:13px;font-weight:700;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};line-height:1.2;">
           ${t.customerId ? fmt(amount) : '—'}
         </div>
