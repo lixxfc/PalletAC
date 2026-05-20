@@ -2462,8 +2462,9 @@ select option { background: var(--bg-2); color: var(--text); }
       <table>
         <thead>
           <tr>
-            <th style="width:110px;">类型</th>
-            <th style="width:90px;">托盘数</th>
+            <th style="width:100px;">类型</th>
+            <th style="width:80px;">托盘数</th>
+            <th style="width:120px;">归属</th>
             <th>Swap?</th>
             <th>备注</th>
             <th style="width:50px;"></th>
@@ -2473,9 +2474,8 @@ select option { background: var(--bg-2); color: var(--text); }
       </table>
     </div>
     <div class="page-sub" style="font-size:11px;margin-top:8px;line-height:1.6;">
-      💡 Swap 含义:勾上后表示这辆车<b>换给了对方</b>。<br>
-      &nbsp;&nbsp;Emma 取货日 + TT + Swap = Emma 把这车 TT 换给 Michael(Michael 欠 Emma 1 车 AMAZON)<br>
-      &nbsp;&nbsp;Michael 取货日 + AMAZON + Swap = Michael 把这车 AMAZON 给 Emma(欠款 -1)
+      💡 <b>归属</b>:可以单独改每车归 Michael / Emma — 保存后系统自动拆成独立记录(同一天可以有 Michael + Emma 各自的记录)。<br>
+      💡 Swap 含义:勾上后表示这辆车<b>换给了对方</b>。
     </div>
 
     <div class="form-grid mt-4">
@@ -8940,28 +8940,29 @@ function ensureSupplyArray() { if (!Array.isArray(state.dailySupply)) state.dail
 // Returns count of records that were merged away.
 function consolidateDailySupplyDuplicates() {
   ensureSupplyArray();
-  const byDate = {};
+  // IMPORTANT: dedupe by (date + pickupBy) — NOT just date.
+  // Same date with different owners is INTENTIONAL (one record per owner).
+  const byKey = {};
   let mergedCount = 0;
   for (const day of state.dailySupply) {
     if (!day.date) continue;
-    if (!byDate[day.date]) {
-      byDate[day.date] = day;
+    const owner = day.pickupBy || 'Michael';
+    const key = day.date + '|' + owner;
+    if (!byKey[key]) {
+      byKey[key] = day;
     } else {
-      // Merge this day's trucks into the existing primary record
-      const primary = byDate[day.date];
+      const primary = byKey[key];
       primary.trucks = (primary.trucks || []).concat(day.trucks || []);
-      // Append note (preserve both if different)
       if (day.note && day.note !== primary.note) {
         primary.note = (primary.note ? primary.note + ' · ' : '') + day.note;
       }
-      // Mark this duplicate for removal
       day._toRemove = true;
       mergedCount++;
     }
   }
   if (mergedCount > 0) {
     state.dailySupply = state.dailySupply.filter(d => !d._toRemove);
-    console.log(`[supply] Merged ${mergedCount} duplicate day record(s)`);
+    console.log(`[supply] Merged ${mergedCount} duplicate (date+owner) record(s)`);
   }
   return mergedCount;
 }
@@ -9701,12 +9702,16 @@ function onSupplyOwnerChange() {
 function renderSupplyTrucks() {
   const tb = document.getElementById('sup-trucks-body');
   if (!tb) return;
-  const owner = document.getElementById('sup-pickup-by') ? document.getElementById('sup-pickup-by').value : 'Michael';
+  const dayOwner = document.getElementById('sup-pickup-by') ? document.getElementById('sup-pickup-by').value : 'Michael';
   tb.innerHTML = supplyDraftTrucks.map((tr, idx) => {
+    // Per-truck owner override (falls back to day's owner if not set)
+    const truckOwner = tr.pickedUpBy || dayOwner;
     const swapHint = tr.swapped
-      ? (owner === 'Emma' ? '换给 Michael' : '换给 Emma')
+      ? (truckOwner === 'Emma' ? '换给 Michael' : '换给 Emma')
       : '保留';
-    return `<tr>
+    const isOverride = (truckOwner !== dayOwner);
+    const ownerColor = truckOwner === 'Emma' ? '#f472b6' : '#67e8f9';
+    return `<tr style="${isOverride ? 'background:rgba(244,114,182,0.04);' : ''}">
       <td>
         <select onchange="updateSupplyTruck(${idx}, 'type', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;">
           <option value="TT" ${tr.type === 'TT' ? 'selected' : ''}>TT</option>
@@ -9714,6 +9719,12 @@ function renderSupplyTrucks() {
         </select>
       </td>
       <td><input type="number" min="0" value="${parseInt(tr.pallets) || 0}" oninput="updateSupplyTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.2);border-radius:6px;color:var(--text);font-size:12px;"></td>
+      <td>
+        <select onchange="updateSupplyTruck(${idx}, 'pickedUpBy', this.value)" style="width:100%;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid ${isOverride ? 'rgba(244,114,182,0.40)' : 'rgba(139,150,255,0.2)'};border-radius:6px;color:${ownerColor};font-size:12px;font-weight:${isOverride ? '700' : '500'};">
+          <option value="Michael" ${truckOwner === 'Michael' ? 'selected' : ''}>Michael</option>
+          <option value="Emma" ${truckOwner === 'Emma' ? 'selected' : ''}>Emma</option>
+        </select>
+      </td>
       <td>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
           <input type="checkbox" ${tr.swapped ? 'checked' : ''} onchange="toggleSupplyTruckSwap(${idx}, this.checked)">
@@ -9730,6 +9741,8 @@ function updateSupplyTruck(idx, field, val) {
   if (!supplyDraftTrucks[idx]) return;
   if (field === 'pallets') supplyDraftTrucks[idx][field] = parseInt(val) || 0;
   else supplyDraftTrucks[idx][field] = val;
+  // Re-render if pickedUpBy changed so the row styling updates
+  if (field === 'pickedUpBy') renderSupplyTrucks();
 }
 function toggleSupplyTruckSwap(idx, checked) {
   if (!supplyDraftTrucks[idx]) return;
@@ -9755,49 +9768,169 @@ function removeSupplyTruck(idx) {
 function saveSupply() {
   ensureSupplyArray();
   const date = document.getElementById('sup-date').value;
-  const pickupBy = document.getElementById('sup-pickup-by').value;
+  const dayPickupBy = document.getElementById('sup-pickup-by').value;
   const note = document.getElementById('sup-day-note').value.trim();
   if (!date) { alert('请填写日期'); return; }
-  const trucks = supplyDraftTrucks
+  const rawTrucks = supplyDraftTrucks
     .filter(t => parseInt(t.pallets) > 0)
-    .map(t => ({ type: t.type, pallets: parseInt(t.pallets) || 0, swapped: !!t.swapped, note: (t.note || '').trim() }));
-  if (!trucks.length) { alert('请至少加一辆有托盘的车'); return; }
+    .map(t => ({
+      type: t.type,
+      pallets: parseInt(t.pallets) || 0,
+      swapped: !!t.swapped,
+      note: (t.note || '').trim(),
+      pickedUpBy: t.pickedUpBy || dayPickupBy,   // resolve to per-truck owner
+      _linkSupplyId: t._linkSupplyId             // PRESERVE link for cross-app sync
+    }));
+  if (!rawTrucks.length) { alert('请至少加一辆有托盘的车'); return; }
+  // Capture for cross-app sync — push owner changes to partnership events after save
+  const trucksToSyncToPartnership = rawTrucks
+    .filter(t => t._linkSupplyId)
+    .map(t => ({ _linkSupplyId: t._linkSupplyId, type: t.type, pallets: t.pallets, newOwner: t.pickedUpBy, date }));
+
+  // Group trucks by their effective owner (so we can split into separate day records)
+  const buckets = {};
+  for (const t of rawTrucks) {
+    const owner = t.pickedUpBy || dayPickupBy;
+    if (!buckets[owner]) buckets[owner] = [];
+    // Strip the pickedUpBy field — it's expressed by which bucket the truck belongs to
+    const { pickedUpBy, ...truckPayload } = t;
+    buckets[owner].push(truckPayload);
+  }
+  const ownerList = Object.keys(buckets);
   const auto = rotationPickupBy(date);
-  const manualOverride = (pickupBy !== auto);
 
   if (editingSupplyId) {
+    // Editing an existing record — handle 3 cases:
+    // (a) All trucks are still one owner = update in place
+    // (b) Trucks are split across owners = update current record + push new records for other owners
     const day = state.dailySupply.find(d => d.id === editingSupplyId);
     if (!day) { closeSupplyEditor(); return; }
-    day.date = date;
-    day.pickupBy = pickupBy;
-    day.manualOverride = manualOverride;
-    day.trucks = trucks;
-    day.note = note;
-    day.updatedAt = new Date().toISOString();
-  } else {
-    // Check if a record already exists for this date — if so, MERGE into it
-    const existing = state.dailySupply.find(d => d.date === date && d.id !== editingSupplyId);
-    if (existing) {
-      const ok = confirm(`这个日期(${date})已经有一条记录(${(existing.trucks||[]).length} 辆车)。\n\n选 OK = 把这次的车合并到那条记录里(推荐)\n选 取消 = 不保存,你去编辑那条已有的记录`);
-      if (!ok) { return; }
-      existing.trucks = (existing.trucks || []).concat(trucks);
-      if (note && note !== existing.note) {
-        existing.note = (existing.note ? existing.note + ' · ' : '') + note;
-      }
-      existing.updatedAt = new Date().toISOString();
+    if (ownerList.length === 1) {
+      const owner = ownerList[0];
+      day.date = date;
+      day.pickupBy = owner;
+      day.manualOverride = (owner !== auto);
+      day.trucks = buckets[owner];
+      day.note = note;
+      day.updatedAt = new Date().toISOString();
     } else {
-      state.dailySupply.push({
-        id: crypto.randomUUID(),
-        date, pickupBy, manualOverride, trucks, note,
-        createdAt: new Date().toISOString()
-      });
+      // Split: keep the editing record for the day's primary owner (if any trucks of that owner),
+      // create separate records for other owners. If primary owner has 0 trucks, drop the record.
+      const primary = dayPickupBy;
+      if (buckets[primary] && buckets[primary].length) {
+        day.date = date;
+        day.pickupBy = primary;
+        day.manualOverride = (primary !== auto);
+        day.trucks = buckets[primary];
+        day.note = note;
+        day.updatedAt = new Date().toISOString();
+        delete buckets[primary];
+      } else {
+        // Primary has no trucks now — remove this record
+        state.dailySupply = state.dailySupply.filter(d => d.id !== editingSupplyId);
+      }
+      // For remaining owners, merge into existing same-(date,owner) record or create new
+      for (const owner in buckets) {
+        let target = state.dailySupply.find(d => d.date === date && (d.pickupBy || 'Michael') === owner);
+        if (target) {
+          target.trucks = (target.trucks || []).concat(buckets[owner]);
+          target.updatedAt = new Date().toISOString();
+        } else {
+          state.dailySupply.push({
+            id: crypto.randomUUID(),
+            date,
+            pickupBy: owner,
+            manualOverride: (owner !== auto),
+            trucks: buckets[owner],
+            note: '',
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+  } else {
+    // New: for each owner bucket, find existing matching (date,owner) record or create
+    for (const owner of ownerList) {
+      const existing = state.dailySupply.find(d => d.date === date && (d.pickupBy || 'Michael') === owner);
+      if (existing) {
+        existing.trucks = (existing.trucks || []).concat(buckets[owner]);
+        if (note && note !== existing.note) {
+          existing.note = (existing.note ? existing.note + ' · ' : '') + note;
+        }
+        existing.updatedAt = new Date().toISOString();
+      } else {
+        state.dailySupply.push({
+          id: crypto.randomUUID(),
+          date,
+          pickupBy: owner,
+          manualOverride: (owner !== auto),
+          trucks: buckets[owner],
+          note: (owner === dayPickupBy) ? note : '',
+          createdAt: new Date().toISOString()
+        });
+      }
     }
   }
   // Defensive: consolidate any lingering duplicates (no-op if none)
   consolidateDailySupplyDuplicates();
   save(); renderAll();
   closeSupplyEditor();
-  flash(editingSupplyId ? '供货记录已更新' : '供货记录已保存');
+  flash(ownerList.length > 1 ? `已保存 · 拆分成 ${ownerList.length} 条独立记录(各自归属)` : (editingSupplyId ? '供货记录已更新' : '供货记录已保存'));
+  // === Cross-app sync: push truck owner changes to partnership_data events ===
+  if (trucksToSyncToPartnership.length) {
+    pushTruckOwnersToPartnership(trucksToSyncToPartnership)
+      .then(res => {
+        if (res.changed > 0) flash('✓ 已同步 ' + res.changed + ' 辆车归属到合伙账');
+      })
+      .catch(e => console.warn('[supply → partnership sync] failed:', e));
+  }
+}
+
+// Push truck-owner changes from personal supply editor into partnership_data events.
+// Matches each truck by (date + _linkSupplyId + palletType + pallets).
+async function pushTruckOwnersToPartnership(trucks) {
+  if (!currentUser) return { changed: 0 };
+  try {
+    const { data: row, error: readErr } = await db
+      .from('partnership_data')
+      .select('data')
+      .eq('workspace_id', 'main')
+      .maybeSingle();
+    if (readErr || !row || !row.data) return { changed: 0 };
+    const pdata = row.data;
+    if (!Array.isArray(pdata.events)) return { changed: 0 };
+    let changed = 0;
+    for (const t of trucks) {
+      const ev = pdata.events.find(e =>
+        e.type === 'pickup' &&
+        !e.deleted &&
+        e._linkSupplyId === t._linkSupplyId &&
+        e.palletType === t.type &&
+        e.pallets === t.pallets &&
+        e.date === t.date
+      );
+      if (!ev) continue;
+      const currentOwner = (ev.pickedUpBy === 'Emma' || (ev.createdBy || '').toLowerCase() === 'emma@maomail.uk') ? 'Emma' : 'Michael';
+      if (currentOwner === t.newOwner) continue;
+      ev.pickedUpBy = t.newOwner;
+      ev.createdBy = (t.newOwner === 'Emma') ? 'emma@maomail.uk' : 'harreds.ceo@gmail.com';
+      ev.updatedAt = new Date().toISOString();
+      ev._ownerSyncedFromPersonal = true;
+      ev._reassignedAt = new Date().toISOString();
+      changed++;
+    }
+    if (changed > 0) {
+      const { error: writeErr } = await db
+        .from('partnership_data')
+        .update({ data: pdata, updated_at: new Date().toISOString() })
+        .eq('workspace_id', 'main');
+      if (writeErr) { console.warn('[partnership write]', writeErr); return { changed: 0 }; }
+    }
+    return { changed };
+  } catch (e) {
+    console.warn('[pushTruckOwnersToPartnership]', e);
+    return { changed: 0 };
+  }
 }
 
 function deleteSupply(id) {
