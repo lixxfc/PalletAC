@@ -1087,6 +1087,46 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           </div>
         </div>
 
+        <!-- 1b. SSS pool allocation breakdown — Michael's vs Emma's portion -->
+        <div class="card mb-4" style="background:linear-gradient(135deg,rgba(196,181,253,0.06),rgba(244,114,182,0.04));border:1px solid rgba(196,181,253,0.25);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span style="font-size:18px;">🏭</span>
+            <div style="font-size:13px;font-weight:800;color:#c4b5fd;letter-spacing:0.4px;">SSS 池分配明细</div>
+            <span class="badge" style="background:rgba(196,181,253,0.18);color:#c4b5fd;font-size:9px;">谁的钱用了多少 · 还剩多少</span>
+            <span style="font-size:11px;color:var(--mute-2);margin-left:auto;">总池 <b style="color:var(--text);font-variant-numeric:tabular-nums;" id="nm-sss-total">£0</b></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <!-- Michael's share -->
+            <div id="nm-sss-michael-card" style="padding:14px 16px;background:rgba(34,211,165,0.04);border:1px solid rgba(34,211,165,0.22);border-radius:10px;position:relative;cursor:pointer;" onclick="openDrilldown('nm-sss-michael')">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:14px;">🤴</span>
+                <div style="font-size:11px;font-weight:700;color:var(--green);letter-spacing:0.5px;text-transform:uppercase;">我的 SSS 份额</div>
+              </div>
+              <div id="nm-sss-michael-value" style="font-size:26px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;letter-spacing:-0.5px;">£0</div>
+              <div id="nm-sss-michael-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">够拉 0 托</div>
+              <div id="nm-sss-michael-detail" style="font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.7;padding-top:8px;border-top:1px dashed rgba(34,211,165,0.18);">
+                <div style="display:flex;justify-content:space-between;"><span>转入(我出资)</span><span style="font-variant-numeric:tabular-nums;color:var(--green);" id="nm-sss-michael-in">£0</span></div>
+                <div style="display:flex;justify-content:space-between;"><span>已取(我的取货)</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-michael-used">£0</span></div>
+              </div>
+              <div id="nm-sss-michael-warn" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);border-radius:6px;font-size:10.5px;color:var(--amber);"></div>
+            </div>
+            <!-- Emma's share -->
+            <div id="nm-sss-emma-card" style="padding:14px 16px;background:rgba(244,114,182,0.04);border:1px solid rgba(244,114,182,0.22);border-radius:10px;position:relative;cursor:pointer;" onclick="openDrilldown('nm-sss-emma')">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:14px;">👩</span>
+                <div style="font-size:11px;font-weight:700;color:var(--pink);letter-spacing:0.5px;text-transform:uppercase;">Emma 的 SSS 份额</div>
+              </div>
+              <div id="nm-sss-emma-value" style="font-size:26px;font-weight:800;color:var(--pink);font-variant-numeric:tabular-nums;letter-spacing:-0.5px;">£0</div>
+              <div id="nm-sss-emma-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">她够拉 0 托</div>
+              <div id="nm-sss-emma-detail" style="font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.7;padding-top:8px;border-top:1px dashed rgba(244,114,182,0.18);">
+                <div style="display:flex;justify-content:space-between;"><span>转入(Emma 转给我)</span><span style="font-variant-numeric:tabular-nums;color:var(--green);" id="nm-sss-emma-in">£0</span></div>
+                <div style="display:flex;justify-content:space-between;"><span>已取(Emma 取货)</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-emma-used">£0</span></div>
+              </div>
+              <div id="nm-sss-emma-warn" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);border-radius:6px;font-size:10.5px;color:var(--amber);"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- 2-5. 4 KPI cards: SSS / Emma / Hugo / 本月托盘 -->
         <div class="kpi-grid" id="nm-kpi-grid">
           <div class="kpi v3" data-drilldown="nm-sss">
@@ -2105,6 +2145,35 @@ function sssBalance() {
   return opening + paid - used;
 }
 
+// === Per-party SSS allocation (new mode) ===
+// Emma's share = her transfers since switch − her pickups × £245
+// Michael's share = SSS total pool − Emma's share
+// (Emma's £5,145 pre-switch debt is tracked separately on the Emma balance card)
+function emmaSssShare() {
+  if (!isNewMode()) return 0;
+  const buyPrice = state.params.buyPrice || 245;
+  let inAmt = 0, usedAmt = 0;
+  for (const e of _newModeEvents()) {
+    if (e.type === 'in-emma') inAmt += (e.amount || 0);
+    else if (e.type === 'pickup' && !isMichaelPickup(e)) usedAmt += (e.pallets || 0) * buyPrice;
+  }
+  return { in: inAmt, used: usedAmt, remaining: inAmt - usedAmt };
+}
+function michaelSssShare() {
+  if (!isNewMode()) return 0;
+  const buyPrice = state.params.buyPrice || 245;
+  const opening = state.params.sssOpeningCredit || 0;
+  let outSupplier = 0, inEmma = 0, michaelUsed = 0;
+  for (const e of _newModeEvents()) {
+    if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
+    else if (e.type === 'in-emma') inEmma += (e.amount || 0);
+    else if (e.type === 'pickup' && isMichaelPickup(e)) michaelUsed += (e.pallets || 0) * buyPrice;
+  }
+  // Michael's in = opening + (out-supplier - Emma's contribution that flowed through to SSS)
+  const inAmt = opening + outSupplier - inEmma;
+  return { in: inAmt, used: michaelUsed, remaining: inAmt - michaelUsed };
+}
+
 // 3. Emma balance at Michael = her transfers − her pickups × buyPrice
 function emmaBalanceNew() {
   const evs = _newModeEvents();
@@ -2661,6 +2730,53 @@ function buildDrilldownData(key) {
       formula: `<div><span class="k">入金合计</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(cashPoolBalance() + cashFlow.filter(e=>e.type.startsWith('out')).reduce((s,e)=>s+(e.amount||0),0) + 0)}</span></div>
                 <div><span class="k">出金合计</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(cashFlow.filter(e=>e.type.startsWith('out')).reduce((s,e)=>s+(e.amount||0),0))}</span></div>
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>资金池余额</b></span><span class="v total" style="float:right;color:var(--green);">£${fmt0(cashPoolBalance())}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-sss-michael' && isNewMode()) {
+    const buyPrice = state.params.buyPrice || 245;
+    const opening = state.params.sssOpeningCredit || 0;
+    const outSupplier = _newModeEvents().filter(e => e.type === 'out-supplier');
+    const outSupplierSum = outSupplier.reduce((s,e) => s + (e.amount || 0), 0);
+    const inEmmaSum = _newModeEvents().filter(e => e.type === 'in-emma').reduce((s,e) => s + (e.amount || 0), 0);
+    const michaelPicks = _newModeEvents().filter(e => e.type === 'pickup' && isMichaelPickup(e));
+    const michaelUsed = michaelPicks.reduce((s,e) => s + (e.pallets || 0) * buyPrice, 0);
+    const mShare = michaelSssShare();
+    const rows = [
+      { date: '—', desc: `<b>📌 SSS 期初(切换日)</b>`, amount: opening },
+      ...outSupplier.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ 付 SSS</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
+      ..._newModeEvents().filter(e => e.type === 'in-emma').map(e => ({ date: e.date, desc: `<b style="color:var(--rose);opacity:0.7;">− Emma 那部分(转走的)</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) })),
+      ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '🤴 我的 SSS 份额 · 数据来源',
+      sub: mShare.remaining >= 0 ? `转入 £${fmt0(mShare.in)} · 已取 £${fmt0(mShare.used)} · 还能拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt0(Math.abs(mShare.remaining))}`,
+      formula: `<div><span class="k">期初(我的 SSS)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 累计付 SSS(全部)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(outSupplierSum)}</span></div>
+                <div><span class="k">− Emma 那部分(她转给我的钱)</span><span class="v" style="float:right;color:var(--mute-2);">−£${fmt0(inEmmaSum)}</span></div>
+                <div><span class="k">− 我自己取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(michaelUsed)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>我的 SSS 份额</b></span><span class="v total" style="float:right;color:${mShare.remaining < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.remaining)}</span></div>`,
+      rows
+    };
+  }
+
+  if (key === 'nm-sss-emma' && isNewMode()) {
+    const buyPrice = state.params.buyPrice || 245;
+    const inEmmaEvents = _newModeEvents().filter(e => e.type === 'in-emma');
+    const emmaPicks = _newModeEvents().filter(e => e.type === 'pickup' && !isMichaelPickup(e));
+    const eShare = emmaSssShare();
+    const rows = [
+      ...inEmmaEvents.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ Emma 转给我</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
+      ...emmaPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return {
+      title: '👩 Emma 的 SSS 份额 · 数据来源',
+      sub: eShare.remaining >= 0 ? `她转入 £${fmt0(eShare.in)} · 她取 £${fmt0(eShare.used)} · 她还能拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `Emma 份额透支 £${fmt0(Math.abs(eShare.remaining))}`,
+      formula: `<div><span class="k">+ 累计 Emma 转给我(切换后)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(eShare.in)}</span></div>
+                <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(eShare.used)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 的 SSS 份额</b></span><span class="v total" style="float:right;color:${eShare.remaining < 0 ? 'var(--rose)' : 'var(--pink)'};">£${fmt0(eShare.remaining)}</span></div>
+                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">注:Emma 切换前的 £${fmt0(state.params.emmaOpeningCredit || 0)} 是你跟她之间的<b style="color:#c4b5fd;">个人欠款</b>(在 "Emma 余额" 卡片追踪),不算入 SSS 池份额。</div>`,
       rows
     };
   }
@@ -5832,6 +5948,61 @@ function renderNewModeKpis() {
     sssEl.style.color = sss < 0 ? 'var(--rose)' : (sss < buyPrice * 10 ? 'var(--amber)' : 'var(--green)');
   }
   set('nm-sss-sub', sss >= 0 ? `够拉 ${Math.floor(sss / buyPrice)} 托` : `透支 ${fmt(Math.abs(sss))}`);
+
+  // 2b. SSS pool allocation (Michael vs Emma)
+  set('nm-sss-total', '£' + fmt(sss));
+  const mShare = michaelSssShare();
+  const eShare = emmaSssShare();
+  const WARN_THRESH = buyPrice * 5;   // < 5 pallets remaining = warn
+  const LOW_THRESH = buyPrice * 10;   // < 10 pallets = caution
+  // Michael's card
+  const mValEl = document.getElementById('nm-sss-michael-value');
+  if (mValEl) {
+    mValEl.textContent = fmt(mShare.remaining);
+    mValEl.style.color = mShare.remaining < 0 ? 'var(--rose)' : (mShare.remaining < WARN_THRESH ? 'var(--amber)' : 'var(--green)');
+  }
+  set('nm-sss-michael-sub', mShare.remaining >= 0 ? `够拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt(Math.abs(mShare.remaining))}`);
+  set('nm-sss-michael-in', '£' + fmt(mShare.in));
+  set('nm-sss-michael-used', '−£' + fmt(mShare.used));
+  const mWarn = document.getElementById('nm-sss-michael-warn');
+  if (mWarn) {
+    if (mShare.remaining < 0) {
+      mWarn.style.display = ''; mWarn.style.background = 'rgba(244,63,94,0.10)'; mWarn.style.borderColor = 'rgba(244,63,94,0.30)'; mWarn.style.color = 'var(--rose)';
+      mWarn.innerHTML = `🚨 <b>你的份额已透支 £${fmt(Math.abs(mShare.remaining))}</b> — 需要再付 SSS 补充`;
+    } else if (mShare.remaining < WARN_THRESH) {
+      mWarn.style.display = ''; mWarn.style.background = 'rgba(251,113,133,0.10)'; mWarn.style.borderColor = 'rgba(251,113,133,0.30)'; mWarn.style.color = 'var(--rose)';
+      mWarn.innerHTML = `⚠ <b>你的份额不足 5 托</b> — 该续款给 SSS 了`;
+    } else if (mShare.remaining < LOW_THRESH) {
+      mWarn.style.display = ''; mWarn.style.background = 'rgba(251,191,36,0.10)'; mWarn.style.borderColor = 'rgba(251,191,36,0.30)'; mWarn.style.color = 'var(--amber)';
+      mWarn.innerHTML = `💡 你的份额低于 10 托,可以考虑续款了`;
+    } else {
+      mWarn.style.display = 'none';
+    }
+  }
+  // Emma's card
+  const eValEl = document.getElementById('nm-sss-emma-value');
+  if (eValEl) {
+    eValEl.textContent = fmt(eShare.remaining);
+    eValEl.style.color = eShare.remaining < 0 ? 'var(--rose)' : (eShare.remaining < WARN_THRESH ? 'var(--amber)' : 'var(--pink)');
+  }
+  set('nm-sss-emma-sub', eShare.remaining >= 0 ? `她够拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `她透支 £${fmt(Math.abs(eShare.remaining))}`);
+  set('nm-sss-emma-in', '£' + fmt(eShare.in));
+  set('nm-sss-emma-used', '−£' + fmt(eShare.used));
+  const eWarn = document.getElementById('nm-sss-emma-warn');
+  if (eWarn) {
+    if (eShare.remaining < 0) {
+      eWarn.style.display = ''; eWarn.style.background = 'rgba(244,63,94,0.10)'; eWarn.style.borderColor = 'rgba(244,63,94,0.30)'; eWarn.style.color = 'var(--rose)';
+      eWarn.innerHTML = `🚨 <b>Emma 份额已透支 £${fmt(Math.abs(eShare.remaining))}</b> — 提醒她再转账`;
+    } else if (eShare.remaining < WARN_THRESH) {
+      eWarn.style.display = ''; eWarn.style.background = 'rgba(251,113,133,0.10)'; eWarn.style.borderColor = 'rgba(251,113,133,0.30)'; eWarn.style.color = 'var(--rose)';
+      eWarn.innerHTML = `⚠ <b>Emma 份额不足 5 托</b> — 该让她续款了`;
+    } else if (eShare.remaining < LOW_THRESH) {
+      eWarn.style.display = ''; eWarn.style.background = 'rgba(251,191,36,0.10)'; eWarn.style.borderColor = 'rgba(251,191,36,0.30)'; eWarn.style.color = 'var(--amber)';
+      eWarn.innerHTML = `💡 Emma 份额低于 10 托,提示她续款`;
+    } else {
+      eWarn.style.display = 'none';
+    }
+  }
 
   // 3. Emma balance
   const emma = emmaBalanceNew();
