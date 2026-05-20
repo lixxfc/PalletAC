@@ -11041,7 +11041,9 @@ async function enterApp(session) {
     setSyncStatus('error');
   }
   try {
-    document.getElementById('d-date').value = new Date().toISOString().slice(0, 10);
+    // d-date may not exist (新增出货 form is locked in new mode); null-check it
+    const dDate = document.getElementById('d-date');
+    if (dDate) dDate.value = new Date().toISOString().slice(0, 10);
     renderAll();
   } catch (err) {
     console.error('[pallet] render failed:', err);
