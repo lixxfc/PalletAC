@@ -1190,7 +1190,20 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
 
       <!-- ============ NEW MODE: 3 entry cards ============ -->
       <div id="transfer-new-mode" style="display:none;">
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:18px;">
+        <!-- Lockout banner — directs to unified entry in personal app -->
+        <div id="transfer-lockout-banner" style="display:none;margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(0,229,255,0.06));border:1px solid rgba(139,92,246,0.30);border-radius:12px;">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div style="font-size:22px;">🔒</div>
+            <div style="flex:1;min-width:240px;">
+              <div style="font-size:13px;font-weight:700;color:#c4b5fd;">新模式 · 资金流统一去个人 App 录入</div>
+              <div style="font-size:11.5px;color:var(--mute-2);margin-top:4px;line-height:1.6;">
+                Emma 转入 / 付 SSS / 付 Hugo 全部在 <a href="./personal/" style="color:var(--cyan);text-decoration:none;font-weight:600;">个人 App · ⚡ 今日录入</a> 一站搞定,自动同步到这里 + 开 SINV / PINV。下面卡片只读历史。
+              </div>
+            </div>
+            <a class="btn sm" href="./personal/" style="background:linear-gradient(135deg,var(--violet),var(--cyan));text-decoration:none;font-weight:700;">去个人 App →</a>
+          </div>
+        </div>
+        <div id="transfer-new-mode-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:18px;">
 
           <!-- 💵 Emma 给我转账 -->
           <div class="card" style="background:linear-gradient(135deg,rgba(244,114,182,0.06),rgba(244,114,182,0.02));border-color:rgba(244,114,182,0.30);">
@@ -1343,7 +1356,21 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="page-sub">每次去供货公司拉托盘 · 自动按 £<span id="p-buy">245</span> × 托盘 扣余额</div>
         </div>
       </div>
-      <div class="card mb-4">
+      <!-- New-mode lockout banner — shown only in new mode -->
+      <div id="pickup-lockout-banner" style="display:none;margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(0,229,255,0.06));border:1px solid rgba(139,92,246,0.30);border-radius:12px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div style="font-size:22px;">🔒</div>
+          <div style="flex:1;min-width:240px;">
+            <div style="font-size:13px;font-weight:700;color:#c4b5fd;">新模式 · 取货请去个人 App 录入</div>
+            <div style="font-size:11.5px;color:var(--mute-2);margin-top:4px;line-height:1.6;">
+              新增取货统一走 <a href="./personal/" style="color:var(--cyan);text-decoration:none;font-weight:600;">个人 App · ⚡ 今日录入</a>,会自动同步到合伙账 + 客户账 + 自动开 INV。下面是只读历史。
+            </div>
+          </div>
+          <a class="btn sm" href="./personal/" style="background:linear-gradient(135deg,var(--violet),var(--cyan));text-decoration:none;font-weight:700;">去个人 App →</a>
+        </div>
+      </div>
+
+      <div class="card mb-4" id="pickup-add-card">
         <div class="card-title">新增取货</div>
         <div class="form-grid">
           <div class="form-row"><label>日期</label><input type="date" id="p-date"></div>
@@ -1509,6 +1536,19 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div>
           <h1 class="page-title">参数设置</h1>
           <div class="page-sub">改一次，所有计算全局生效</div>
+        </div>
+      </div>
+      <!-- New-mode read-only price banner -->
+      <div id="prices-readonly-banner" style="display:none;margin-bottom:16px;padding:14px 18px;background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(0,229,255,0.06));border:1px solid rgba(139,92,246,0.30);border-radius:12px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div style="font-size:20px;">🔒</div>
+          <div style="flex:1;min-width:240px;">
+            <div style="font-size:12.5px;font-weight:700;color:#c4b5fd;">价格参数只读 · 在个人 App 维护</div>
+            <div style="font-size:11px;color:var(--mute-2);margin-top:3px;line-height:1.6;">
+              买价 / Hugo 提成 在 <a href="./personal/" style="color:var(--cyan);text-decoration:none;font-weight:600;">个人 App · 设置</a> 修改,这里自动同步显示。改一处,全局生效。
+            </div>
+          </div>
+          <a class="btn sm" href="./personal/" style="background:linear-gradient(135deg,var(--violet),var(--cyan));text-decoration:none;font-weight:700;">去改 →</a>
         </div>
       </div>
       <div class="card">
@@ -5664,6 +5704,23 @@ function renderModeVisibility() {
       setTransferDateDefault();
       renderCashflowList();
     }
+    // Lock down old entry forms in new mode — direct user to unified entry in personal app
+    const pickupAdd = document.getElementById('pickup-add-card');
+    const pickupBanner = document.getElementById('pickup-lockout-banner');
+    if (pickupAdd) pickupAdd.style.display = 'none';
+    if (pickupBanner) pickupBanner.style.display = '';
+    // Hide new-mode entry cards (replaced by personal app's unified entry)
+    const newModeCards = document.getElementById('transfer-new-mode-cards');
+    const transferBanner = document.getElementById('transfer-lockout-banner');
+    if (newModeCards) newModeCards.style.display = showNew ? 'none' : '';
+    if (transferBanner) transferBanner.style.display = showNew ? '' : 'none';
+    // Lock price inputs in settings (read-only mirror from personal app)
+    const priceBanner = document.getElementById('prices-readonly-banner');
+    if (priceBanner) priceBanner.style.display = '';
+    ['s-buy','s-commission'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.readOnly = true; el.style.opacity = '0.65'; el.style.cursor = 'not-allowed'; el.title = '在个人 App 修改'; }
+    });
   } else {
     if (banner) banner.style.display = '';
     if (toggle) toggle.style.display = 'none';
@@ -5674,6 +5731,17 @@ function renderModeVisibility() {
     if (transOldMode) transOldMode.style.display = '';
     if (transTitle) transTitle.textContent = '转账记录';
     if (transSub) transSub.textContent = '每次给 Emma 打钱记一笔 · 系统自动累加余额';
+    // Old mode — restore pickup form + price inputs
+    const pickupAdd = document.getElementById('pickup-add-card');
+    const pickupBanner = document.getElementById('pickup-lockout-banner');
+    if (pickupAdd) pickupAdd.style.display = '';
+    if (pickupBanner) pickupBanner.style.display = 'none';
+    const priceBanner = document.getElementById('prices-readonly-banner');
+    if (priceBanner) priceBanner.style.display = 'none';
+    ['s-buy','s-commission'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.readOnly = false; el.style.opacity = ''; el.style.cursor = ''; el.title = ''; }
+    });
   }
 }
 
