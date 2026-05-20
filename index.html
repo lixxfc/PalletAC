@@ -999,6 +999,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <div class="nav-item" data-view="transfer"><span class="nav-icon">↗</span>转账记录</div>
       <div class="nav-item" data-view="pickup"><span class="nav-icon">▦</span>取货记录</div>
       <div class="nav-item" data-view="monthly"><span class="nav-icon">≡</span>月度汇总</div>
+      <div class="nav-item hide" id="nav-pt-invoices" data-view="ptinvoices"><span class="nav-icon">⎙</span>发票 / 凭证</div>
       <div class="nav-item" data-view="log"><span class="nav-icon">⟲</span>操作日志</div>
       <div class="nav-item" data-view="ai"><span class="nav-icon">✦</span>AI 建议</div>
       <div class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>设置</div>
@@ -1182,10 +1183,80 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
     <section class="view" data-view="transfer">
       <div class="page-head">
         <div>
-          <h1 class="page-title">转账记录</h1>
-          <div class="page-sub">每次给 Emma 打钱记一笔 · 系统自动累加余额</div>
+          <h1 class="page-title" id="transfer-title">转账记录</h1>
+          <div class="page-sub" id="transfer-sub">每次给 Emma 打钱记一笔 · 系统自动累加余额</div>
         </div>
       </div>
+
+      <!-- ============ NEW MODE: 3 entry cards ============ -->
+      <div id="transfer-new-mode" style="display:none;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:18px;">
+
+          <!-- 💵 Emma 给我转账 -->
+          <div class="card" style="background:linear-gradient(135deg,rgba(244,114,182,0.06),rgba(244,114,182,0.02));border-color:rgba(244,114,182,0.30);">
+            <div class="card-title" style="color:var(--pink);">💵 Emma 给我转账</div>
+            <div class="page-sub" style="font-size:11px;">她预付货款 · 进资金池 · 自动开 SINV-Emma</div>
+            <div class="form-grid mt-4" style="grid-template-columns:1fr 1fr;gap:10px;">
+              <div class="form-row"><label>日期</label><input type="date" id="ie-date"></div>
+              <div class="form-row"><label>托盘数</label><input type="number" id="ie-pallets" min="0" placeholder="100" oninput="onInEmmaPalletsChange()"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>金额 £ <span class="page-sub" style="font-size:10px;color:var(--green);">自动 = 托 × £245 · 可改</span></label><input type="number" id="ie-amount" min="0" step="0.01" placeholder="自动" oninput="onInEmmaAmountChange()"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>备注</label><input type="text" id="ie-note" placeholder="银行 ref / WhatsApp / …"></div>
+            </div>
+            <div id="ie-preview" style="margin-top:10px;font-size:11px;color:var(--mute-2);line-height:1.7;"></div>
+            <div class="row mt-4"><button class="btn primary" onclick="addInEmma()" style="background:linear-gradient(135deg,var(--pink),#a3185a);">＋ 录入 + 开 SINV</button></div>
+          </div>
+
+          <!-- 🏭 我付 SSS -->
+          <div class="card" style="background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(139,92,246,0.02));border-color:rgba(139,92,246,0.30);">
+            <div class="card-title" style="color:#c4b5fd;">🏭 我付 SSS</div>
+            <div class="page-sub" style="font-size:11px;">预付货款 · 从资金池扣 · 自动开 PINV-SSS</div>
+            <div class="form-grid mt-4" style="grid-template-columns:1fr 1fr;gap:10px;">
+              <div class="form-row"><label>日期</label><input type="date" id="os-date"></div>
+              <div class="form-row"><label>托盘数(预付几托)</label><input type="number" id="os-pallets" min="0" placeholder="200" oninput="onOutSupplierPalletsChange()"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>金额 £ <span class="page-sub" style="font-size:10px;color:var(--green);">自动 = 托 × £245 · 可改</span></label><input type="number" id="os-amount" min="0" step="0.01" placeholder="自动" oninput="onOutSupplierAmountChange()"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>备注</label><input type="text" id="os-note" placeholder="HSBC 转账 / TT / …"></div>
+            </div>
+            <div id="os-preview" style="margin-top:10px;font-size:11px;color:var(--mute-2);line-height:1.7;"></div>
+            <div class="row mt-4"><button class="btn primary" onclick="addOutSupplier()" style="background:linear-gradient(135deg,#8b5cf6,#5b21b6);">＋ 录入 + 开 PINV</button></div>
+          </div>
+
+          <!-- 🧑 我付 Hugo -->
+          <div class="card" style="background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(251,191,36,0.02));border-color:rgba(251,191,36,0.30);">
+            <div class="card-title" style="color:var(--amber);">🧑 我付 Hugo 现金</div>
+            <div class="page-sub" style="font-size:11px;">周/月结现金 · 从资金池扣 · 减 Hugo 应付</div>
+            <div class="form-grid mt-4" style="grid-template-columns:1fr 1fr;gap:10px;">
+              <div class="form-row"><label>日期</label><input type="date" id="oh-date"></div>
+              <div class="form-row"><label>金额 £ <span style="color:var(--rose);">*</span></label><input type="number" id="oh-amount" min="0" step="0.01" placeholder="500" oninput="updateOutHugoPreview()"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>方式</label>
+                <select id="oh-method">
+                  <option value="cash">现金</option>
+                  <option value="bank">银行转账</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="form-row" style="grid-column:1/-1;"><label>备注</label><input type="text" id="oh-note" placeholder="本月结 / 银行 ref / …"></div>
+            </div>
+            <div id="oh-preview" style="margin-top:10px;font-size:11px;color:var(--mute-2);line-height:1.7;"></div>
+            <div class="row mt-4"><button class="btn primary" onclick="addOutHugo()" style="background:linear-gradient(135deg,#fbbf24,#a16207);">＋ 录入付款</button></div>
+          </div>
+
+        </div>
+
+        <!-- All new-mode cash flow events -->
+        <div class="card">
+          <div class="card-title">资金流明细(新模式)<span class="badge" id="cashflow-count">0 条</span></div>
+          <div class="page-sub">所有 in-emma / out-supplier / out-hugo / in-customer 事件,按日期倒序</div>
+          <div class="table-wrap mt-4">
+            <table>
+              <thead><tr><th>日期</th><th>类型</th><th>金额</th><th>关联 INV</th><th>备注</th><th></th></tr></thead>
+              <tbody id="cashflow-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ OLD MODE: existing transfer form ============ -->
+      <div id="transfer-old-mode">
       <div class="card mb-4">
         <div class="card-title">新增转账</div>
         <div class="form-grid">
@@ -1261,6 +1332,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           </table>
         </div>
       </div>
+      </div><!-- /#transfer-old-mode -->
     </section>
 
     <!-- ===== Pickup ===== -->
@@ -1353,6 +1425,80 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="card-title">规则自动扫描</div>
           <div class="page-sub mb-4">余额预警 · 装载效率 · 环比增长 · 资金流</div>
           <div id="insights-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Partnership Invoices (SINV-Emma + PINV-SSS) ===== -->
+    <section class="view" data-view="ptinvoices">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title"><span class="gradient">发票 / 凭证</span></h1>
+          <div class="page-sub">SINV-Emma 销售发票(给 Emma)· PINV-SSS 付款凭证(自留 / 给银行)</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="pt-inv-tab-sinv" onclick="setPtInvTab('sinv')" style="background:linear-gradient(135deg,#a3185a,#7e0e3c);font-weight:700;">SINV · Emma</button>
+          <button class="btn sm ghost" id="pt-inv-tab-pinv" onclick="setPtInvTab('pinv')" style="margin-left:6px;">PINV · SSS</button>
+        </div>
+      </div>
+
+      <!-- Summary strip -->
+      <div class="chart-row mb-4" style="grid-template-columns:repeat(4,1fr);gap:12px;">
+        <div class="kpi-card" style="padding:14px 16px;">
+          <div class="kpi-head"><div class="kpi-label">SINV 张数</div><div class="kpi-icon">⎙</div></div>
+          <div class="kpi-value" id="pt-sinv-count" style="font-size:24px;">—</div>
+          <div class="kpi-sub" id="pt-sinv-sum">总额 —</div>
+        </div>
+        <div class="kpi-card" style="padding:14px 16px;">
+          <div class="kpi-head"><div class="kpi-label">PINV 张数</div><div class="kpi-icon">⎙</div></div>
+          <div class="kpi-value" id="pt-pinv-count" style="font-size:24px;">—</div>
+          <div class="kpi-sub" id="pt-pinv-sum">总额 —</div>
+        </div>
+        <div class="kpi-card" style="padding:14px 16px;">
+          <div class="kpi-head"><div class="kpi-label">本月新增</div><div class="kpi-icon">📅</div></div>
+          <div class="kpi-value" id="pt-month-count" style="font-size:24px;">—</div>
+          <div class="kpi-sub" id="pt-month-sub">SINV + PINV</div>
+        </div>
+        <div class="kpi-card" style="padding:14px 16px;">
+          <div class="kpi-head"><div class="kpi-label">未发邮件</div><div class="kpi-icon">📧</div></div>
+          <div class="kpi-value" id="pt-unsent-count" style="font-size:24px;color:var(--amber);">—</div>
+          <div class="kpi-sub">点击邮件按钮发送</div>
+        </div>
+      </div>
+
+      <!-- SINV table -->
+      <div class="card" id="pt-sinv-card">
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+          <span>💵 SINV — Emma 销售发票</span>
+          <span class="badge" style="background:rgba(244,114,182,0.15);color:#f472b6;font-size:10px;">EMMA 转账给我 → 自动开</span>
+          <span class="page-sub" style="font-size:11px;font-weight:400;margin-left:auto;">点 ⎙ 打印 · 点 📧 发邮件 · 点 ✗ 作废</span>
+        </div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead><tr>
+              <th>编号</th><th>日期</th><th>托盘</th><th>金额</th>
+              <th>状态</th><th>邮件</th><th style="text-align:right;">操作</th>
+            </tr></thead>
+            <tbody id="pt-sinv-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PINV table -->
+      <div class="card" id="pt-pinv-card" style="display:none;">
+        <div class="card-title" style="display:flex;align-items:center;gap:10px;">
+          <span>🏭 PINV — SSS 付款凭证</span>
+          <span class="badge" style="background:rgba(139,92,246,0.18);color:#c4b5fd;font-size:10px;">付款给 SSS → 自动开</span>
+          <span class="page-sub" style="font-size:11px;font-weight:400;margin-left:auto;">自留 / 发给银行或会计 · 不发给 SSS 也可</span>
+        </div>
+        <div class="table-wrap mt-4">
+          <table>
+            <thead><tr>
+              <th>编号</th><th>日期</th><th>托盘</th><th>金额</th>
+              <th>状态</th><th>邮件</th><th style="text-align:right;">操作</th>
+            </tr></thead>
+            <tbody id="pt-pinv-body"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -3544,6 +3690,20 @@ async function confirmAndSendEmail() {
       throw new Error((data && (data.error || JSON.stringify(data.details))) || `HTTP ${res.status}`);
     }
 
+    // If this email was for a partnership invoice, mark it as sent
+    if (_emailSendCtx && _emailSendCtx.who === 'pt-invoice' && _emailSendCtx.invoiceId) {
+      const inv = (state.partnershipInvoices || []).find(i => i.id === _emailSendCtx.invoiceId);
+      if (inv) {
+        inv.emailedTo = to;
+        inv.emailedAt = data.sentAt || new Date().toISOString();
+        inv.emailedBy = (currentUser && currentUser.email) || '';
+        inv.emailMessageId = data.messageId || null;
+        inv.updatedAt = new Date().toISOString();
+        save();
+        renderAll();
+      }
+    }
+
     closeEmailSend();
     flash('✓ 邮件已发出 → ' + to);
   } catch (err) {
@@ -4536,6 +4696,675 @@ function addTransfer() {
   flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : '') + autoEnabledMsg);
 }
 
+// =====================================================
+// NEW MODE — 3 entry forms
+// =====================================================
+
+// === 💵 Emma → Michael (in-emma) ===
+function onInEmmaPalletsChange() {
+  const amtEl = document.getElementById('ie-amount');
+  if (amtEl.dataset.userEdited === 'true') { updateInEmmaPreview(); return; }
+  const palls = parseInt(document.getElementById('ie-pallets').value) || 0;
+  amtEl.value = palls > 0 ? palls * (state.params.buyPrice || 245) : '';
+  updateInEmmaPreview();
+}
+function onInEmmaAmountChange() {
+  document.getElementById('ie-amount').dataset.userEdited = 'true';
+  updateInEmmaPreview();
+}
+function updateInEmmaPreview() {
+  const palls = parseInt(document.getElementById('ie-pallets').value) || 0;
+  const amt = parseFloat(document.getElementById('ie-amount').value) || 0;
+  const buy = state.params.buyPrice || 245;
+  const before = emmaBalanceNew();
+  const after = before + amt;
+  const box = document.getElementById('ie-preview');
+  if (!box) return;
+  if (palls === 0 && amt === 0) { box.innerHTML = ''; return; }
+  const ledgerNote = (palls > 0 && Math.abs(amt - palls * buy) > 0.01)
+    ? `<span style="color:var(--amber);">⚠ 金额跟 ${palls} × £${buy} = ${fmt(palls * buy)} 不符,差 ${fmt(amt - palls * buy)}</span>`
+    : '';
+  box.innerHTML = `
+    <div>💰 资金池 +${fmt(amt)} <span style="color:var(--mute-2);">(${fmt(cashPoolBalance())} → ${fmt(cashPoolBalance() + amt)})</span></div>
+    <div>👩 Emma 余额 ${fmt(before)} → <b style="color:${after < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(after)}</b>${after < 0 ? '(你还欠她 ' + fmt(-after) + ')' : ''}</div>
+    <div>📋 自动开 SINV-Emma${palls > 0 ? '(' + palls + ' 托 × £' + buy + ')' : ''}</div>
+    ${ledgerNote ? `<div style="margin-top:4px;">${ledgerNote}</div>` : ''}
+  `;
+}
+function addInEmma() {
+  if (!isNewMode()) { alert('请先切换到新模式'); return; }
+  const date = document.getElementById('ie-date').value;
+  const palls = parseInt(document.getElementById('ie-pallets').value) || 0;
+  const amount = parseFloat(document.getElementById('ie-amount').value);
+  const note = (document.getElementById('ie-note').value || '').trim();
+  if (!date) { alert('请填日期'); return; }
+  if (!amount || amount <= 0) { alert('金额必须 > 0'); return; }
+  const ev = {
+    id: crypto.randomUUID(),
+    type: 'in-emma',
+    date,
+    amount,
+    pallets: palls || null,
+    note,
+    createdBy: currentEmail(),
+    createdAt: new Date().toISOString()
+  };
+  state.events.push(ev);
+  // Phase 3 hook: auto-generate SINV-Emma (will be wired in next phase)
+  if (typeof generateSinvForEmmaTransfer === 'function') {
+    generateSinvForEmmaTransfer(ev);
+  }
+  // Reset form
+  ['ie-date','ie-pallets','ie-amount','ie-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ie-amount').dataset.userEdited = '';
+  setTransferDateDefault();
+  save(); renderAll();
+  flash(`✓ Emma 转入 ${fmt(amount)}${palls ? ' (' + palls + ' 托)' : ''}`);
+}
+
+// === 🏭 Michael → SSS (out-supplier) ===
+function onOutSupplierPalletsChange() {
+  const amtEl = document.getElementById('os-amount');
+  if (amtEl.dataset.userEdited === 'true') { updateOutSupplierPreview(); return; }
+  const palls = parseInt(document.getElementById('os-pallets').value) || 0;
+  amtEl.value = palls > 0 ? palls * (state.params.buyPrice || 245) : '';
+  updateOutSupplierPreview();
+}
+function onOutSupplierAmountChange() {
+  document.getElementById('os-amount').dataset.userEdited = 'true';
+  updateOutSupplierPreview();
+}
+function updateOutSupplierPreview() {
+  const palls = parseInt(document.getElementById('os-pallets').value) || 0;
+  const amt = parseFloat(document.getElementById('os-amount').value) || 0;
+  const buy = state.params.buyPrice || 245;
+  const poolBefore = cashPoolBalance();
+  const sssBefore = sssBalance();
+  const box = document.getElementById('os-preview');
+  if (!box) return;
+  if (amt === 0) { box.innerHTML = ''; return; }
+  const poolAfter = poolBefore - amt;
+  const sssAfter = sssBefore + amt;
+  const warn = poolAfter < 0 ? `<div style="color:var(--rose);">⚠ 资金池将透支 ${fmt(-poolAfter)} — 你可能要先收 Emma / 客户的钱</div>` : '';
+  box.innerHTML = `
+    <div>💰 资金池 ${fmt(poolBefore)} → <b style="color:${poolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(poolAfter)}</b></div>
+    <div>🏭 SSS 余额 ${fmt(sssBefore)} → <b style="color:var(--green);">${fmt(sssAfter)}</b>(够拉 ${Math.floor(sssAfter / buy)} 托)</div>
+    <div>📋 自动开 PINV-SSS${palls > 0 ? '(' + palls + ' 托 × £' + buy + ')' : ''}</div>
+    ${warn}
+  `;
+}
+function addOutSupplier() {
+  if (!isNewMode()) { alert('请先切换到新模式'); return; }
+  const date = document.getElementById('os-date').value;
+  const palls = parseInt(document.getElementById('os-pallets').value) || 0;
+  const amount = parseFloat(document.getElementById('os-amount').value);
+  const note = (document.getElementById('os-note').value || '').trim();
+  if (!date) { alert('请填日期'); return; }
+  if (!amount || amount <= 0) { alert('金额必须 > 0'); return; }
+  const ev = {
+    id: crypto.randomUUID(),
+    type: 'out-supplier',
+    date,
+    amount,
+    pallets: palls || null,
+    note,
+    createdBy: currentEmail(),
+    createdAt: new Date().toISOString()
+  };
+  state.events.push(ev);
+  if (typeof generatePinvForSupplierPayment === 'function') {
+    generatePinvForSupplierPayment(ev);
+  }
+  ['os-date','os-pallets','os-amount','os-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('os-amount').dataset.userEdited = '';
+  setTransferDateDefault();
+  save(); renderAll();
+  flash(`✓ 付 SSS ${fmt(amount)}${palls ? ' (' + palls + ' 托)' : ''}`);
+}
+
+// === 🧑 Michael → Hugo (out-hugo) ===
+function updateOutHugoPreview() {
+  const amt = parseFloat(document.getElementById('oh-amount').value) || 0;
+  const box = document.getElementById('oh-preview');
+  if (!box) return;
+  if (amt === 0) { box.innerHTML = ''; return; }
+  const poolBefore = cashPoolBalance();
+  const hugoBefore = hugoOwedNew();
+  const poolAfter = poolBefore - amt;
+  const hugoAfter = hugoBefore - amt;
+  box.innerHTML = `
+    <div>💰 资金池 ${fmt(poolBefore)} → <b>${fmt(poolAfter)}</b></div>
+    <div>🧑 欠 Hugo ${fmt(hugoBefore)} → <b style="color:${hugoAfter > 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hugoAfter)}</b>${hugoAfter <= 0 ? '(已结清)' : ''}</div>
+  `;
+}
+function addOutHugo() {
+  if (!isNewMode()) { alert('请先切换到新模式'); return; }
+  const date = document.getElementById('oh-date').value;
+  const amount = parseFloat(document.getElementById('oh-amount').value);
+  const method = document.getElementById('oh-method').value || 'cash';
+  const note = (document.getElementById('oh-note').value || '').trim();
+  if (!date) { alert('请填日期'); return; }
+  if (!amount || amount <= 0) { alert('金额必须 > 0'); return; }
+  state.events.push({
+    id: crypto.randomUUID(),
+    type: 'out-hugo',
+    date,
+    amount,
+    method,
+    note,
+    createdBy: currentEmail(),
+    createdAt: new Date().toISOString()
+  });
+  ['oh-date','oh-amount','oh-note'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('oh-method').value = 'cash';
+  setTransferDateDefault();
+  save(); renderAll();
+  flash(`✓ 付 Hugo ${fmt(amount)}`);
+}
+
+// Helper — set today's date in all 3 forms when transfer tab opens
+function setTransferDateDefault() {
+  const today = new Date().toISOString().slice(0, 10);
+  ['ie-date', 'os-date', 'oh-date'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = today;
+  });
+}
+
+// =====================================================
+// PHASE 3 — Partnership invoices (SINV-Emma + PINV-SSS)
+// =====================================================
+// Two new invoice types stored in state.partnershipInvoices:
+//   - SINV-DDMMYYYY-NNN: sales invoice to Emma (when she transfers Michael)
+//   - PINV-DDMMYYYY-NNN: purchase voucher for SSS (when Michael pays SSS)
+// Both auto-generated when corresponding event is recorded.
+function ensurePartnershipInvoicesArray() {
+  if (!Array.isArray(state.partnershipInvoices)) state.partnershipInvoices = [];
+}
+
+function _ptInvDateKey(iso) {
+  const d = (iso || new Date().toISOString().slice(0, 10)).split('-');
+  return d.length === 3 ? d[2] + d[1] + d[0] : '';
+}
+
+function nextSinvNumber(date) {
+  ensurePartnershipInvoicesArray();
+  const key = _ptInvDateKey(date);
+  const prefix = 'SINV-' + key + '-';
+  const sameDay = state.partnershipInvoices.filter(i => i.number && i.number.startsWith(prefix));
+  return prefix + String(sameDay.length + 1).padStart(3, '0');
+}
+function nextPinvNumber(date) {
+  ensurePartnershipInvoicesArray();
+  const key = _ptInvDateKey(date);
+  const prefix = 'PINV-' + key + '-';
+  const sameDay = state.partnershipInvoices.filter(i => i.number && i.number.startsWith(prefix));
+  return prefix + String(sameDay.length + 1).padStart(3, '0');
+}
+
+// Generate SINV-Emma when in-emma event is added
+function generateSinvForEmmaTransfer(ev) {
+  if (!ev || ev.type !== 'in-emma') return null;
+  ensurePartnershipInvoicesArray();
+  // Skip if already linked
+  if (state.partnershipInvoices.some(i => i.linkedEventId === ev.id)) return null;
+  const buy = state.params.buyPrice || 245;
+  const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
+  const co = state.company || {};
+  const emma = state.emma || {};
+  const inv = {
+    id: crypto.randomUUID(),
+    type: 'sale-emma',
+    number: nextSinvNumber(ev.date),
+    linkedEventId: ev.id,
+    date: ev.date,
+    amount: ev.amount || 0,
+    pallets: palls,
+    unitPrice: buy,
+    status: 'issued',
+    note: ev.note || '',
+    emailedAt: null, emailedTo: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    counterpartySnapshot: {
+      name: emma.name || 'Emma', address: emma.address || '', postcode: emma.postcode || '',
+      phone: emma.phone || '', mobile: emma.mobile || '', email: emma.email || '',
+      companyNo: emma.companyNo || '', vatNo: emma.vatNo || ''
+    },
+    issuerSnapshot: {
+      name: co.name || 'CYPP UK LTD', address: co.address || '', postcode: co.postcode || '',
+      phone: co.phone || '', email: co.email || '',
+      companyNo: co.companyNo || '', vatNo: co.vatNo || '', bank: co.bank || ''
+    }
+  };
+  state.partnershipInvoices.push(inv);
+  return inv;
+}
+
+// Generate PINV-SSS when out-supplier event is added
+function generatePinvForSupplierPayment(ev) {
+  if (!ev || ev.type !== 'out-supplier') return null;
+  ensurePartnershipInvoicesArray();
+  if (state.partnershipInvoices.some(i => i.linkedEventId === ev.id)) return null;
+  const buy = state.params.buyPrice || 245;
+  const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
+  const co = state.company || {};
+  const sss = state.sss || {};
+  const inv = {
+    id: crypto.randomUUID(),
+    type: 'purchase-sss',
+    number: nextPinvNumber(ev.date),
+    linkedEventId: ev.id,
+    date: ev.date,
+    amount: ev.amount || 0,
+    pallets: palls,
+    unitPrice: buy,
+    status: 'issued',
+    method: 'Bank transfer',
+    note: ev.note || '',
+    emailedAt: null, emailedTo: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    counterpartySnapshot: {
+      name: sss.name || 'SSS', address: sss.address || '', postcode: sss.postcode || '',
+      phone: sss.phone || '', email: sss.email || '', contact: sss.contact || '', bank: sss.bank || ''
+    },
+    issuerSnapshot: {
+      name: co.name || 'CYPP UK LTD', address: co.address || '', postcode: co.postcode || '',
+      phone: co.phone || '', email: co.email || '',
+      companyNo: co.companyNo || '', vatNo: co.vatNo || '', bank: co.bank || ''
+    }
+  };
+  state.partnershipInvoices.push(inv);
+  return inv;
+}
+
+// === Print SINV (Emma sales invoice) ===
+function printSinv(id) {
+  const inv = (state.partnershipInvoices || []).find(i => i.id === id);
+  if (!inv) return;
+  const c = inv.counterpartySnapshot || {};
+  const co = inv.issuerSnapshot || {};
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round((v || 0) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+  const headerColor = '#a3185a';  // pink-ish for SINV-Emma
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(inv.number)} &mdash; ${esc(c.name)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#0a0e1a;background:#f5f7fa;padding:32px 16px;}
+  .paper{max-width:760px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 4px 24px rgba(10,14,26,0.10);overflow:hidden;}
+  .header{padding:36px 44px 28px;background:linear-gradient(135deg,${headerColor} 0%,#7e0e3c 100%);color:#fff;}
+  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;}
+  .brand .co-name{font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+  .brand .co-lines{margin-top:8px;font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.85);}
+  .doc-title{text-align:right;}
+  .doc-title .label{font-size:9.5px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,0.7);}
+  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:36px;font-weight:900;letter-spacing:-0.5px;margin-top:4px;}
+  .doc-title .no{margin-top:6px;font-size:11px;letter-spacing:0.8px;color:rgba(255,255,255,0.85);}
+  .meta{padding:24px 44px 0;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:24px;}
+  .meta-block .label{font-size:9.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;}
+  .meta-block .primary{font-size:14px;font-weight:700;color:#0a0e1a;}
+  .meta-block .lines{margin-top:2px;font-size:11.5px;line-height:1.6;color:#1e293b;}
+  .items{padding:28px 44px 8px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{padding:10px 8px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;border-bottom:2px solid #0a0e1a;}
+  thead th.num{text-align:right;}
+  tbody td{padding:14px 8px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  td.bal{font-weight:700;color:#0a0e1a;}
+  tr.total-row td{padding:14px 8px;font-size:14px;font-weight:700;background:${headerColor};color:#fff;border:0;}
+  tr.total-row td.bal{font-size:18px;}
+  .footer{padding:24px 44px;font-size:12px;color:#475569;line-height:1.7;}
+  .bottom{padding:14px 44px;background:#0a0e1a;color:rgba(255,255,255,0.65);font-size:10.5px;letter-spacing:0.4px;display:flex;justify-content:space-between;}
+  .btn-bar{position:fixed;top:14px;right:14px;display:flex;gap:8px;}
+  .btn-bar button{padding:9px 16px;background:#0a0e1a;color:#fff;border:0;border-radius:999px;cursor:pointer;font-size:12px;font-weight:600;}
+  .btn-bar button.alt{background:#fff;color:#0a0e1a;border:1px solid #e2e8f0;}
+  @media print{.btn-bar{display:none!important;}body{background:#fff!important;padding:0!important;}.paper{box-shadow:none!important;border-radius:0!important;}@page{size:A4;margin:8mm 10mm;}.header,.bottom,tr.total-row td{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}}
+</style></head><body>
+<div class="btn-bar"><button onclick="window.print()">Download / Print PDF</button><button class="alt" onclick="window.close()">Close</button></div>
+<div class="paper">
+  <div class="header"><div class="header-inner">
+    <div class="brand">
+      <div class="co-name">${esc(co.name)}</div>
+      <div class="co-lines">${co.address ? esc(co.address) + (co.postcode ? ', ' + esc(co.postcode) : '') : ''}${co.phone ? '<br>Tel: ' + esc(co.phone) : ''}${co.email ? '<br>' + esc(co.email) : ''}</div>
+    </div>
+    <div class="doc-title"><div class="label">Sales Invoice</div><h1>Invoice</h1><div class="no">No. ${esc(inv.number)}</div></div>
+  </div></div>
+  <div class="meta">
+    <div class="meta-block"><div class="label">Bill To</div><div class="primary">${esc(c.name)}</div><div class="lines">${c.address ? esc(c.address) + '<br>' : ''}${c.postcode ? esc(c.postcode) + '<br>' : ''}${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}${c.email ? esc(c.email) : ''}</div></div>
+    <div class="meta-block"><div class="label">Invoice Date</div><div class="primary">${fmtDate(inv.date)}</div></div>
+    <div class="meta-block" style="text-align:right;"><div class="label">Reference</div><div class="primary">Advance payment</div><div class="lines">for pallet collection at SSS</div></div>
+  </div>
+  <div class="items">
+    <table>
+      <thead><tr><th>Description</th><th class="num" style="width:80px;">Qty</th><th class="num" style="width:100px;">Unit Price</th><th class="num" style="width:120px;">Amount</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pallet advance payment</b><br><span style="color:#94a3b8;font-size:11px;">${inv.pallets ? 'For ' + inv.pallets + ' pallets · ' : ''}for collection at SSS warehouse</span></td><td class="num">${inv.pallets || '—'}</td><td class="num">${money(inv.unitPrice)}</td><td class="num bal">${money(inv.amount)}</td></tr>
+        <tr class="total-row"><td colspan="3" style="text-align:right;">TOTAL</td><td class="num bal">${money(inv.amount)}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="footer"><b>Thank you for your business.</b> Pallets are available for collection at SSS once payment clears. Please reply to this invoice if you have any questions.</div>
+  <div class="bottom"><div>SINV ${esc(inv.number)} &middot; Issued ${fmtDate(inv.date)}</div><div>${esc(co.name)}</div></div>
+</div></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// === Print PINV (SSS payment voucher) ===
+function printPinv(id) {
+  const inv = (state.partnershipInvoices || []).find(i => i.id === id);
+  if (!inv) return;
+  const c = inv.counterpartySnapshot || {};  // SSS
+  const co = inv.issuerSnapshot || {};       // Michael's company
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round((v || 0) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+  const headerColor = '#5b21b6';  // purple for PINV-SSS
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(inv.number)} &mdash; ${esc(c.name)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#0a0e1a;background:#f5f7fa;padding:32px 16px;}
+  .paper{max-width:760px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 4px 24px rgba(10,14,26,0.10);overflow:hidden;}
+  .header{padding:36px 44px 28px;background:linear-gradient(135deg,${headerColor} 0%,#3b1481 100%);color:#fff;}
+  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;}
+  .brand .co-name{font-size:24px;font-weight:800;letter-spacing:-0.5px;}
+  .brand .co-lines{margin-top:8px;font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.85);}
+  .doc-title{text-align:right;}
+  .doc-title .label{font-size:9.5px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,0.7);}
+  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-top:4px;line-height:1.05;}
+  .doc-title .no{margin-top:6px;font-size:11px;letter-spacing:0.8px;color:rgba(255,255,255,0.85);}
+  .meta{padding:24px 44px 0;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:24px;}
+  .meta-block .label{font-size:9.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;}
+  .meta-block .primary{font-size:14px;font-weight:700;color:#0a0e1a;}
+  .meta-block .lines{margin-top:2px;font-size:11.5px;line-height:1.6;color:#1e293b;}
+  .items{padding:28px 44px 8px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{padding:10px 8px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;border-bottom:2px solid #0a0e1a;}
+  thead th.num{text-align:right;}
+  tbody td{padding:14px 8px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  td.bal{font-weight:700;color:#0a0e1a;}
+  tr.total-row td{padding:14px 8px;font-size:14px;font-weight:700;background:${headerColor};color:#fff;border:0;}
+  tr.total-row td.bal{font-size:18px;}
+  .footer{padding:24px 44px;font-size:12px;color:#475569;line-height:1.7;}
+  .bottom{padding:14px 44px;background:#0a0e1a;color:rgba(255,255,255,0.65);font-size:10.5px;letter-spacing:0.4px;display:flex;justify-content:space-between;}
+  .stamp{margin:0 44px;padding:12px 16px;background:#f5edff;border-left:4px solid ${headerColor};border-radius:6px;font-size:12px;color:#3b1481;}
+  .btn-bar{position:fixed;top:14px;right:14px;display:flex;gap:8px;}
+  .btn-bar button{padding:9px 16px;background:#0a0e1a;color:#fff;border:0;border-radius:999px;cursor:pointer;font-size:12px;font-weight:600;}
+  .btn-bar button.alt{background:#fff;color:#0a0e1a;border:1px solid #e2e8f0;}
+  @media print{.btn-bar{display:none!important;}body{background:#fff!important;padding:0!important;}.paper{box-shadow:none!important;border-radius:0!important;}@page{size:A4;margin:8mm 10mm;}.header,.bottom,tr.total-row td,.stamp{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}}
+</style></head><body>
+<div class="btn-bar"><button onclick="window.print()">Download / Print PDF</button><button class="alt" onclick="window.close()">Close</button></div>
+<div class="paper">
+  <div class="header"><div class="header-inner">
+    <div class="brand">
+      <div class="co-name">${esc(co.name)}</div>
+      <div class="co-lines">${co.address ? esc(co.address) + (co.postcode ? ', ' + esc(co.postcode) : '') : ''}${co.phone ? '<br>Tel: ' + esc(co.phone) : ''}${co.email ? '<br>' + esc(co.email) : ''}</div>
+    </div>
+    <div class="doc-title"><div class="label">Purchase Payment</div><h1>Voucher</h1><div class="no">No. ${esc(inv.number)}</div></div>
+  </div></div>
+  <div class="meta">
+    <div class="meta-block"><div class="label">Paid To</div><div class="primary">${esc(c.name)}</div><div class="lines">${c.contact ? esc(c.contact) + '<br>' : ''}${c.address ? esc(c.address) + '<br>' : ''}${c.postcode ? esc(c.postcode) + '<br>' : ''}${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}${c.email ? esc(c.email) : ''}</div></div>
+    <div class="meta-block"><div class="label">Payment Date</div><div class="primary">${fmtDate(inv.date)}</div><div class="lines">${esc(inv.method || 'Bank transfer')}</div></div>
+    <div class="meta-block" style="text-align:right;"><div class="label">Reference</div><div class="primary">Stock advance</div><div class="lines">prepayment for pallets</div></div>
+  </div>
+  <div class="items">
+    <table>
+      <thead><tr><th>Description</th><th class="num" style="width:80px;">Qty</th><th class="num" style="width:100px;">Unit Price</th><th class="num" style="width:120px;">Amount</th></tr></thead>
+      <tbody>
+        <tr><td><b>Pallet stock advance payment</b><br><span style="color:#94a3b8;font-size:11px;">${inv.pallets ? 'Equivalent to ' + inv.pallets + ' pallets · ' : ''}prepayment for upcoming collection</span></td><td class="num">${inv.pallets || '—'}</td><td class="num">${money(inv.unitPrice)}</td><td class="num bal">${money(inv.amount)}</td></tr>
+        <tr class="total-row"><td colspan="3" style="text-align:right;">TOTAL PAID</td><td class="num bal">${money(inv.amount)}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="stamp"><b>Internal Payment Voucher</b> — issued by CYPP UK LTD for accounting / banking records. Held against future pallet pickups from SSS.</div>
+  <div class="footer">${inv.note ? esc(inv.note) : 'Payment cleared. Retain this voucher for VAT / accounting records.'}</div>
+  <div class="bottom"><div>PINV ${esc(inv.number)} &middot; Paid ${fmtDate(inv.date)}</div><div>${esc(co.name)}</div></div>
+</div></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// === Cancel partnership invoice ===
+function cancelPartnershipInvoice(id) {
+  const inv = (state.partnershipInvoices || []).find(i => i.id === id);
+  if (!inv) return;
+  if (inv.status === 'cancelled') {
+    if (!confirm('恢复(取消作废)?')) return;
+    inv.status = 'issued';
+  } else {
+    if (!confirm('作废这张 ' + (inv.type === 'sale-emma' ? 'SINV-Emma' : 'PINV-SSS') + '?(记录保留,可恢复)')) return;
+    inv.status = 'cancelled';
+  }
+  inv.updatedAt = new Date().toISOString();
+  save(); renderAll();
+}
+
+// === Partnership invoices list UI ===
+let _ptInvTab = 'sinv';   // 'sinv' | 'pinv'
+function setPtInvTab(t) {
+  _ptInvTab = t;
+  const sinvBtn = document.getElementById('pt-inv-tab-sinv');
+  const pinvBtn = document.getElementById('pt-inv-tab-pinv');
+  const sinvCard = document.getElementById('pt-sinv-card');
+  const pinvCard = document.getElementById('pt-pinv-card');
+  if (sinvBtn) sinvBtn.classList.toggle('ghost', t !== 'sinv');
+  if (pinvBtn) pinvBtn.classList.toggle('ghost', t === 'sinv');
+  if (sinvCard) sinvCard.style.display = (t === 'sinv') ? '' : 'none';
+  if (pinvCard) pinvCard.style.display = (t === 'pinv') ? '' : 'none';
+  renderPtInvoices();
+}
+
+function _ptInvDateDisplay(iso) {
+  if (!iso) return '—';
+  const parts = iso.split('-');
+  if (parts.length !== 3) return iso;
+  return parts[2] + '/' + parts[1] + '/' + parts[0].slice(2);
+}
+
+function renderPtInvoices() {
+  if (!state || !Array.isArray(state.partnershipInvoices)) return;
+  const all = state.partnershipInvoices.slice().sort((a, b) =>
+    (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+  const sinv = all.filter(i => i.type === 'sale-emma');
+  const pinv = all.filter(i => i.type === 'purchase-sss');
+
+  // Summary
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const sumActive = arr => arr.filter(i => i.status !== 'cancelled').reduce((s, i) => s + (i.amount || 0), 0);
+  set('pt-sinv-count', sinv.length);
+  set('pt-sinv-sum', '总额 £' + fmt(sumActive(sinv)));
+  set('pt-pinv-count', pinv.length);
+  set('pt-pinv-sum', '总额 £' + fmt(sumActive(pinv)));
+  const ym = new Date().toISOString().slice(0, 7);
+  const monthCount = all.filter(i => (i.date || '').startsWith(ym)).length;
+  set('pt-month-count', monthCount);
+  const unsent = all.filter(i => i.status !== 'cancelled' && !i.emailedAt).length;
+  set('pt-unsent-count', unsent);
+
+  // SINV table body
+  const sinvBody = document.getElementById('pt-sinv-body');
+  if (sinvBody) {
+    if (!sinv.length) {
+      sinvBody.innerHTML = '<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">还没有 SINV — Emma 转账给你时会自动生成</td></tr>';
+    } else {
+      sinvBody.innerHTML = sinv.map(inv => _renderPtInvRow(inv, '#f472b6', 'sale-emma')).join('');
+    }
+  }
+  // PINV table body
+  const pinvBody = document.getElementById('pt-pinv-body');
+  if (pinvBody) {
+    if (!pinv.length) {
+      pinvBody.innerHTML = '<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">还没有 PINV — 你付款给 SSS 时会自动生成</td></tr>';
+    } else {
+      pinvBody.innerHTML = pinv.map(inv => _renderPtInvRow(inv, '#c4b5fd', 'purchase-sss')).join('');
+    }
+  }
+}
+
+function _renderPtInvRow(inv, color, kind) {
+  const isSinv = (kind === 'sale-emma');
+  const printFn = isSinv ? 'printSinv' : 'printPinv';
+  const statusBadge = inv.status === 'cancelled'
+    ? '<span class="badge" style="background:rgba(244,63,94,0.15);color:var(--rose);">作废</span>'
+    : '<span class="badge" style="background:rgba(34,211,165,0.15);color:var(--green);">已开</span>';
+  const emailBadge = inv.emailedAt
+    ? `<span class="badge" style="background:rgba(34,211,165,0.12);color:var(--green);font-size:9.5px;">已发</span><div class="dim" style="font-size:10px;margin-top:3px;">${escapeHtml(inv.emailedTo || '')}</div>`
+    : '<span class="badge" style="background:rgba(251,191,36,0.12);color:var(--amber);font-size:9.5px;">未发</span>';
+  const cancelBtnTxt = inv.status === 'cancelled' ? '↻' : '✗';
+  const cancelTitle = inv.status === 'cancelled' ? '恢复' : '作废';
+  return `<tr style="${inv.status === 'cancelled' ? 'opacity:0.55;text-decoration:line-through;' : ''}">
+    <td style="font-weight:700;color:${color};font-variant-numeric:tabular-nums;">${escapeHtml(inv.number)}</td>
+    <td>${_ptInvDateDisplay(inv.date)}</td>
+    <td class="num">${inv.pallets || '—'}</td>
+    <td class="num"><b>£${fmt(inv.amount || 0)}</b></td>
+    <td>${statusBadge}</td>
+    <td>${emailBadge}</td>
+    <td style="text-align:right;white-space:nowrap;">
+      <button class="btn sm ghost" onclick="${printFn}('${inv.id}')" title="打印 PDF">⎙</button>
+      <button class="btn sm ghost" onclick="openPtInvEmailModal('${inv.id}')" title="发邮件" style="margin-left:4px;">📧</button>
+      <button class="btn sm ghost" onclick="cancelPartnershipInvoice('${inv.id}')" title="${cancelTitle}" style="margin-left:4px;${inv.status === 'cancelled' ? 'color:var(--green);' : 'color:var(--rose);'}">${cancelBtnTxt}</button>
+    </td>
+  </tr>`;
+}
+
+// === Build the email-ready HTML for a partnership invoice (reuse print template, no bank info) ===
+function _buildPtInvEmailHtml(inv) {
+  // We reuse the same template as print, but inject inv into a synthesized window-free string.
+  // To keep things simple, we duplicate the inner-HTML construction (no buttons).
+  const c = inv.counterpartySnapshot || {};
+  const co = inv.issuerSnapshot || {};
+  // Strip bank info from co for the email (do not leak bank details to recipients)
+  const coNoBank = Object.assign({}, co, { bank: '' });
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = v => '£' + (Math.round((v || 0) * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = iso => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
+  };
+  const isSinv = inv.type === 'sale-emma';
+  const headerColor = isSinv ? '#a3185a' : '#5b21b6';
+  const headerColor2 = isSinv ? '#7e0e3c' : '#3b1481';
+  const docLabel = isSinv ? 'Sales Invoice' : 'Purchase Payment';
+  const docTitle = isSinv ? 'Invoice' : 'Voucher';
+  const billLabel = isSinv ? 'Bill To' : 'Paid To';
+  const refPrimary = isSinv ? 'Advance payment' : 'Stock advance';
+  const refSecondary = isSinv ? 'for pallet collection at SSS' : 'prepayment for pallets';
+  const lineTitle = isSinv ? 'Pallet advance payment' : 'Pallet stock advance payment';
+  const lineSubtitle = isSinv
+    ? (inv.pallets ? 'For ' + inv.pallets + ' pallets · ' : '') + 'for collection at SSS warehouse'
+    : (inv.pallets ? 'Equivalent to ' + inv.pallets + ' pallets · ' : '') + 'prepayment for upcoming collection';
+  const totalLabel = isSinv ? 'TOTAL' : 'TOTAL PAID';
+  const stampBlock = isSinv ? '' :
+    `<div style="margin:0 44px;padding:12px 16px;background:#f5edff;border-left:4px solid ${headerColor};border-radius:6px;font-size:12px;color:#3b1481;"><b>Internal Payment Voucher</b> — issued by ${esc(coNoBank.name || 'CYPP UK LTD')} for accounting / banking records.</div>`;
+  const footerText = isSinv
+    ? '<b>Thank you for your business.</b> Pallets are available for collection at SSS once payment clears. Please reply to this invoice if you have any questions.'
+    : (inv.note ? esc(inv.note) : 'Payment cleared. Retain this voucher for VAT / accounting records.');
+  const paidToLines = isSinv
+    ? `${c.address ? esc(c.address) + '<br>' : ''}${c.postcode ? esc(c.postcode) + '<br>' : ''}${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}${c.email ? esc(c.email) : ''}`
+    : `${c.contact ? esc(c.contact) + '<br>' : ''}${c.address ? esc(c.address) + '<br>' : ''}${c.postcode ? esc(c.postcode) + '<br>' : ''}${c.phone ? 'Tel: ' + esc(c.phone) + '<br>' : ''}${c.email ? esc(c.email) : ''}`;
+  const dateBlock = isSinv
+    ? `<div class="meta-block"><div class="label">Invoice Date</div><div class="primary">${fmtDate(inv.date)}</div></div>`
+    : `<div class="meta-block"><div class="label">Payment Date</div><div class="primary">${fmtDate(inv.date)}</div><div class="lines">${esc(inv.method || 'Bank transfer')}</div></div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(inv.number)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#0a0e1a;background:#f5f7fa;padding:24px 12px;}
+  .paper{max-width:760px;margin:0 auto;background:#fff;border-radius:8px;box-shadow:0 4px 24px rgba(10,14,26,0.08);overflow:hidden;}
+  .header{padding:32px 40px 24px;background:linear-gradient(135deg,${headerColor} 0%,${headerColor2} 100%);color:#fff;}
+  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;}
+  .brand .co-name{font-size:22px;font-weight:800;letter-spacing:-0.4px;}
+  .brand .co-lines{margin-top:8px;font-size:11.5px;line-height:1.6;color:rgba(255,255,255,0.85);}
+  .doc-title{text-align:right;}
+  .doc-title .label{font-size:9.5px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,0.7);}
+  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:30px;font-weight:900;letter-spacing:-0.5px;margin-top:4px;}
+  .doc-title .no{margin-top:6px;font-size:11px;letter-spacing:0.8px;color:rgba(255,255,255,0.85);}
+  .meta{padding:22px 40px 0;display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:20px;}
+  .meta-block .label{font-size:9.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px;}
+  .meta-block .primary{font-size:14px;font-weight:700;color:#0a0e1a;}
+  .meta-block .lines{margin-top:2px;font-size:11.5px;line-height:1.6;color:#1e293b;}
+  .items{padding:24px 40px 6px;}
+  table{width:100%;border-collapse:collapse;}
+  thead th{padding:10px 8px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#94a3b8;border-bottom:2px solid #0a0e1a;}
+  thead th.num{text-align:right;}
+  tbody td{padding:14px 8px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  td.bal{font-weight:700;color:#0a0e1a;}
+  tr.total-row td{padding:14px 8px;font-size:14px;font-weight:700;background:${headerColor};color:#fff;border:0;}
+  tr.total-row td.bal{font-size:18px;}
+  .footer{padding:22px 40px;font-size:12px;color:#475569;line-height:1.7;}
+  .bottom{padding:14px 40px;background:#0a0e1a;color:rgba(255,255,255,0.65);font-size:10.5px;letter-spacing:0.4px;display:flex;justify-content:space-between;}
+</style></head><body>
+<div class="paper">
+  <div class="header"><div class="header-inner">
+    <div class="brand">
+      <div class="co-name">${esc(coNoBank.name)}</div>
+      <div class="co-lines">${coNoBank.address ? esc(coNoBank.address) + (coNoBank.postcode ? ', ' + esc(coNoBank.postcode) : '') : ''}${coNoBank.phone ? '<br>Tel: ' + esc(coNoBank.phone) : ''}${coNoBank.email ? '<br>' + esc(coNoBank.email) : ''}</div>
+    </div>
+    <div class="doc-title"><div class="label">${docLabel}</div><h1>${docTitle}</h1><div class="no">No. ${esc(inv.number)}</div></div>
+  </div></div>
+  <div class="meta">
+    <div class="meta-block"><div class="label">${billLabel}</div><div class="primary">${esc(c.name)}</div><div class="lines">${paidToLines}</div></div>
+    ${dateBlock}
+    <div class="meta-block" style="text-align:right;"><div class="label">Reference</div><div class="primary">${refPrimary}</div><div class="lines">${refSecondary}</div></div>
+  </div>
+  <div class="items">
+    <table>
+      <thead><tr><th>Description</th><th class="num" style="width:80px;">Qty</th><th class="num" style="width:100px;">Unit Price</th><th class="num" style="width:120px;">Amount</th></tr></thead>
+      <tbody>
+        <tr><td><b>${lineTitle}</b><br><span style="color:#94a3b8;font-size:11px;">${lineSubtitle}</span></td><td class="num">${inv.pallets || '—'}</td><td class="num">${money(inv.unitPrice)}</td><td class="num bal">${money(inv.amount)}</td></tr>
+        <tr class="total-row"><td colspan="3" style="text-align:right;">${totalLabel}</td><td class="num bal">${money(inv.amount)}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  ${stampBlock}
+  <div class="footer">${footerText}</div>
+  <div class="bottom"><div>${esc(inv.number)} &middot; ${fmtDate(inv.date)}</div><div>${esc(coNoBank.name)}</div></div>
+</div></body></html>`;
+}
+
+// === Open email modal for a partnership invoice ===
+function openPtInvEmailModal(id) {
+  const inv = (state.partnershipInvoices || []).find(i => i.id === id);
+  if (!inv) { flash('找不到发票'); return; }
+  if (inv.status === 'cancelled') {
+    if (!confirm('这张已经作废,真的还要发邮件?')) return;
+  }
+  const isSinv = inv.type === 'sale-emma';
+  const html = _buildPtInvEmailHtml(inv);
+  let defaultTo = '';
+  if (isSinv) {
+    defaultTo = (state.emma && state.emma.email) || '';
+  } else {
+    // PINV: prefer accountant / self
+    defaultTo = (currentUser && currentUser.email) || (state.company && state.company.email) || '';
+  }
+  const label = isSinv ? 'Emma 销售发票' : 'SSS 付款凭证';
+  const subject = isSinv
+    ? `Invoice ${inv.number} — CYPP UK LTD`
+    : `Payment Voucher ${inv.number} — CYPP UK LTD`;
+  _emailSendCtx = { who: 'pt-invoice', invoiceId: inv.id, html, subject, defaultTo, label };
+  _openSendEmailModal(label);
+}
+
 function addPickup() {
   const date = document.getElementById('p-date').value;
   const pallets = parseInt(document.getElementById('p-pallets').value);
@@ -4786,6 +5615,7 @@ function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
   document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   if (name === 'ai') renderInsights();
+  if (name === 'ptinvoices' && typeof renderPtInvoices === 'function') renderPtInvoices();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -4811,23 +5641,93 @@ function renderModeVisibility() {
   const sub = document.getElementById('dash-sub');
   const newDash = document.getElementById('new-mode-dashboard');
   const oldDash = document.getElementById('old-mode-dashboard');
+  const transNewMode = document.getElementById('transfer-new-mode');
+  const transOldMode = document.getElementById('transfer-old-mode');
+  const transTitle = document.getElementById('transfer-title');
+  const transSub = document.getElementById('transfer-sub');
   if (!state || !state.params) return;
   if (isNewMode()) {
     if (banner) banner.style.display = 'none';
     if (toggle) toggle.style.display = '';
     if (sub) sub.innerHTML = `新模式已启用 · 从 <b style="color:#c4b5fd;">${escapeHtml(newModeStartDate() || '')}</b> 起 · <span style="color:var(--green);">私人账</span>`;
-    // Show new dashboard when view='new', show old when view='history'
+    // Dashboard: show new when view='new', old when view='history'
     const showNew = (_viewMode === 'new');
     if (newDash) newDash.style.display = showNew ? '' : 'none';
     if (oldDash) oldDash.style.display = showNew ? 'none' : '';
-    if (showNew) renderNewModeKpis();
+    // Transfer page: same toggle
+    if (transNewMode) transNewMode.style.display = showNew ? '' : 'none';
+    if (transOldMode) transOldMode.style.display = showNew ? 'none' : '';
+    if (transTitle) transTitle.textContent = showNew ? '资金流' : '📜 转账记录(历史)';
+    if (transSub) transSub.textContent = showNew ? '资金流入资金池(Emma + 客户)· 流出到 SSS / Hugo · 自动开 INV' : '旧模式数据(只读)';
+    if (showNew) {
+      renderNewModeKpis();
+      setTransferDateDefault();
+      renderCashflowList();
+    }
   } else {
     if (banner) banner.style.display = '';
     if (toggle) toggle.style.display = 'none';
     if (sub) sub.textContent = '共享工作区 · Michael · Emma · Hugo 都能看到同一份账';
     if (newDash) newDash.style.display = 'none';
     if (oldDash) oldDash.style.display = '';
+    if (transNewMode) transNewMode.style.display = 'none';
+    if (transOldMode) transOldMode.style.display = '';
+    if (transTitle) transTitle.textContent = '转账记录';
+    if (transSub) transSub.textContent = '每次给 Emma 打钱记一笔 · 系统自动累加余额';
   }
+}
+
+// === Render the new-mode cash flow events list ===
+function renderCashflowList() {
+  const tb = document.getElementById('cashflow-body');
+  const cnt = document.getElementById('cashflow-count');
+  if (!tb) return;
+  const evs = _newModeEvents().filter(e => ['in-emma','in-customer','out-supplier','out-hugo'].includes(e.type))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.createdAt || '').localeCompare(a.createdAt || ''));
+  if (cnt) cnt.textContent = evs.length + ' 条';
+  if (!evs.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="dim" style="text-align:center;padding:30px;">还没有资金流事件 — 用上面 3 个表单录入</td></tr>';
+    return;
+  }
+  const typeMap = {
+    'in-emma':      { label: '💵 Emma 转入',  color: 'var(--pink)',   sign: '+' },
+    'in-customer':  { label: '💵 客户转入',   color: 'var(--violet)', sign: '+' },
+    'out-supplier': { label: '🏭 付 SSS',      color: '#c4b5fd',       sign: '−' },
+    'out-hugo':     { label: '🧑 付 Hugo',     color: 'var(--amber)',  sign: '−' }
+  };
+  tb.innerHTML = evs.map(e => {
+    const t = typeMap[e.type] || { label: e.type, color: 'var(--text)', sign: '' };
+    const linkedInv = (state.partnershipInvoices || []).find(inv => inv.linkedEventId === e.id);
+    const invBadge = linkedInv
+      ? `<span class="badge" style="background:rgba(139,92,246,0.18);color:#c4b5fd;font-size:9px;cursor:pointer;" onclick="${linkedInv.type === 'sale-emma' ? 'printSinv' : 'printPinv'}('${linkedInv.id}')" title="点击打印">${escapeHtml(linkedInv.number)}</span>`
+      : '';
+    return `<tr>
+      <td>${escapeHtml(e.date)}</td>
+      <td><span style="color:${t.color};font-weight:600;">${t.label}</span>${e.pallets ? ' <span class="dim" style="font-size:10px;">' + e.pallets + ' 托</span>' : ''}</td>
+      <td><b style="color:${t.color};">${t.sign}${fmt(e.amount || 0)}</b></td>
+      <td>${invBadge}</td>
+      <td class="dim" style="font-size:11px;">${escapeHtml(e.note || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn sm ghost danger" onclick="delNewModeEvent('${e.id}')" title="删除">删</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function delNewModeEvent(id) {
+  if (!confirm('删除这条资金流事件?(关联的 INV 也会被作废)')) return;
+  const ev = state.events.find(e => e.id === id);
+  if (!ev) return;
+  ev.deleted = true;
+  ev.deletedAt = new Date().toISOString();
+  // Cancel linked invoice if any
+  const linkedInv = (state.partnershipInvoices || []).find(inv => inv.linkedEventId === id);
+  if (linkedInv) {
+    linkedInv.status = 'cancelled';
+    linkedInv.updatedAt = new Date().toISOString();
+  }
+  save(); renderAll();
+  flash('已删除' + (linkedInv ? ' · 关联 INV 已作废' : ''));
 }
 
 // === Render the 5 new-mode KPI cards ===
@@ -4962,7 +5862,7 @@ async function executeModeSwitch() {
     const m = (typeof hugoMath === 'function') ? hugoMath() : null;
     const poolBalance = m && m.mode === 'split' ? m.prepayBalance : 0;
     if (poolBalance > 0) {
-      state.events.push({
+      const autoEv = {
         id: crypto.randomUUID(),
         type: 'in-emma',
         date: today,
@@ -4972,7 +5872,12 @@ async function executeModeSwitch() {
         createdBy: currentEmail(),
         createdAt: new Date().toISOString(),
         _autoFromModeSwitch: true
-      });
+      };
+      state.events.push(autoEv);
+      // Auto-generate SINV-Emma for this refund event
+      if (typeof generateSinvForEmmaTransfer === 'function') {
+        try { generateSinvForEmmaTransfer(autoEv); } catch (e) { console.warn('[mode-switch] SINV gen failed:', e); }
+      }
     }
     // Update state.params with user-confirmed openings
     state.params.partnershipMode = 'new';
@@ -5007,6 +5912,10 @@ function renderAll() {
   renderInsights();
   renderCharts();
   if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory();
+  if (typeof renderPtInvoices === 'function') renderPtInvoices();
+  // Show/hide 发票 nav item — only visible after switching to new mode
+  const navInv = document.getElementById('nav-pt-invoices');
+  if (navInv) navInv.classList.toggle('hide', !isNewMode());
   // Refresh quick quote so balance and unit price stay in sync
   if (typeof updateEmmaQuote === 'function') updateEmmaQuote();
 }
