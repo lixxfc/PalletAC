@@ -3448,6 +3448,12 @@ function closeSmartEntry() {
    'ue-hugo-amount','ue-hugo-period','ue-hugo-note'
   ].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   _seType = 'pickup';
+  // CRITICAL: reset save button state — otherwise after first successful save,
+  // re-opening the modal shows a permanently-disabled button.
+  const btn = document.getElementById('se-save-btn');
+  const txt = document.getElementById('se-save-text');
+  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  if (txt) txt.textContent = '保存到所有账目';
 }
 
 // =====================================================
