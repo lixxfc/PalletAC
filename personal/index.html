@@ -9392,46 +9392,67 @@ function renderSupplyWeekTable(weekMon) {
   const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
   let totTT = 0, totAMZ = 0, totTrucks = 0, totSwap = 0;
   const today = new Date().toISOString().slice(0, 10);
-  tb.innerHTML = days.map(d => {
+  const rows = [];
+  for (const d of days) {
     const dd = new Date(d + 'T12:00:00');
     const dayLabel = dayNames[dd.getDay()];
-    // Aggregate across ALL day records with this date (handles legacy duplicates)
+    const isToday = d === today;
+    const isWeekend = (dd.getDay() === 0 || dd.getDay() === 6);
+    const rowStyle = isToday ? 'background:rgba(251,191,36,0.06);' : (isWeekend ? 'opacity:0.5;' : '');
+    // Find ALL day records for this date (one per owner)
     const matchingDays = state.dailySupply.filter(x => x.date === d);
-    const day = matchingDays[0] || null;  // primary record (for edit button + owner)
-    let tt = 0, amz = 0, trucks = 0, swap = 0;
-    let owner = day ? day.pickupBy : rotationPickupBy(d);
-    for (const dx of matchingDays) {
-      for (const tr of (dx.trucks || [])) {
+    if (matchingDays.length === 0) {
+      // No record — show placeholder row using rotation default
+      const owner = rotationPickupBy(d);
+      const ownerBadge = owner === 'Emma'
+        ? '<span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);">Emma</span>'
+        : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">Michael</span>';
+      const actionBtn = `<button class="btn sm ghost" title="新增这一天的供货记录" onclick="openSupplyEditorForDate('${d}')" style="opacity:0.7;">＋</button>`;
+      rows.push(`<tr style="${rowStyle}">
+        <td><b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}</td>
+        <td class="dim">${d}</td>
+        <td><span class="dim">${ownerBadge} (无记录)</span></td>
+        <td><b style="color:var(--text-dim);">0</b></td>
+        <td><b style="color:var(--text-dim);">0</b></td>
+        <td>0 托 <span class="dim">/ 0 车</span></td>
+        <td><span class="dim">—</span></td>
+        <td style="text-align:center;">${actionBtn}</td>
+      </tr>`);
+      continue;
+    }
+    // Render one row PER owner (sorted: Michael first, then Emma)
+    const sorted = matchingDays.slice().sort((a, b) => (a.pickupBy === 'Emma' ? 1 : 0) - (b.pickupBy === 'Emma' ? 1 : 0));
+    sorted.forEach((day, idx) => {
+      let tt = 0, amz = 0, trucks = 0, swap = 0;
+      for (const tr of (day.trucks || [])) {
         trucks++;
         if (tr.type === 'TT') tt += (tr.pallets || 0);
         else if (tr.type === 'AMAZON') amz += (tr.pallets || 0);
         if (tr.swapped) swap++;
       }
-    }
-    totTT += tt; totAMZ += amz; totTrucks += trucks; totSwap += swap;
-    const ownerBadge = owner === 'Emma'
-      ? '<span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);">Emma</span>'
-      : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">Michael</span>';
-    const isToday = d === today;
-    const isWeekend = (dd.getDay() === 0 || dd.getDay() === 6);
-    const rowStyle = isToday ? 'background:rgba(251,191,36,0.06);' : (isWeekend ? 'opacity:0.5;' : '');
-    const swapBadge = swap > 0 ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${swap} 车</span>` : '<span class="dim">—</span>';
-    // Action button: ✎ edit (if day has a record) OR ＋ add (if no record yet)
-    const actionBtn = day
-      ? `<button class="btn sm ghost" title="编辑这一天的供货记录" onclick="openSupplyEditor('${day.id}')">✎ 改</button>`
-      : `<button class="btn sm ghost" title="新增这一天的供货记录" onclick="openSupplyEditorForDate('${d}')" style="opacity:0.7;">＋</button>`;
-
-    return `<tr style="${rowStyle}">
-      <td><b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}</td>
-      <td class="dim">${d}</td>
-      <td>${day ? ownerBadge : '<span class="dim">' + ownerBadge + ' (无记录)</span>'}</td>
-      <td><b style="color:${tt > 0 ? '#a5b4fc' : 'var(--text-dim)'};">${tt}</b></td>
-      <td><b style="color:${amz > 0 ? '#67e8f9' : 'var(--text-dim)'};">${amz}</b></td>
-      <td>${tt + amz} 托 <span class="dim">/ ${trucks} 车</span></td>
-      <td>${swapBadge}</td>
-      <td style="text-align:center;">${actionBtn}</td>
-    </tr>`;
-  }).join('');
+      totTT += tt; totAMZ += amz; totTrucks += trucks; totSwap += swap;
+      const owner = day.pickupBy || 'Michael';
+      const ownerBadge = owner === 'Emma'
+        ? '<span class="badge" style="background:rgba(244,114,182,0.15);color:var(--pink);">Emma</span>'
+        : '<span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">Michael</span>';
+      const swapBadge = swap > 0 ? `<span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);">🔁 ${swap} 车</span>` : '<span class="dim">—</span>';
+      const actionBtn = `<button class="btn sm ghost" title="编辑这一天的供货记录" onclick="openSupplyEditor('${day.id}')">✎ 改</button>`;
+      // Only show day name + date on first row of the group
+      const showDateCells = (idx === 0);
+      const rowSpanStyle = (sorted.length > 1 && idx > 0) ? 'border-top:1px dashed rgba(139,150,255,0.10);' : '';
+      rows.push(`<tr style="${rowStyle}${rowSpanStyle}">
+        <td>${showDateCells ? `<b>${dayLabel}</b>${isToday ? ' <span class="badge" style="font-size:9px;background:rgba(251,191,36,0.2);color:var(--amber);">今天</span>' : ''}` : '<span style="opacity:0.4;">↳</span>'}</td>
+        <td class="dim">${showDateCells ? d : ''}</td>
+        <td>${ownerBadge}</td>
+        <td><b style="color:${tt > 0 ? '#a5b4fc' : 'var(--text-dim)'};">${tt}</b></td>
+        <td><b style="color:${amz > 0 ? '#67e8f9' : 'var(--text-dim)'};">${amz}</b></td>
+        <td>${tt + amz} 托 <span class="dim">/ ${trucks} 车</span></td>
+        <td>${swapBadge}</td>
+        <td style="text-align:center;">${actionBtn}</td>
+      </tr>`);
+    });
+  }
+  tb.innerHTML = rows.join('');
   if (tf) {
     tf.innerHTML = `<tr style="background:rgba(67,56,202,0.06);">
       <td colspan="3"><b>本周合计</b></td>
