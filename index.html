@@ -2669,7 +2669,7 @@ function buildDrilldownData(key) {
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '👩 Emma 余额(在我这)· 数据来源',
-      sub: total >= 0 ? `她预付 £${fmt0(transferred)} · 取了 £${fmt0(used)} · 还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `她欠你 £${fmt0(Math.abs(total))}`,
+      sub: total >= 0 ? `她预付 £${fmt0(transferred)} · 取了 £${fmt0(used)} · 还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `你欠她 £${fmt0(Math.abs(total))}`,
       formula: `<div><span class="k">期初</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
                 <div><span class="k">+ 累计 Emma 转入</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(transferred)}</span></div>
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
@@ -5768,7 +5768,7 @@ function renderNewModeKpis() {
   // 3. Emma balance
   const emma = emmaBalanceNew();
   set('nm-emma-value', fmt(emma));
-  set('nm-emma-sub', emma >= 0 ? `她够拉 ${Math.floor(emma / buyPrice)} 托` : `她欠你 ${fmt(Math.abs(emma))}`);
+  set('nm-emma-sub', emma >= 0 ? `她够拉 ${Math.floor(emma / buyPrice)} 托` : `你欠她 ${fmt(Math.abs(emma))}`);
 
   // 4. Hugo owed (Michael's pickups only — Emma settles her own with Hugo)
   const opening = state.params.hugoOpeningOwed || 0;
