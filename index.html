@@ -1136,9 +1136,9 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
             <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-sss')">ⓘ</button>
           </div>
           <div class="kpi v4" data-drilldown="nm-emma">
-            <div class="kpi-head"><div class="kpi-label">👩 Emma 余额(在我这)</div><div class="kpi-icon">E</div></div>
+            <div class="kpi-head"><div class="kpi-label">👩 Emma 在我这总预付</div><div class="kpi-icon">E</div></div>
             <div class="kpi-value" id="nm-emma-value" style="color:var(--pink);">£0</div>
-            <div class="kpi-sub" id="nm-emma-sub">她够拉 0 托</div>
+            <div class="kpi-sub" id="nm-emma-sub">她还能拉 0 托</div>
             <button class="kpi-info" title="数据来源" onclick="openDrilldown('nm-emma')">ⓘ</button>
           </div>
           <div class="kpi v5" data-drilldown="nm-hugo">
@@ -1785,9 +1785,9 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600;">⚠ 必填!SSS 账单上的预付余额</div>
         </div>
         <div class="form-row">
-          <label>👩 Emma 期初余额 £</label>
-          <input type="number" id="switch-emma-opening" step="0.01" placeholder="0 或负数">
-          <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">负数 = 你欠 Emma(滚进新模式)</div>
+          <label>👩 Emma 切换日 SSS 预付 £</label>
+          <input type="number" id="switch-emma-opening" step="0.01" placeholder="0 或正数">
+          <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">正数 = Emma 之前替你出过钱(她有 SSS 预付信用)<br>她以后取货时自动消化,你不需要还现金</div>
         </div>
       </div>
     </div>
@@ -2059,6 +2059,14 @@ function normalizeState(s) {
   if (typeof s.params.hugoOpeningOwed !== 'number') s.params.hugoOpeningOwed = 0;
   if (typeof s.params.emmaOpeningCredit !== 'number') s.params.emmaOpeningCredit = 0;
   if (typeof s.params.sssOpeningCredit !== 'number') s.params.sssOpeningCredit = 0;
+  // === MIGRATION (2026-05): emmaOpeningCredit semantics changed ===
+  // OLD: negative = Michael owes Emma cash (debt)
+  // NEW: positive = Emma's pre-existing SSS pool credit (her prepay carryover)
+  // Same magnitude, flipped sign. Run once via _emmaOpeningSemanticV2 marker.
+  if (s.params._emmaOpeningSemanticV2 !== true) {
+    s.params.emmaOpeningCredit = -s.params.emmaOpeningCredit;
+    s.params._emmaOpeningSemanticV2 = true;
+  }
   if (!Array.isArray(s.events)) s.events = [];
   // === SSS / Hugo / Invoices ===
   if (!s.sss || typeof s.sss !== 'object') s.sss = { name: '', address: '', postcode: '', phone: '', email: '', contact: '', bank: '' };
@@ -2146,35 +2154,47 @@ function sssBalance() {
 }
 
 // === Per-party SSS allocation (new mode) ===
-// Emma's share = her transfers since switch − her pickups × £245
-// Michael's share = SSS total pool − Emma's share
-// (Emma's £5,145 pre-switch debt is tracked separately on the Emma balance card)
+// MODEL (Option B, confirmed by user 2026-05-20):
+//   Emma's pre-switch debt to Michael is treated as her PRE-EXISTING SSS pool credit
+//   (stored in emmaOpeningCredit, positive = her credit). She settles old debt by
+//   pulling extra pallets from SSS over time. No cash settlement needed.
+//
+//   Emma SSS share   = emmaOpening + Σ in-emma − Σ Emma pickups × £245
+//   Michael SSS share = (sssOpening − emmaOpening) + (Σ out-supplier − Σ in-emma) − Σ Michael pickups × £245
+//   Sum of both = sssBalance() always.
 function emmaSssShare() {
-  if (!isNewMode()) return 0;
+  if (!isNewMode()) return { in: 0, used: 0, remaining: 0 };
   const buyPrice = state.params.buyPrice || 245;
+  const opening = state.params.emmaOpeningCredit || 0;   // POSITIVE = Emma's prepay credit at switch
   let inAmt = 0, usedAmt = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'in-emma') inAmt += (e.amount || 0);
     else if (e.type === 'pickup' && !isMichaelPickup(e)) usedAmt += (e.pallets || 0) * buyPrice;
   }
-  return { in: inAmt, used: usedAmt, remaining: inAmt - usedAmt };
+  const totalIn = opening + inAmt;
+  return { opening, in: totalIn, inFresh: inAmt, used: usedAmt, remaining: totalIn - usedAmt };
 }
 function michaelSssShare() {
-  if (!isNewMode()) return 0;
+  if (!isNewMode()) return { in: 0, used: 0, remaining: 0 };
   const buyPrice = state.params.buyPrice || 245;
-  const opening = state.params.sssOpeningCredit || 0;
+  const sssOpening = state.params.sssOpeningCredit || 0;
+  const emmaOpening = state.params.emmaOpeningCredit || 0;
+  const michaelOpening = sssOpening - emmaOpening;        // Michael's share of the £3,170 SSS pot
   let outSupplier = 0, inEmma = 0, michaelUsed = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
     else if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'pickup' && isMichaelPickup(e)) michaelUsed += (e.pallets || 0) * buyPrice;
   }
-  // Michael's in = opening + (out-supplier - Emma's contribution that flowed through to SSS)
-  const inAmt = opening + outSupplier - inEmma;
-  return { in: inAmt, used: michaelUsed, remaining: inAmt - michaelUsed };
+  // Michael's in = his portion of opening + (out-supplier − Emma's contribution flowing through)
+  const inAmt = michaelOpening + outSupplier - inEmma;
+  return { opening: michaelOpening, in: inAmt, used: michaelUsed, remaining: inAmt - michaelUsed };
 }
 
-// 3. Emma balance at Michael = her transfers − her pickups × buyPrice
+// 3. Emma balance at Michael = her total SSS pool position
+// In Option B model, "Emma 余额(在我这)" === "Emma 的 SSS 份额"
+// Both mean: how much SSS pool value belongs to Emma.
+// emmaOpeningCredit is now POSITIVE = her prepay credit at switch.
 function emmaBalanceNew() {
   const evs = _newModeEvents();
   const buyPrice = state.params.buyPrice || 245;
@@ -2736,7 +2756,8 @@ function buildDrilldownData(key) {
 
   if (key === 'nm-sss-michael' && isNewMode()) {
     const buyPrice = state.params.buyPrice || 245;
-    const opening = state.params.sssOpeningCredit || 0;
+    const sssOpening = state.params.sssOpeningCredit || 0;
+    const emmaOpening = state.params.emmaOpeningCredit || 0;
     const outSupplier = _newModeEvents().filter(e => e.type === 'out-supplier');
     const outSupplierSum = outSupplier.reduce((s,e) => s + (e.amount || 0), 0);
     const inEmmaSum = _newModeEvents().filter(e => e.type === 'in-emma').reduce((s,e) => s + (e.amount || 0), 0);
@@ -2744,17 +2765,19 @@ function buildDrilldownData(key) {
     const michaelUsed = michaelPicks.reduce((s,e) => s + (e.pallets || 0) * buyPrice, 0);
     const mShare = michaelSssShare();
     const rows = [
-      { date: '—', desc: `<b>📌 SSS 期初(切换日)</b>`, amount: opening },
+      { date: '—', desc: `<b>📌 我的 SSS 期初(切换日)</b> = SSS 总池 £${fmt0(sssOpening)} − Emma 切换日预付 £${fmt0(emmaOpening)}`, amount: mShare.opening },
       ...outSupplier.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ 付 SSS</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
-      ..._newModeEvents().filter(e => e.type === 'in-emma').map(e => ({ date: e.date, desc: `<b style="color:var(--rose);opacity:0.7;">− Emma 那部分(转走的)</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) })),
+      ..._newModeEvents().filter(e => e.type === 'in-emma').map(e => ({ date: e.date, desc: `<b style="color:var(--mute-2);">  其中 Emma 出资部分(归 Emma 份额)</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) })),
       ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '🤴 我的 SSS 份额 · 数据来源',
-      sub: mShare.remaining >= 0 ? `转入 £${fmt0(mShare.in)} · 已取 £${fmt0(mShare.used)} · 还能拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt0(Math.abs(mShare.remaining))}`,
-      formula: `<div><span class="k">期初(我的 SSS)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
-                <div><span class="k">+ 累计付 SSS(全部)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(outSupplierSum)}</span></div>
-                <div><span class="k">− Emma 那部分(她转给我的钱)</span><span class="v" style="float:right;color:var(--mute-2);">−£${fmt0(inEmmaSum)}</span></div>
+      sub: mShare.remaining >= 0 ? `我转入(净) £${fmt0(mShare.in)} · 已取 £${fmt0(mShare.used)} · 还能拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt0(Math.abs(mShare.remaining))}`,
+      formula: `<div><span class="k">SSS 总池期初</span><span class="v" style="float:right;">£${fmt0(sssOpening)}</span></div>
+                <div><span class="k">− Emma 切换日的预付</span><span class="v" style="float:right;color:var(--pink);">−£${fmt0(emmaOpening)}</span></div>
+                <div><span class="k">= 我的期初</span><span class="v" style="float:right;color:${mShare.opening < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.opening)}</span></div>
+                <div style="margin-top:6px;"><span class="k">+ 累计付 SSS(全部)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(outSupplierSum)}</span></div>
+                <div><span class="k">− 其中 Emma 转过来的部分</span><span class="v" style="float:right;color:var(--mute-2);">−£${fmt0(inEmmaSum)}</span></div>
                 <div><span class="k">− 我自己取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(michaelUsed)}</span></div>
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>我的 SSS 份额</b></span><span class="v total" style="float:right;color:${mShare.remaining < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.remaining)}</span></div>`,
       rows
@@ -2767,16 +2790,18 @@ function buildDrilldownData(key) {
     const emmaPicks = _newModeEvents().filter(e => e.type === 'pickup' && !isMichaelPickup(e));
     const eShare = emmaSssShare();
     const rows = [
+      { date: '—', desc: `<b>📌 Emma 切换日的 SSS 预付</b>(从老模式带过来的)`, amount: eShare.opening },
       ...inEmmaEvents.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ Emma 转给我</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
       ...emmaPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '👩 Emma 的 SSS 份额 · 数据来源',
-      sub: eShare.remaining >= 0 ? `她转入 £${fmt0(eShare.in)} · 她取 £${fmt0(eShare.used)} · 她还能拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `Emma 份额透支 £${fmt0(Math.abs(eShare.remaining))}`,
-      formula: `<div><span class="k">+ 累计 Emma 转给我(切换后)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(eShare.in)}</span></div>
+      sub: eShare.remaining >= 0 ? `她总预付 £${fmt0(eShare.in)} · 她取 £${fmt0(eShare.used)} · 她还能拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `Emma 份额透支 £${fmt0(Math.abs(eShare.remaining))}`,
+      formula: `<div><span class="k">期初 SSS 预付(切换日)</span><span class="v" style="float:right;color:${eShare.opening >= 0 ? 'var(--green)' : 'var(--rose)'};">£${fmt0(eShare.opening)}</span></div>
+                <div><span class="k">+ 新模式 Emma 转给我</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(eShare.inFresh)}</span></div>
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(eShare.used)}</span></div>
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 的 SSS 份额</b></span><span class="v total" style="float:right;color:${eShare.remaining < 0 ? 'var(--rose)' : 'var(--pink)'};">£${fmt0(eShare.remaining)}</span></div>
-                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">注:Emma 切换前的 £${fmt0(state.params.emmaOpeningCredit || 0)} 是你跟她之间的<b style="color:#c4b5fd;">个人欠款</b>(在 "Emma 余额" 卡片追踪),不算入 SSS 池份额。</div>`,
+                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">注:切换日的 £${fmt0(eShare.opening)} 是从老模式带过来的预付。Emma 通过取货消化,不需要现金还款。</div>`,
       rows
     };
   }
@@ -2825,11 +2850,12 @@ function buildDrilldownData(key) {
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '👩 Emma 余额(在我这)· 数据来源',
-      sub: total >= 0 ? `她预付 £${fmt0(transferred)} · 取了 £${fmt0(used)} · 还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `你欠她 £${fmt0(Math.abs(total))}`,
-      formula: `<div><span class="k">期初</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
-                <div><span class="k">+ 累计 Emma 转入</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(transferred)}</span></div>
+      sub: total >= 0 ? `她预付总 £${fmt0(opening + transferred)} · 取了 £${fmt0(used)} · 她还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `她透支 £${fmt0(Math.abs(total))}`,
+      formula: `<div><span class="k">期初 SSS 预付(切换日)</span><span class="v" style="float:right;color:${opening >= 0 ? 'var(--green)' : 'var(--rose)'};">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 累计 Emma 转入(新模式)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(transferred)}</span></div>
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
-                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 余额</b></span><span class="v total" style="float:right;color:${total < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(total)}</span></div>`,
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 的 SSS 池总额</b></span><span class="v total" style="float:right;color:${total < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(total)}</span></div>
+                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">提示:这就是 Emma 在 SSS 池里的份额。她通过取货消化(不需要现金还),所以"余额"和"SSS 份额"是同一个数。</div>`,
       rows
     };
   }
@@ -6007,7 +6033,9 @@ function renderNewModeKpis() {
   // 3. Emma balance
   const emma = emmaBalanceNew();
   set('nm-emma-value', fmt(emma));
-  set('nm-emma-sub', emma >= 0 ? `她够拉 ${Math.floor(emma / buyPrice)} 托` : `你欠她 ${fmt(Math.abs(emma))}`);
+  // emma > 0 = Emma still has SSS prepay credit, she can pull pallets
+  // emma < 0 = Emma overdraft (she pulled more than she contributed)
+  set('nm-emma-sub', emma >= 0 ? `她还能拉 ${Math.floor(emma / buyPrice)} 托` : `她透支 ${fmt(Math.abs(emma))}`);
 
   // 4. Hugo owed (Michael's pickups only — Emma settles her own with Hugo)
   const opening = state.params.hugoOpeningOwed || 0;
@@ -6044,7 +6072,7 @@ function openModeSwitchModal() {
     preview.innerHTML = `
       <div><b>今天日期:</b> ${today}(将作为 partnershipNewModeDate)</div>
       <div style="margin-top:6px;"><b>Hugo 期初欠款 (auto):</b> <span style="color:var(--rose);font-weight:700;">£${fmt(owedNow)}</span>(从现在 "Michael 待结算" 快照)</div>
-      <div style="margin-top:6px;"><b>Emma 旧账(当前余额):</b> <span style="color:${emmaBalNow < 0 ? 'var(--rose)' : 'var(--green)'};font-weight:700;">£${fmt(emmaBalNow)}</span>${emmaBalNow < 0 ? '(你欠 Emma,建议填进 Emma 期初)' : ''}</div>
+      <div style="margin-top:6px;"><b>Emma 旧账(当前余额):</b> <span style="color:${emmaBalNow < 0 ? 'var(--rose)' : 'var(--green)'};font-weight:700;">£${fmt(emmaBalNow)}</span>${emmaBalNow < 0 ? '(你欠 Emma · 会转成她的 SSS 预付信用)' : ''}</div>
       <div style="margin-top:6px;"><b>Hugo 预付池剩余:</b> ${poolBalance >= 0 ? '£' : '−£'}${fmt(Math.abs(poolBalance))}${poolBalance > 0 ? '(Emma 还会还给你)' : (poolBalance < 0 ? '(已亏空,折进 Hugo 欠款)' : '')}</div>
       ${poolBalance > 0 ? `<div style="margin-top:6px;color:var(--green);">✓ 自动新建 <code style="background:rgba(34,211,165,0.10);padding:1px 5px;border-radius:3px;">in-emma £${fmt(poolBalance)}</code> 事件 — Emma 还你池子剩余</div>` : ''}
     `;
@@ -6053,7 +6081,9 @@ function openModeSwitchModal() {
   const hugoIn = document.getElementById('switch-hugo-opening');
   if (hugoIn) hugoIn.value = Math.round(owedNow * 100) / 100;
   const emmaIn = document.getElementById('switch-emma-opening');
-  if (emmaIn) emmaIn.value = Math.round(emmaBalNow * 100) / 100;
+  // New semantic: positive = Emma's pre-existing SSS credit
+  // If Michael owed Emma (emmaBalNow < 0), Emma had credit = -emmaBalNow
+  if (emmaIn) emmaIn.value = Math.round(-emmaBalNow * 100) / 100;
   // SSS opening: NO sensible default — user must enter from SSS's actual bill
   const sssIn = document.getElementById('switch-sss-opening');
   if (sssIn && !sssIn.value) sssIn.value = '';
