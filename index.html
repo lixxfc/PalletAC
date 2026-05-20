@@ -5592,27 +5592,108 @@ function delEvent(id) {
 // Flip a pickup event's owner between Michael and Emma.
 // Used to correct mis-tagged pickups (e.g., the unified-entry bug where Emma's
 // pickup got merged into Michael's day record before the bug was fixed).
-function reassignPickupOwner(id) {
+// CROSS-APP: also splits the matching truck out of personal_data dailySupply
+// so the personal app's 每日供货 / charts reflect the change too.
+async function reassignPickupOwner(id) {
   const ev = state.events.find(e => e.id === id);
   if (!ev || ev.type !== 'pickup') { flash('找不到取货记录'); return; }
   const wasMichael = isMichaelPickup(ev);
   const newOwner = wasMichael ? 'Emma' : 'Michael';
-  const msg = `把这条取货从 <b>${wasMichael ? 'Michael' : 'Emma'}</b> 改成 <b>${newOwner}</b>?\n\n` +
+  const msg = `把这条取货从 ${wasMichael ? 'Michael' : 'Emma'} 改成 ${newOwner}?\n\n` +
     `${ev.pallets} 托 · ${ev.palletType || ''} · £${fmt(ev.amount || 0)}\n\n` +
-    `会影响:\n` +
-    `• SSS 池分配(从 ${wasMichael ? 'Michael' : 'Emma'} 份额转到 ${newOwner} 份额)\n` +
-    `• Hugo 应付${wasMichael ? '减' : '加'} £${fmt((ev.pallets || 0) * (state.params.hugoCommission || 7))}\n` +
-    `• 本月取货统计`;
-  if (!confirm(msg.replace(/<[^>]+>/g, ''))) return;
-  // Update createdBy + add an explicit pickedUpBy field
+    `会同时更新:\n` +
+    `• 合伙账(SSS 池分配 / Hugo 应付 / 月度统计)\n` +
+    `• 个人 App(每日供货 / 图表)`;
+  if (!confirm(msg)) return;
+  // 1) Update partnership event
   ev.pickedUpBy = newOwner;
   ev.createdBy = (newOwner === 'Emma') ? 'emma@maomail.uk' : 'harreds.ceo@gmail.com';
   ev.updatedAt = new Date().toISOString();
   ev._ownerReassigned = true;
   ev._reassignedAt = new Date().toISOString();
   ev._reassignedBy = (currentUser && currentUser.email) || '?';
+
+  // 2) Cross-app: update personal_data dailySupply
+  let personalUpdateOk = false;
+  let personalUpdateErr = '';
+  try {
+    if (!currentUser || !currentUser.id) throw new Error('未登录');
+    const { data: row, error: readErr } = await db
+      .from('personal_data')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!row || !row.data) throw new Error('找不到 personal_data');
+    const pdata = row.data;
+    if (!Array.isArray(pdata.dailySupply)) pdata.dailySupply = [];
+    // Find day record containing trucks matching this event's linkSupplyId + type + pallets
+    const linkId = ev._linkSupplyId;
+    let foundDayRec = null;
+    let movedTrucks = [];
+    for (const dayRec of pdata.dailySupply) {
+      if (dayRec.date !== ev.date) continue;
+      if (!Array.isArray(dayRec.trucks)) continue;
+      // Match by linkSupplyId (preferred) + type + pallets
+      const matchPredicate = (t) => {
+        if (linkId && t._linkSupplyId === linkId) {
+          // Disambiguate within same linkId: same type + same pallets
+          const typeMatch = (t.type === ev.palletType) || (!ev.palletType && !t.type);
+          return typeMatch && t.pallets === ev.pallets;
+        }
+        // Fallback: match by type + pallets + truckNum (no linkId)
+        if (!linkId) {
+          return t.type === ev.palletType && t.pallets === ev.pallets && (t.truckNum || '') === (ev.truck || '');
+        }
+        return false;
+      };
+      const matches = dayRec.trucks.filter(matchPredicate);
+      if (matches.length === 0) continue;
+      // Take only the first match if multiple (rare)
+      const truck = matches[0];
+      foundDayRec = dayRec;
+      movedTrucks = [truck];
+      dayRec.trucks = dayRec.trucks.filter(t => t !== truck);
+      break;
+    }
+    if (!foundDayRec) throw new Error('个人账里找不到对应卡车(date+type+pallets)');
+    // Find or create target day record for new owner
+    let target = pdata.dailySupply.find(d => d.date === ev.date && (d.pickupBy || 'Michael') === newOwner);
+    if (!target) {
+      target = {
+        id: crypto.randomUUID(),
+        date: ev.date,
+        pickupBy: newOwner,
+        manualOverride: false,
+        trucks: [],
+        note: ''
+      };
+      pdata.dailySupply.push(target);
+    }
+    for (const t of movedTrucks) target.trucks.push(t);
+    // If source day record now has no trucks, remove it
+    if (foundDayRec.trucks.length === 0) {
+      pdata.dailySupply = pdata.dailySupply.filter(d => d !== foundDayRec);
+    }
+    // Write back
+    const { error: writeErr } = await db
+      .from('personal_data')
+      .update({ data: pdata, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id);
+    if (writeErr) throw new Error(writeErr.message);
+    _personalCustomerCache = pdata;  // refresh cache
+    personalUpdateOk = true;
+  } catch (e) {
+    personalUpdateErr = e.message || String(e);
+    console.warn('[reassign] personal_data sync failed:', e);
+  }
+
   save(); renderAll();
-  flash('✓ 已改成 ' + newOwner + ' · 所有相关数字已重新计算');
+  if (personalUpdateOk) {
+    flash('✓ 已改成 ' + newOwner + ' · 合伙账 + 个人账都已同步');
+  } else {
+    flash('⚠ 合伙账已改成 ' + newOwner + ',但个人账同步失败: ' + personalUpdateErr);
+  }
 }
 
 function restoreEvent(id) {
