@@ -1544,6 +1544,28 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <div id="switch-preview" style="font-size:12px;line-height:1.85;color:var(--text);">(loading…)</div>
     </div>
 
+    <!-- 3 opening balance inputs (editable defaults from snapshot) -->
+    <div style="margin-top:14px;padding:14px 16px;background:rgba(139,92,246,0.06);border:1px solid rgba(139,92,246,0.25);border-radius:10px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.6px;color:#c4b5fd;margin-bottom:10px;">⚙ 期初余额(可改 · 切换后写入新模式起点)</div>
+      <div class="form-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+        <div class="form-row">
+          <label>Hugo 期初欠款 £</label>
+          <input type="number" id="switch-hugo-opening" step="0.01" placeholder="auto">
+          <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">自动 = 当前 Michael 待结算</div>
+        </div>
+        <div class="form-row">
+          <label>🏭 SSS 期初余额 £ <span style="color:var(--rose);">*</span></label>
+          <input type="number" id="switch-sss-opening" step="0.01" placeholder="3770">
+          <div style="font-size:10px;color:var(--amber);margin-top:4px;font-weight:600;">⚠ 必填!SSS 账单上的预付余额</div>
+        </div>
+        <div class="form-row">
+          <label>👩 Emma 期初余额 £</label>
+          <input type="number" id="switch-emma-opening" step="0.01" placeholder="0 或负数">
+          <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">负数 = 你欠 Emma(滚进新模式)</div>
+        </div>
+      </div>
+    </div>
+
     <div class="row mt-4" style="gap:10px;justify-content:flex-end;">
       <button class="btn ghost" onclick="closeModeSwitchModal()">取消(我再想想)</button>
       <button class="btn primary" id="mode-switch-confirm-btn" onclick="executeModeSwitch()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;">
@@ -1912,13 +1934,28 @@ function emmaBalanceNew() {
   return opening + transferred - used;
 }
 
-// 4. Hugo owed (new mode) = opening + post-switch pickups × £7 − cash paid
+// Helper: is this pickup Michael's (for Michael's customer) vs Emma's (her own)?
+// Michael's Hugo accrual ONLY counts pickups where Michael picked up
+// (Emma pays Hugo directly for her own pickups — confirmed by user 2026-05-20).
+function isMichaelPickup(e) {
+  if (!e || e.type !== 'pickup') return false;
+  if (e.pickedUpBy === 'Michael') return true;
+  if (e.pickedUpBy === 'Emma') return false;
+  // Fallback: use createdBy email
+  const cb = (e.createdBy || '').toLowerCase();
+  if (cb === 'emma@maomail.uk') return false;
+  // Default: Michael (covers historical pickups, harreds.ceo, and unknown)
+  return true;
+}
+
+// 4. Hugo owed (new mode) = opening + Michael's post-switch pickups × £7 − cash paid
+// NOTE: Emma's pickups DO NOT count — she settles with Hugo herself.
 function hugoOwedNew() {
   const evs = _newModeEvents();
   const rate = state.params.hugoCommission || 7;
   let accrued = 0, paid = 0;
   for (const e of evs) {
-    if (e.type === 'pickup') accrued += (e.pallets || 0) * rate;
+    if (e.type === 'pickup' && isMichaelPickup(e)) accrued += (e.pallets || 0) * rate;
     else if (e.type === 'out-hugo') paid += (e.amount || 0);
   }
   const opening = state.params.hugoOpeningOwed || 0;
@@ -2498,31 +2535,43 @@ function buildDrilldownData(key) {
   if (key === 'nm-hugo' && isNewMode()) {
     const rate = state.params.hugoCommission || 7;
     const opening = state.params.hugoOpeningOwed || 0;
-    const pickupRows = _newModeEvents().filter(e => e.type === 'pickup');
+    // ONLY Michael's pickups accrue Hugo on Michael's side (Emma settles her own)
+    const allPickups = _newModeEvents().filter(e => e.type === 'pickup');
+    const michaelPickups = allPickups.filter(e => isMichaelPickup(e));
+    const emmaPickups = allPickups.filter(e => !isMichaelPickup(e));
     const payRows = _newModeEvents().filter(e => e.type === 'out-hugo');
-    const accrued = pickupRows.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const accrued = michaelPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
     const paid = payRows.reduce((s, e) => s + (e.amount || 0), 0);
     const owed = hugoOwedNew();
     const rows = [
       { date: '—', desc: `<b>📌 期初欠款</b>(切换日快照)`, amount: opening },
-      ...pickupRows.map(e => ({
+      ...michaelPickups.map(e => ({
         date: e.date,
-        desc: `<b style="color:var(--amber);">+ 取货应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)}`,
+        desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)}`,
         amount: (e.pallets || 0) * rate
       })),
       ...payRows.map(e => ({
         date: e.date,
         desc: `<b style="color:var(--green);">− 付 Hugo 现金</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`,
         amount: -(e.amount || 0)
+      })),
+      // Show Emma pickups for context (not counted) — at bottom, greyed
+      ...emmaPickups.map(e => ({
+        date: e.date,
+        desc: `<span style="color:var(--mute-2);opacity:0.7;"><b>· Emma 取货</b> ${e.pallets} 托(她自己付 Hugo,不计你账上)</span>`,
+        amount: 0
       }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '🧑 Hugo 应付 · 数据来源',
-      sub: `期初 £${fmt0(opening)} + 累计 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
-      formula: `<div><span class="k">期初(切换日)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
-                <div><span class="k">+ 切换后累计应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accrued)}</span></div>
-                <div><span class="k">− 已付现金</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paid)}</span></div>
-                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>还欠 Hugo</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(owed)}</span></div>`,
+      sub: `期初 £${fmt0(opening)} + 我取 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
+      formula: `<div><span class="k">期初(切换日快照)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
+                <div><span class="k">+ 切换后我取货应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accrued)}</span><div style="font-size:11px;color:var(--text-dim);">${michaelPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate}</div></div>
+                <div><span class="k">− 已付 Hugo 现金</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paid)}</span></div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>还欠 Hugo</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(owed)}</span></div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);line-height:1.7;background:rgba(244,114,182,0.06);padding:8px 10px;border-radius:6px;">
+                  <b>注:</b>Emma 取的 ${emmaPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托(共应付 Hugo £${fmt0(emmaPickups.reduce((s,e)=>s+(e.pallets||0)*rate,0))})Emma 自己结,<b>不算</b>你账上。
+                </div>`,
       rows
     };
   }
@@ -4821,9 +4870,11 @@ function renderNewModeKpis() {
   set('nm-emma-value', fmt(emma));
   set('nm-emma-sub', emma >= 0 ? `她够拉 ${Math.floor(emma / buyPrice)} 托` : `她欠你 ${fmt(Math.abs(emma))}`);
 
-  // 4. Hugo owed
+  // 4. Hugo owed (Michael's pickups only — Emma settles her own with Hugo)
   const opening = state.params.hugoOpeningOwed || 0;
-  const accrued = _newModeEvents().filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  const accrued = _newModeEvents()
+    .filter(e => e.type === 'pickup' && isMichaelPickup(e))
+    .reduce((s, e) => s + (e.pallets || 0) * rate, 0);
   const paid = _newModeEvents().filter(e => e.type === 'out-hugo').reduce((s, e) => s + (e.amount || 0), 0);
   const hugo = hugoOwedNew();
   const hugoEl = document.getElementById('nm-hugo-value');
@@ -4831,7 +4882,7 @@ function renderNewModeKpis() {
     hugoEl.textContent = fmt(hugo);
     hugoEl.style.color = hugo > 0 ? 'var(--rose)' : 'var(--green)';
   }
-  set('nm-hugo-sub', `期初 ${fmt(opening)} + 新累计 ${fmt(accrued)} − 已付 ${fmt(paid)}`);
+  set('nm-hugo-sub', `期初 ${fmt(opening)} + 我取 ${fmt(accrued)} − 已付 ${fmt(paid)}`);
 
   // 5. Month pallets
   const ym = new Date().toISOString().slice(0, 7);
@@ -4853,12 +4904,20 @@ function openModeSwitchModal() {
   if (preview) {
     preview.innerHTML = `
       <div><b>今天日期:</b> ${today}(将作为 partnershipNewModeDate)</div>
-      <div style="margin-top:6px;"><b>Hugo 期初欠款:</b> <span style="color:var(--rose);font-weight:700;">£${fmt(owedNow)}</span>(从现在的"Michael 待结算 Hugo"快照)</div>
-      <div style="margin-top:6px;"><b>Emma 旧余额:</b> £${fmt(emmaBalNow)}(Michael 在 Emma 那里的旧预付,新模式从 0 起步)</div>
-      <div style="margin-top:6px;"><b>Hugo 预付池剩余:</b> ${poolBalance >= 0 ? '£' : '−£'}${fmt(Math.abs(poolBalance))}${poolBalance > 0 ? '(Emma 还会还给你)' : (poolBalance < 0 ? '(已亏空,折进欠款)' : '')}</div>
+      <div style="margin-top:6px;"><b>Hugo 期初欠款 (auto):</b> <span style="color:var(--rose);font-weight:700;">£${fmt(owedNow)}</span>(从现在 "Michael 待结算" 快照)</div>
+      <div style="margin-top:6px;"><b>Emma 旧账(当前余额):</b> <span style="color:${emmaBalNow < 0 ? 'var(--rose)' : 'var(--green)'};font-weight:700;">£${fmt(emmaBalNow)}</span>${emmaBalNow < 0 ? '(你欠 Emma,建议填进 Emma 期初)' : ''}</div>
+      <div style="margin-top:6px;"><b>Hugo 预付池剩余:</b> ${poolBalance >= 0 ? '£' : '−£'}${fmt(Math.abs(poolBalance))}${poolBalance > 0 ? '(Emma 还会还给你)' : (poolBalance < 0 ? '(已亏空,折进 Hugo 欠款)' : '')}</div>
       ${poolBalance > 0 ? `<div style="margin-top:6px;color:var(--green);">✓ 自动新建 <code style="background:rgba(34,211,165,0.10);padding:1px 5px;border-radius:3px;">in-emma £${fmt(poolBalance)}</code> 事件 — Emma 还你池子剩余</div>` : ''}
     `;
   }
+  // Prefill the editable opening inputs with sensible defaults
+  const hugoIn = document.getElementById('switch-hugo-opening');
+  if (hugoIn) hugoIn.value = Math.round(owedNow * 100) / 100;
+  const emmaIn = document.getElementById('switch-emma-opening');
+  if (emmaIn) emmaIn.value = Math.round(emmaBalNow * 100) / 100;
+  // SSS opening: NO sensible default — user must enter from SSS's actual bill
+  const sssIn = document.getElementById('switch-sss-opening');
+  if (sssIn && !sssIn.value) sssIn.value = '';
   document.getElementById('mode-switch-modal').classList.add('open');
 }
 function closeModeSwitchModal() {
@@ -4869,14 +4928,38 @@ function closeModeSwitchModal() {
 async function executeModeSwitch() {
   const btn = document.getElementById('mode-switch-confirm-btn');
   const txt = document.getElementById('mode-switch-confirm-text');
+
+  // Read user-editable opening balances
+  const hugoIn = document.getElementById('switch-hugo-opening');
+  const sssIn = document.getElementById('switch-sss-opening');
+  const emmaIn = document.getElementById('switch-emma-opening');
+  const hugoOpening = parseFloat(hugoIn && hugoIn.value);
+  const sssOpening  = parseFloat(sssIn  && sssIn.value);
+  const emmaOpening = parseFloat(emmaIn && emmaIn.value);
+
+  // Validate
+  if (isNaN(sssOpening)) {
+    alert('⚠ 必须填 SSS 期初余额!\n\n从 SSS 给你的最新账单里抄过来(他们那边你还有多少预付余款)。');
+    if (sssIn) sssIn.focus();
+    return;
+  }
+  if (isNaN(hugoOpening)) {
+    alert('⚠ Hugo 期初不能为空');
+    if (hugoIn) hugoIn.focus();
+    return;
+  }
+  if (isNaN(emmaOpening)) {
+    alert('⚠ Emma 期初不能为空(0 也可以)');
+    if (emmaIn) emmaIn.focus();
+    return;
+  }
+
   btn.disabled = true; btn.style.opacity = '0.6'; txt.textContent = '切换中…';
 
   try {
     const today = new Date().toISOString().slice(0, 10);
-    // 1. Snapshot Hugo opening owed
+    // Pool remainder → in-emma event (Emma returns it to Michael) — only if positive
     const m = (typeof hugoMath === 'function') ? hugoMath() : null;
-    const hugoOpening = m ? m.totalOwed : 0;
-    // 2. Pool remainder → in-emma event (Emma returns it to Michael)
     const poolBalance = m && m.mode === 'split' ? m.prepayBalance : 0;
     if (poolBalance > 0) {
       state.events.push({
@@ -4891,18 +4974,20 @@ async function executeModeSwitch() {
         _autoFromModeSwitch: true
       });
     }
-    // 3. Update state.params
+    // Update state.params with user-confirmed openings
     state.params.partnershipMode = 'new';
     state.params.partnershipNewModeDate = today;
     state.params.hugoOpeningOwed = hugoOpening;
-    state.params.emmaOpeningCredit = 0;  // new mode starts fresh
-    state.params.sssOpeningCredit = 0;
-    // 4. Save + render
+    state.params.emmaOpeningCredit = emmaOpening;
+    state.params.sssOpeningCredit = sssOpening;
+    // Save + render
     await saveUserDataNow();
     _viewMode = 'new';
+    // Refresh personal customer cache for cash pool calculation
+    try { await fetchPersonalCustomerCache(); } catch (e) {}
     renderAll();
     closeModeSwitchModal();
-    flash('✓ 已切换到新模式 · ' + today);
+    flash('✓ 已切换到新模式 · ' + today + ' · SSS 期初 £' + fmt(sssOpening));
   } catch (err) {
     console.error('[mode-switch] failed:', err);
     alert('切换失败: ' + (err.message || err));
