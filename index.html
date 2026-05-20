@@ -3171,9 +3171,14 @@ function renderPickups() {
   const rate = hugoRate();
   const body = all.map(r => {
     const cls = r.deleted ? ' class="row-deleted"' : '';
+    const isMpick = isMichaelPickup(r);
+    // In new mode, show "改归属" button to flip pickup-by between Michael / Emma
+    const reassignBtn = (!r.deleted && isNewMode())
+      ? `<button class="btn sm ghost" onclick="reassignPickupOwner('${r.id}')" title="改归属(Michael ↔ Emma)" style="margin-right:4px;">${isMpick ? '→Emma' : '→Michael'}</button>`
+      : '';
     const btn = r.deleted
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
-      : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+      : `${reassignBtn}<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
     const commission = (r.pallets || 0) * rate;
     const tp = r.palletType || 'Mixed';
     const typeBadge = tp === 'TT'
@@ -5582,6 +5587,32 @@ function delEvent(id) {
   ev.deletedAt = new Date().toISOString();
   ev.deletedBy = (currentUser && currentUser.email) ? currentUser.email : '?';
   save(); renderAll();
+}
+
+// Flip a pickup event's owner between Michael and Emma.
+// Used to correct mis-tagged pickups (e.g., the unified-entry bug where Emma's
+// pickup got merged into Michael's day record before the bug was fixed).
+function reassignPickupOwner(id) {
+  const ev = state.events.find(e => e.id === id);
+  if (!ev || ev.type !== 'pickup') { flash('找不到取货记录'); return; }
+  const wasMichael = isMichaelPickup(ev);
+  const newOwner = wasMichael ? 'Emma' : 'Michael';
+  const msg = `把这条取货从 <b>${wasMichael ? 'Michael' : 'Emma'}</b> 改成 <b>${newOwner}</b>?\n\n` +
+    `${ev.pallets} 托 · ${ev.palletType || ''} · £${fmt(ev.amount || 0)}\n\n` +
+    `会影响:\n` +
+    `• SSS 池分配(从 ${wasMichael ? 'Michael' : 'Emma'} 份额转到 ${newOwner} 份额)\n` +
+    `• Hugo 应付${wasMichael ? '减' : '加'} £${fmt((ev.pallets || 0) * (state.params.hugoCommission || 7))}\n` +
+    `• 本月取货统计`;
+  if (!confirm(msg.replace(/<[^>]+>/g, ''))) return;
+  // Update createdBy + add an explicit pickedUpBy field
+  ev.pickedUpBy = newOwner;
+  ev.createdBy = (newOwner === 'Emma') ? 'emma@maomail.uk' : 'harreds.ceo@gmail.com';
+  ev.updatedAt = new Date().toISOString();
+  ev._ownerReassigned = true;
+  ev._reassignedAt = new Date().toISOString();
+  ev._reassignedBy = (currentUser && currentUser.email) || '?';
+  save(); renderAll();
+  flash('✓ 已改成 ' + newOwner + ' · 所有相关数字已重新计算');
 }
 
 function restoreEvent(id) {
