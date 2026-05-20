@@ -1613,6 +1613,40 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <button class="btn primary" onclick="saveSettings()">保存参数</button>
           <button class="btn ghost danger" onclick="resetAll()">清空全部数据</button>
         </div>
+
+        <!-- Switch-day opening balances (editable post-switch) -->
+        <div id="opening-edit-block" style="display:none;margin-top:18px;padding:16px 18px;background:rgba(196,181,253,0.06);border:1px solid rgba(196,181,253,0.25);border-radius:12px;">
+          <div style="font-size:12px;font-weight:700;color:#c4b5fd;letter-spacing:0.5px;margin-bottom:4px;">🛠 切换日期初余额(调整修正用)</div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.7;margin-bottom:14px;">
+            如果你切换时算错了期初,这里可以改。改完所有相关数字(SSS 份额 / Hugo 应付 / Emma 余额)会自动重新计算。<br>
+            <b style="color:var(--amber);">注意:</b> 切换日 = <span id="open-edit-date">—</span>。期初是那天**结束时**的快照。
+          </div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>SSS 总池期初 £</label>
+              <input type="number" id="open-sss" step="0.01">
+              <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">切换日 SSS 池总余额(从 SSS 账单抄)</div>
+            </div>
+            <div class="form-row">
+              <label>Emma 切换日 SSS 预付 £</label>
+              <input type="number" id="open-emma" step="0.01">
+              <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">
+                Emma 在 SSS 池里的总份额 = <b>她已沉淀在池子里的钱</b> + <b>你欠她但她已替你出的钱</b><br>
+                例:SSS 池剩 £3,170 全是 Emma 出的 + 你欠她 £5,145 → 填 <b style="color:var(--green);">£8,315</b>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>Hugo 期初欠款 £</label>
+              <input type="number" id="open-hugo" step="0.01">
+              <div style="font-size:10px;color:var(--mute-2);margin-top:4px;">切换日你欠 Hugo 的未付提成</div>
+            </div>
+          </div>
+          <div id="open-edit-preview" style="margin-top:12px;padding:10px 12px;background:rgba(5,6,15,0.4);border:1px solid rgba(139,150,255,0.15);border-radius:8px;font-size:11.5px;line-height:1.7;color:var(--text);"></div>
+          <div class="row mt-4">
+            <button class="btn primary" onclick="saveOpeningBalances()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));">保存修正 + 重算</button>
+            <button class="btn ghost" onclick="prefillOpeningBalances()">重置回当前值</button>
+          </div>
+        </div>
         <div class="mt-6" style="font-size:12px;color:var(--text-dim);line-height:1.8;">
           <div>◆ 取货花费 = 买价 £<span id="calc-buy"></span> × 托盘数</div>
           <div>◆ Hugo 提成 = £<span id="calc-commission"></span> × 总托盘（累计）</div>
@@ -3274,6 +3308,7 @@ function renderSettings() {
   fillEmmaInfo();
   fillHugoInfo();
   fillSssInfo();
+  if (typeof renderOpeningEditBlock === 'function') renderOpeningEditBlock();
 }
 
 // ============ SSS SUPPLIER INFO (Hong Kong company) ============
@@ -5728,6 +5763,73 @@ function resetAll() {
   if (!confirm('再次确认：真的要清空全部数据吗？')) return;
   state = emptyState();
   save(); renderAll();
+}
+
+// === Edit switch-day opening balances (post-switch correction) ===
+function prefillOpeningBalances() {
+  if (!state || !state.params) return;
+  const sIn = document.getElementById('open-sss');
+  const eIn = document.getElementById('open-emma');
+  const hIn = document.getElementById('open-hugo');
+  if (sIn) sIn.value = state.params.sssOpeningCredit || 0;
+  if (eIn) eIn.value = state.params.emmaOpeningCredit || 0;
+  if (hIn) hIn.value = state.params.hugoOpeningOwed || 0;
+  updateOpeningPreview();
+}
+function updateOpeningPreview() {
+  const sIn = document.getElementById('open-sss');
+  const eIn = document.getElementById('open-emma');
+  const hIn = document.getElementById('open-hugo');
+  const prev = document.getElementById('open-edit-preview');
+  if (!prev || !sIn || !eIn || !hIn) return;
+  const s = parseFloat(sIn.value) || 0;
+  const e = parseFloat(eIn.value) || 0;
+  const h = parseFloat(hIn.value) || 0;
+  const buy = state.params.buyPrice || 245;
+  const mShareOpen = s - e;
+  prev.innerHTML = `
+    <div style="font-weight:700;color:#c4b5fd;margin-bottom:6px;">预览(切换日的份额分配)</div>
+    <div style="display:flex;justify-content:space-between;"><span>SSS 总池</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">£${fmt(s)}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>− Emma 切换日预付</span><span style="font-variant-numeric:tabular-nums;color:var(--pink);">−£${fmt(e)}</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(139,150,255,0.2);margin-top:4px;padding-top:4px;"><span><b>= 我切换日的份额</b></span><span style="font-variant-numeric:tabular-nums;color:${mShareOpen < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt(mShareOpen)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--mute-2);font-size:11px;"><span>Hugo 期初欠款</span><span style="font-variant-numeric:tabular-nums;">£${fmt(h)}</span></div>
+    ${mShareOpen < 0 ? '<div style="margin-top:6px;font-size:10.5px;color:var(--amber);">💡 你切换日是负数 — 表示老模式里你"透支"了 £' + fmt(Math.abs(mShareOpen)) + '(都通过 Emma 替你付了)。这正常。</div>' : ''}
+  `;
+}
+function saveOpeningBalances() {
+  const sIn = document.getElementById('open-sss');
+  const eIn = document.getElementById('open-emma');
+  const hIn = document.getElementById('open-hugo');
+  const s = parseFloat(sIn && sIn.value);
+  const e = parseFloat(eIn && eIn.value);
+  const h = parseFloat(hIn && hIn.value);
+  if (isNaN(s) || isNaN(e) || isNaN(h)) { alert('三个值都要填'); return; }
+  if (!confirm(`确认修改期初余额?\n\n• SSS 总池: £${fmt(s)}\n• Emma 预付: £${fmt(e)}\n• Hugo 欠款: £${fmt(h)}\n\n所有相关数字会立即重新计算。`)) return;
+  state.params.sssOpeningCredit = s;
+  state.params.emmaOpeningCredit = e;
+  state.params.hugoOpeningOwed = h;
+  state.params._openingEditedAt = new Date().toISOString();
+  state.params._openingEditedBy = (currentUser && currentUser.email) || '?';
+  save(); renderAll();
+  flash('✓ 期初已修正,所有数字已重算');
+}
+// Show the block + prefill when settings page loads (only after switch)
+function renderOpeningEditBlock() {
+  const block = document.getElementById('opening-edit-block');
+  if (!block) return;
+  if (!isNewMode()) { block.style.display = 'none'; return; }
+  block.style.display = '';
+  const dateEl = document.getElementById('open-edit-date');
+  if (dateEl) dateEl.textContent = newModeStartDate() || '—';
+  prefillOpeningBalances();
+  // Live preview on input
+  ['open-sss','open-emma','open-hugo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el._previewWired) {
+      el.addEventListener('input', updateOpeningPreview);
+      el._previewWired = true;
+    }
+  });
 }
 
 function exportJson() {
