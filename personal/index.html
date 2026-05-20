@@ -3850,26 +3850,32 @@ function applySmartEntryOwnerMode() {
   renderSmartEntryTrucks();
 }
 
-// Warn if existing dailySupply record for this date has a different pickupBy
+// Show banner about existing records on the same date.
+// AFTER BUG FIX: different pickup-by = separate record. Same pickup-by = merge.
 function checkSmartEntryDayCollision() {
   const date = document.getElementById('se-date').value;
   const owner = document.getElementById('se-pickup-by').value;
   const warnEl = document.getElementById('se-warning');
   const supply = Array.isArray(state.dailySupply) ? state.dailySupply : [];
-  const existing = supply.find(d => d.date === date);
-  if (!existing) {
-    warnEl.style.display = 'none';
-    return;
-  }
-  if (existing.pickupBy !== owner) {
-    warnEl.style.display = '';
-    warnEl.innerHTML = `⚠ <b>${escapeHtml(date)}</b> 已经有一条记录(取货人:<b>${escapeHtml(existing.pickupBy || '?')}</b>)。这次新增的车会<b>合并</b>到那一条 — 取货人会保持原来的(<b>${escapeHtml(existing.pickupBy || '?')}</b>),不是你这里选的(${escapeHtml(owner)})。如果你要分开记,请改个日期或先去"每日供货"删掉那条。`;
-  } else {
+  const same = supply.find(d => d.date === date && (d.pickupBy || 'Michael') === owner);
+  const other = supply.filter(d => d.date === date && (d.pickupBy || 'Michael') !== owner);
+  if (same) {
+    // Same owner — will merge
     warnEl.style.display = '';
     warnEl.style.background = 'rgba(34,211,165,0.08)';
     warnEl.style.borderColor = 'rgba(34,211,165,0.3)';
     warnEl.style.color = 'var(--green)';
-    warnEl.innerHTML = `✓ <b>${escapeHtml(date)}</b> 已有 <b>${escapeHtml(owner)}</b> 的记录(${(existing.trucks || []).length} 车),这次的新车会<b>合并</b>进那条记录里。`;
+    warnEl.innerHTML = `✓ <b>${escapeHtml(date)}</b> 已有 <b>${escapeHtml(owner)}</b> 的记录(${(same.trucks || []).length} 车),这次的新车会<b>合并</b>进那条。${other.length ? '另有 ' + other.map(d => escapeHtml(d.pickupBy || '?')).join('/') + ' 的独立记录。' : ''}`;
+  } else if (other.length) {
+    // Different owner — will create new separate record
+    warnEl.style.display = '';
+    warnEl.style.background = 'rgba(0,229,255,0.08)';
+    warnEl.style.borderColor = 'rgba(0,229,255,0.30)';
+    warnEl.style.color = 'var(--cyan)';
+    const otherInfo = other.map(d => `<b>${escapeHtml(d.pickupBy || '?')}</b>(${(d.trucks || []).length} 车)`).join(' · ');
+    warnEl.innerHTML = `ℹ <b>${escapeHtml(date)}</b> 当天已有 ${otherInfo} 的记录。这次会<b>独立</b>新建一条 <b>${escapeHtml(owner)}</b> 的记录(<b>不合并</b>,各自计算)。`;
+  } else {
+    warnEl.style.display = 'none';
   }
 }
 
@@ -4188,12 +4194,14 @@ async function saveSmartPickup() {
   ensureInvoicesArray();
   ensureReceiptsArray();
 
-  // 1) Daily supply day record (merge into existing or create)
-  let dayRec = state.dailySupply.find(d => d.date === date);
-  let usedPickupBy;
-  if (dayRec) {
-    usedPickupBy = dayRec.pickupBy || formPickupBy;
-  } else {
+  // 1) Daily supply day record — find record matching BOTH date AND pickupBy.
+  // BUG FIX (2026-05): previously matched only on date, then silently overwrote the
+  // form's pickupBy with the existing record's. This meant selecting "Emma" on a
+  // day that already had Michael's pickups got mis-tagged as Michael's.
+  // Now: if pickupBy differs, create a SEPARATE day record (one per owner).
+  let dayRec = state.dailySupply.find(d => d.date === date && (d.pickupBy || 'Michael') === formPickupBy);
+  let usedPickupBy = formPickupBy;
+  if (!dayRec) {
     dayRec = {
       id: crypto.randomUUID(),
       date,
@@ -4203,7 +4211,6 @@ async function saveSmartPickup() {
       note: '',
       _linkSupplyId: linkId
     };
-    usedPickupBy = formPickupBy;
     state.dailySupply.push(dayRec);
   }
   // Append trucks (new copies, not references)
