@@ -1814,36 +1814,17 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
-      <div class="card mb-4">
-        <div class="card-title">新增出货</div>
-        <div class="form-grid">
-          <div class="form-row"><label>日期</label><input type="date" id="d-date"></div>
-          <div class="form-row"><label>客户</label>
-            <select id="d-customer" onchange="updatePickupPreview()">
-              <option value="">请选择客户…</option>
-            </select>
+      <!-- Lockout banner — directs to unified entry -->
+      <div style="margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(0,229,255,0.06));border:1px solid rgba(139,92,246,0.30);border-radius:12px;">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div style="font-size:22px;">🔒</div>
+          <div style="flex:1;min-width:240px;">
+            <div style="font-size:13px;font-weight:700;color:#c4b5fd;">出货录入统一去仪表盘 · ⚡ 今日录入</div>
+            <div style="font-size:11.5px;color:var(--text-dim);margin-top:4px;line-height:1.6;">
+              一次录入,自动同步:每日供货 + 合伙账(SSS / Emma 份额)+ 客户账(自动开 INV)。下面是只读历史。
+            </div>
           </div>
-          <div class="form-row"><label>托盘数</label><input type="number" id="d-pallets" placeholder="24" min="1" oninput="updatePickupPreview()"></div>
-          <div class="form-row"><label>类型</label>
-            <select id="d-type">
-              <option value="TT">TT</option>
-              <option value="AMAZON">AMAZON</option>
-              <option value="Mixed">混合</option>
-            </select>
-          </div>
-          <div class="form-row"><label>车次（可选）</label><input type="text" id="d-truck" placeholder="T-001"></div>
-          <div class="form-row" style="grid-column: 1/-1;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 14px;background:rgba(244,114,182,0.06);border:1px dashed rgba(244,114,182,0.3);border-radius:10px;">
-              <input type="checkbox" id="d-swap" oninput="updatePickupPreview()">
-              <span><b>🔁 Swap TT(+£30/托盘)</b> — 这一车是 Emma 换给我的 TT,客户多付 £30/托盘</span>
-            </label>
-          </div>
-          <div class="form-row" style="grid-column: 1/-1;"><label>备注（可选）</label><input type="text" id="d-notes" placeholder="备注"></div>
-        </div>
-        <div id="d-preview" class="preview-box"></div>
-        <div class="row mt-4">
-          <button class="btn primary" onclick="addPickup()">＋ 添加出货</button>
-          <a class="btn ghost sm" onclick="switchView('customers')" style="cursor:pointer;">没有客户？去新建 →</a>
+          <button class="btn sm" onclick="switchView('dashboard'); setTimeout(() => openSmartEntry(), 200);" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;">⚡ 去录入 →</button>
         </div>
       </div>
 
@@ -9304,18 +9285,33 @@ function renderSupplyWeekChart(weekMon) {
     const dd = new Date(d + 'T12:00:00');
     return ['周日','周一','周二','周三','周四','周五','周六'][dd.getDay()];
   });
-  const ttData = [], amzData = [], ttSwap = [], amzSwap = [], ttTrucks = [], amzTrucks = [];
+  // 4 series: Michael-TT, Emma-TT, Michael-AMZ, Emma-AMZ
+  const mTT = [], eTT = [], mAMZ = [], eAMZ = [];
+  const mTTtr = [], eTTtr = [], mAMZtr = [], eAMZtr = [];
+  const ttSwap = [], amzSwap = [];
   for (const d of days) {
-    let tt = 0, amz = 0, ttS = 0, amzS = 0, ttT = 0, amzT = 0;
-    // Aggregate across ALL day records with this date (handles duplicates safely)
+    let mTtP = 0, eTtP = 0, mAmP = 0, eAmP = 0;
+    let mTtT = 0, eTtT = 0, mAmT = 0, eAmT = 0;
+    let ttS = 0, amzS = 0;
+    // Iterate all day records with this date (could be multiple: one per owner)
     const matchingDays = state.dailySupply.filter(x => x.date === d);
     for (const day of matchingDays) {
+      const owner = day.pickupBy || 'Michael';
       for (const tr of (day.trucks || [])) {
-        if (tr.type === 'TT') { tt += (tr.pallets || 0); ttT++; if (tr.swapped) ttS += (tr.pallets || 0); }
-        else if (tr.type === 'AMAZON') { amz += (tr.pallets || 0); amzT++; if (tr.swapped) amzS += (tr.pallets || 0); }
+        if (tr.type === 'TT') {
+          if (owner === 'Emma') { eTtP += (tr.pallets || 0); eTtT++; }
+          else { mTtP += (tr.pallets || 0); mTtT++; }
+          if (tr.swapped) ttS += (tr.pallets || 0);
+        } else if (tr.type === 'AMAZON') {
+          if (owner === 'Emma') { eAmP += (tr.pallets || 0); eAmT++; }
+          else { mAmP += (tr.pallets || 0); mAmT++; }
+          if (tr.swapped) amzS += (tr.pallets || 0);
+        }
       }
     }
-    ttData.push(tt); amzData.push(amz); ttSwap.push(ttS); amzSwap.push(amzS); ttTrucks.push(ttT); amzTrucks.push(amzT);
+    mTT.push(mTtP); eTT.push(eTtP); mAMZ.push(mAmP); eAMZ.push(eAmP);
+    mTTtr.push(mTtT); eTTtr.push(eTtT); mAMZtr.push(mAmT); eAMZtr.push(eAmT);
+    ttSwap.push(ttS); amzSwap.push(amzS);
   }
 
   const lbl = document.getElementById('sup-chart-week-label');
@@ -9325,8 +9321,15 @@ function renderSupplyWeekChart(weekMon) {
   }
 
   // Add ~18% headroom to Y axis so the "above bar" pills don't get clipped at the top
-  const maxBarHeight = Math.max(...ttData.map((v, i) => v + amzData[i]), 0);
+  const maxBarHeight = Math.max(...mTT.map((v, i) => v + eTT[i] + mAMZ[i] + eAMZ[i]), 0);
   const yMax = maxBarHeight > 0 ? Math.ceil(maxBarHeight * 1.20) : 10;
+
+  // Distinct colors for owner+type combos (TT base = violet, AMZ base = cyan)
+  // Michael = solid; Emma = lighter/pinker variant
+  const COLOR_TT_MICHAEL = 'rgba(99, 102, 241, 0.75)';
+  const COLOR_TT_EMMA    = 'rgba(196, 113, 237, 0.75)';
+  const COLOR_AMZ_MICHAEL = 'rgba(34, 211, 238, 0.70)';
+  const COLOR_AMZ_EMMA    = 'rgba(244, 114, 182, 0.70)';
 
   if (window._supplyWeekChart) window._supplyWeekChart.destroy();
   window._supplyWeekChart = new Chart(ctx, {
@@ -9335,8 +9338,10 @@ function renderSupplyWeekChart(weekMon) {
     data: {
       labels,
       datasets: [
-        { label: 'TT 托盘', data: ttData, backgroundColor: COLOR_TT_BG, borderColor: COLOR_TT_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: ttTrucks, _labelPrefix: 'TT' },
-        { label: 'AMAZON 托盘', data: amzData, backgroundColor: COLOR_AMZ_BG, borderColor: COLOR_AMZ_BD, borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: amzTrucks, _labelPrefix: 'AMZ' }
+        { label: 'TT · Michael', data: mTT, backgroundColor: COLOR_TT_MICHAEL, borderColor: 'rgba(99,102,241,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mTTtr, _labelPrefix: 'TT·Mich' },
+        { label: 'TT · Emma',    data: eTT, backgroundColor: COLOR_TT_EMMA,    borderColor: 'rgba(196,113,237,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eTTtr, _labelPrefix: 'TT·Emma' },
+        { label: 'AMZ · Michael',data: mAMZ,backgroundColor: COLOR_AMZ_MICHAEL,borderColor: 'rgba(34,211,238,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mAMZtr, _labelPrefix: 'AMZ·Mich' },
+        { label: 'AMZ · Emma',   data: eAMZ,backgroundColor: COLOR_AMZ_EMMA,   borderColor: 'rgba(244,114,182,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eAMZtr, _labelPrefix: 'AMZ·Emma' }
       ]
     },
     options: {
@@ -9350,10 +9355,12 @@ function renderSupplyWeekChart(weekMon) {
           callbacks: {
             label: (item) => {
               const idx = item.dataIndex;
-              const isTT = item.datasetIndex === 0;
-              const trucks = isTT ? ttTrucks[idx] : amzTrucks[idx];
+              const dsLabels = ['TT · Michael', 'TT · Emma', 'AMAZON · Michael', 'AMAZON · Emma'];
+              const truckArrays = [mTTtr, eTTtr, mAMZtr, eAMZtr];
+              const trucks = truckArrays[item.datasetIndex][idx];
               const pallets = item.parsed.y;
-              return `${isTT ? 'TT' : 'AMAZON'}: ${pallets} 托盘 / ${trucks} 车`;
+              if (!pallets) return null;
+              return `${dsLabels[item.datasetIndex]}: ${pallets} 托盘 / ${trucks} 车`;
             },
             afterBody: (items) => {
               if (!items || !items.length) return '';
@@ -9361,8 +9368,8 @@ function renderSupplyWeekChart(weekMon) {
               const lines = [];
               if (ttSwap[idx]) lines.push(`(其中 Swap TT: ${ttSwap[idx]} 托盘)`);
               if (amzSwap[idx]) lines.push(`(其中 Swap AMZ: ${amzSwap[idx]} 托盘)`);
-              const total = ttData[idx] + amzData[idx];
-              const tot = ttTrucks[idx] + amzTrucks[idx];
+              const total = mTT[idx] + eTT[idx] + mAMZ[idx] + eAMZ[idx];
+              const tot = mTTtr[idx] + eTTtr[idx] + mAMZtr[idx] + eAMZtr[idx];
               lines.push(`合计: ${total} 托盘 / ${tot} 车`);
               return lines;
             }
