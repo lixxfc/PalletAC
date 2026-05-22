@@ -3248,6 +3248,9 @@ function partnershipLastMonthStats() {
   const prevYm = ymOf(prevMonthDate);
   const monthLabel = (d) => `${d.getFullYear()}年${d.getMonth() + 1}月`;
 
+  // P1 audit fix (2026-05-22): bucket BY-TRUCK using `tr.pickedUpBy || day.pickupBy`.
+  // Old code bucketed entire day rows by day.pickupBy, missing the per-truck owner
+  // override that the editor supports (and that saveSupply does honor on save).
   const collect = (ym) => {
     const days = supply.filter(d => (d.date || '').startsWith(ym));
     let totalPallets = 0, totalTrucks = 0;
@@ -3258,26 +3261,49 @@ function partnershipLastMonthStats() {
     const michaelDays = [], emmaDays = [], otherDays = [];
     for (const day of days) {
       const trucks = day.trucks || [];
+      const dayOwnerDefault = day.pickupBy || 'Michael';
+      // Per-truck bucketing
+      let dMichaelPallets = 0, dMichaelTrucks = 0, dMichaelTT = 0, dMichaelAMZ = 0;
+      let dEmmaPallets = 0, dEmmaTrucks = 0, dEmmaTT = 0, dEmmaAMZ = 0;
+      let dOtherPallets = 0, dOtherTrucks = 0;
       let dPallets = 0, dTrucks = 0, dTT = 0, dAMZ = 0;
       for (const tr of trucks) {
         const palls = tr.pallets || 0;
+        const owner = tr.pickedUpBy || dayOwnerDefault;
         dPallets += palls; dTrucks++;
         if (tr.type === 'TT') dTT += palls;
         else if (tr.type === 'AMAZON') dAMZ += palls;
+        if (owner === 'Michael') {
+          dMichaelPallets += palls; dMichaelTrucks++;
+          if (tr.type === 'TT') dMichaelTT += palls;
+          else if (tr.type === 'AMAZON') dMichaelAMZ += palls;
+        } else if (owner === 'Emma') {
+          dEmmaPallets += palls; dEmmaTrucks++;
+          if (tr.type === 'TT') dEmmaTT += palls;
+          else if (tr.type === 'AMAZON') dEmmaAMZ += palls;
+        } else {
+          dOtherPallets += palls; dOtherTrucks++;
+        }
       }
       totalPallets += dPallets; totalTrucks += dTrucks;
+      michaelPallets += dMichaelPallets; michaelTrucks += dMichaelTrucks;
+      michaelTTPallets += dMichaelTT; michaelAMZPallets += dMichaelAMZ;
+      emmaPallets += dEmmaPallets; emmaTrucks += dEmmaTrucks;
+      emmaTTPallets += dEmmaTT; emmaAMZPallets += dEmmaAMZ;
+      otherPallets += dOtherPallets; otherTrucks += dOtherTrucks;
+      // Day-level enriched record (still attributed to whichever owner the day MAJORITY belongs to)
       const enriched = { ...day, _pallets: dPallets, _trucks: dTrucks, _tt: dTT, _amz: dAMZ };
-      if (day.pickupBy === 'Michael') {
-        michaelPallets += dPallets; michaelTrucks += dTrucks;
-        michaelTTPallets += dTT; michaelAMZPallets += dAMZ;
+      // Decide which bucket the day "belongs" to for grouping purposes (largest share)
+      if (dMichaelPallets >= dEmmaPallets && dMichaelPallets >= dOtherPallets && dMichaelPallets > 0) {
         michaelDays.push(enriched);
-      } else if (day.pickupBy === 'Emma') {
-        emmaPallets += dPallets; emmaTrucks += dTrucks;
-        emmaTTPallets += dTT; emmaAMZPallets += dAMZ;
+      } else if (dEmmaPallets > dMichaelPallets && dEmmaPallets >= dOtherPallets) {
         emmaDays.push(enriched);
-      } else {
-        otherPallets += dPallets; otherTrucks += dTrucks;
+      } else if (dOtherPallets > 0) {
         otherDays.push(enriched);
+      } else {
+        // Empty day or zero-pallet day — bucket by day.pickupBy as a fallback
+        if (dayOwnerDefault === 'Emma') emmaDays.push(enriched);
+        else michaelDays.push(enriched);
       }
     }
     return {
@@ -3298,6 +3324,7 @@ function partnershipLastMonthStats() {
 
 // === Render the dashboard last-month cards (personal + partnership) ===
 // === All-time SSS supply totals (across all dailySupply records) ===
+// P1 audit fix (2026-05-22): bucket BY-TRUCK using `tr.pickedUpBy || day.pickupBy`.
 function supplyAllTimeStats() {
   const supply = Array.isArray(state.dailySupply) ? state.dailySupply : [];
   let totalPallets = 0, totalTrucks = 0, totalDays = supply.length;
@@ -3306,17 +3333,28 @@ function supplyAllTimeStats() {
   let otherPallets = 0, otherTrucks = 0, otherDays = 0;
   for (const day of supply) {
     const trucks = day.trucks || [];
-    const dayPallets = trucks.reduce((s, t) => s + (t.pallets || 0), 0);
-    const dayTrucks = trucks.length;
-    totalPallets += dayPallets;
-    totalTrucks += dayTrucks;
-    if (day.pickupBy === 'Michael') {
-      michaelPallets += dayPallets; michaelTrucks += dayTrucks; michaelDays++;
-    } else if (day.pickupBy === 'Emma') {
-      emmaPallets += dayPallets; emmaTrucks += dayTrucks; emmaDays++;
-    } else {
-      otherPallets += dayPallets; otherTrucks += dayTrucks; otherDays++;
+    const dayOwnerDefault = day.pickupBy || 'Michael';
+    let dPallets = 0, dTrucks = 0;
+    let dMichaelP = 0, dMichaelT = 0, dEmmaP = 0, dEmmaT = 0, dOtherP = 0, dOtherT = 0;
+    for (const tr of trucks) {
+      const palls = tr.pallets || 0;
+      const owner = tr.pickedUpBy || dayOwnerDefault;
+      dPallets += palls; dTrucks++;
+      if (owner === 'Michael') { dMichaelP += palls; dMichaelT++; }
+      else if (owner === 'Emma') { dEmmaP += palls; dEmmaT++; }
+      else { dOtherP += palls; dOtherT++; }
     }
+    totalPallets += dPallets;
+    totalTrucks += dTrucks;
+    michaelPallets += dMichaelP; michaelTrucks += dMichaelT;
+    emmaPallets += dEmmaP; emmaTrucks += dEmmaT;
+    otherPallets += dOtherP; otherTrucks += dOtherT;
+    // Day-level count: attribute to majority truck owner
+    if (dMichaelP >= dEmmaP && dMichaelP >= dOtherP && dMichaelP > 0) michaelDays++;
+    else if (dEmmaP > 0) emmaDays++;
+    else if (dOtherP > 0) otherDays++;
+    else if (dayOwnerDefault === 'Emma') emmaDays++;
+    else michaelDays++;
   }
   return {
     totalPallets, totalTrucks, totalDays,
@@ -3967,36 +4005,12 @@ async function _seFetchPartnershipCache() {
 }
 
 // === Helpers reading partnership cache ===
-function _seGetPartBalance() {
-  if (!_partnershipCache) return null;
-  const events = _partnershipCache.events || [];
-  let bal = 0;
-  for (const e of events) {
-    if (e.deleted) continue;
-    if (e.type === 'transfer') bal += (e.amount || 0);
-    else if (e.type === 'pickup') bal -= (e.amount || 0);
-  }
-  return bal;
-}
-function _seGetHugoPool() {
-  // Returns { cutoff, deposited, used, balance } or null if no cache
-  // LEGACY: kept for backward compat with old-mode display only. NEW MODE preview uses
-  // _seGetHugoOwed() instead — Hugo's commission for Michael's pickups is paid CASH
-  // (customer hands £7/托 to Michael at pickup, Michael forwards to Hugo); Emma settles
-  // Hugo herself for her own pickups. There is no shared "pool" in new mode.
-  if (!_partnershipCache) return null;
-  const params = _partnershipCache.params || {};
-  const cutoff = params.hugoPrepayStartDate || null;
-  const rate = params.hugoCommission || 7;
-  const events = _partnershipCache.events || [];
-  let deposited = 0, used = 0;
-  for (const e of events) {
-    if (e.deleted) continue;
-    if (e.type === 'transfer' && e.includesHugoFee) deposited += (e.hugoFeeAmount || 0);
-    else if (e.type === 'pickup' && cutoff && e.date >= cutoff) used += (e.pallets || 0) * rate;
-  }
-  return { cutoff, deposited, used, balance: deposited - used, rate };
-}
+// REMOVED (P2 audit cleanup, 2026-05-22):
+//   - _seGetPartBalance() — old-mode "all transfer minus all pickup" balance.
+//     Meaningless in new mode (mixed Michael+Emma deltas). Replaced by _seGetSssShares().
+//   - _seGetHugoPool() — old-mode "Hugo prepay pool fed by Emma's transfers".
+//     New mode pays Hugo cash per pickup; no shared pool. Replaced by _seGetHugoOwed().
+// Both functions had zero callers; deleting prevents future foot-guns.
 
 // === NEW MODE owner-aware helpers (mirror partnership index.html) ===
 // In new mode the SSS pool is split: part belongs to Michael, part to Emma. A pickup
@@ -4190,12 +4204,17 @@ function updateSmartEntryPreview() {
   if (!custInner) custInner = '<span style="color:var(--text-dim);">(没有客户分配)</span>';
   const custSection = sec('👥', '客户账本(自动开 INV)', custInner, 'var(--violet)');
 
+  // P1 audit fix (2026-05-22): use perPalletProfit() instead of hard-coded £51 — if
+  // sellPrice / myFee / buyPrice are changed in settings, this formula now reflects it.
+  const perP = perPalletProfit();                // sellPrice + myFee − buyPrice
+  const swapBonusPerPallet = swapPrem;           // £30 by default
+  const swapTotalPerPallet = perP + swapBonusPerPallet;
   const profitFormula = swapPallets > 0
-    ? `普通:${normalPallets} × £51 = ${fmt(normalPallets * 51)}<br>Swap:${swapPallets} × £81(£51 + £30 加成)= ${fmt(swapPallets * 81)}<br>合计 = <b>${fmt(totalProfit)}</b>`
-    : `${totalPallets} × £51(£${sellPrice} + £${myFee} - £${buyPrice})= <b>${fmt(totalProfit)}</b>`;
+    ? `普通:${normalPallets} × £${perP} = ${fmt(normalPallets * perP)}<br>Swap:${swapPallets} × £${swapTotalPerPallet}(£${perP} + £${swapBonusPerPallet} 加成)= ${fmt(swapPallets * swapTotalPerPallet)}<br>合计 = <b>${fmt(totalProfit)}</b>`
+    : `${totalPallets} × £${perP}(£${sellPrice} + £${myFee} - £${buyPrice})= <b>${fmt(totalProfit)}</b>`;
 
   // === Profit card (owner-aware) ===
-  // Only Michael picks up → Michael earns £51/托 (sellPrice + myFee − buyPrice).
+  // Only Michael picks up → Michael earns perPalletProfit() per 托 (sellPrice + myFee − buyPrice).
   // Emma picks up → customer paid Emma direct, Michael earns £0.
   let profitSection;
   if (isMichaelPick) {
@@ -4206,8 +4225,8 @@ function updateSmartEntryPreview() {
           卖价 £${sellPrice} <span style="color:var(--text-dim);">(进客户账本)</span><br>
           + 你费 £${myFee} <span style="color:var(--text-dim);">(客户当面付现金)</span><br>
           - 买价 £${buyPrice} <span style="color:var(--text-dim);">(SSS 出货成本,扣你的 SSS 份额)</span><br>
-          = <b style="color:var(--green);">£51 / 托</b> 净利润
-          ${swapPallets > 0 ? '<br>+ Swap £30 / 托(只针对 Swap 托盘)' : ''}
+          = <b style="color:var(--green);">£${perP} / 托</b> 净利润
+          ${swapPallets > 0 ? '<br>+ Swap £' + swapBonusPerPallet + ' / 托(只针对 Swap 托盘)' : ''}
         </div>
       </div>
       <div>本次:${profitFormula}</div>
@@ -4265,6 +4284,19 @@ async function saveSmartPickup() {
   if (!date) { alert('请填写日期'); return; }
   const validTrucks = _seTrucks.filter(t => (t.pallets || 0) > 0);
   if (!validTrucks.length) { alert('至少要填一车托盘 > 0'); return; }
+
+  // P2 audit fix (2026-05-22): defensive guard. Emma-mode pickups must not be assigned
+  // to customers — Emma's customers are her own business, not Michael's. UI clears
+  // customerId on owner switch (applySmartEntryOwnerMode), but if a user re-injects it
+  // via devtools/race condition, this final scrub prevents creating bogus INVs.
+  if (formPickupBy === 'Emma') {
+    for (const t of validTrucks) {
+      if (t.customerId) {
+        console.warn('[saveSmartPickup] Emma pickup had customerId — clearing.', t);
+        t.customerId = '';
+      }
+    }
+  }
 
   const linkId = crypto.randomUUID();
   const sellPrice = state.params.sellPrice || 265;
@@ -6238,7 +6270,7 @@ function updateLedgerPreview() {
   `;
 }
 
-function addLedger() {
+async function addLedger() {
   if (!currentCustomer) return;
   const c = state.customers.find(x => x.id === currentCustomer);
   if (!c) return;
@@ -6251,12 +6283,14 @@ function addLedger() {
   if (!date) { alert('请填写日期'); return; }
 
   let entry = null;
+  let isPickup = false;
   if (type === 'pickup') {
     if (!pallets || pallets <= 0) { alert('取货请填托盘数 (>0)'); return; }
     const swapEl = document.getElementById('lg-swap');
     const isSwap = !!(swapEl && swapEl.checked);
     const unitPrice = effectiveUnitPrice(isSwap);
     const palletType = (document.getElementById('lg-type-select') ? document.getElementById('lg-type-select').value : 'TT') || 'TT';
+    const linkId = crypto.randomUUID();
     entry = {
       id: crypto.randomUUID(), date, type: 'pickup',
       amount: pallets * unitPrice,
@@ -6264,8 +6298,10 @@ function addLedger() {
       isSwap,                        // tagged: this came from Emma's swap
       swapPremium: isSwap ? swapTtPremium() : 0,  // snapshot of premium at time of save
       palletType: isSwap ? 'TT' : palletType,
-      pallets, truck, note
+      pallets, truck, note,
+      _linkSupplyId: linkId          // FIX (P0 audit): link to partnership event + dailySupply truck
     };
+    isPickup = true;
   } else if (type === 'deposit') {
     if (!rawAmt || rawAmt <= 0) { alert('预付金额必须 > 0'); return; }
     entry = { id: crypto.randomUUID(), date, type: 'deposit', amount: Math.abs(rawAmt), pallets: 0, note };
@@ -6281,6 +6317,93 @@ function addLedger() {
   }
   if (!entry) return;
   c.ledger.push(entry);
+
+  // === FIX (2026-05-22 P0 audit Finding 1): for pickups, ALSO sync to dailySupply
+  // + partnership_data. Previously this branch was orphan — it produced a ledger
+  // entry + INV but never told the partnership app, so Michael's SSS share didn't
+  // shrink and Hugo's accrual didn't grow. Michael picks up via this path only
+  // when he uses 🔄 "repeat" on a past pickup. Now treated as a full cross-table
+  // write with rollback on failure (same pattern as saveSmartPickup). ===
+  let dayRec = null;
+  let createdNewDayRec = false;
+  if (isPickup) {
+    ensureSupplyArray();
+    // Customer detail page entries are always Michael's pickups (this form is on
+    // Michael's personal account; Emma has her own app). Hard-code pickedUpBy.
+    dayRec = state.dailySupply.find(d => d.date === entry.date && (d.pickupBy || 'Michael') === 'Michael');
+    if (!dayRec) {
+      dayRec = {
+        id: crypto.randomUUID(),
+        date: entry.date,
+        pickupBy: 'Michael',
+        manualOverride: false,
+        trucks: [],
+        note: '',
+        _linkSupplyId: entry._linkSupplyId
+      };
+      state.dailySupply.push(dayRec);
+      createdNewDayRec = true;
+    }
+    dayRec.trucks.push({
+      type: entry.palletType || 'TT',
+      pallets: entry.pallets,
+      swapped: !!entry.isSwap,
+      truckNum: entry.truck || '',
+      note: entry.note || '客户账本录入',
+      _linkSupplyId: entry._linkSupplyId
+    });
+
+    // Build the partnership pickup event
+    const userEmail = (currentUser && currentUser.email) ? currentUser.email : 'harreds.ceo@gmail.com';
+    const buyPrice = state.params.buyPrice || 245;
+    const partnershipEvent = {
+      id: crypto.randomUUID(),
+      type: 'pickup',
+      date: entry.date,
+      pallets: entry.pallets,
+      palletType: entry.isSwap ? 'TT' : (entry.palletType || 'TT'),
+      amount: entry.pallets * buyPrice,
+      truck: entry.truck || '',
+      note: entry.note || '客户账本录入',
+      isSwap: !!entry.isSwap,
+      pickedUpBy: 'Michael',                  // authoritative field
+      createdBy: userEmail,                   // legacy fallback
+      createdAt: new Date().toISOString(),
+      _linkSupplyId: entry._linkSupplyId
+    };
+
+    // Cross-table write — partnership first, rollback personal if it fails
+    try {
+      const { data: latestRow, error: readErr } = await db
+        .from('partnership_data')
+        .select('data')
+        .eq('workspace_id', 'main')
+        .maybeSingle();
+      if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
+      const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
+      if (!Array.isArray(latestData.events)) latestData.events = [];
+      latestData.events.push(partnershipEvent);
+      const { error: writeErr } = await db
+        .from('partnership_data')
+        .update({ data: latestData, updated_at: new Date().toISOString() })
+        .eq('workspace_id', 'main');
+      if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
+      _partnershipCache = latestData;
+    } catch (err) {
+      console.error('[addLedger] partnership write failed, rolling back:', err);
+      // Roll back ledger entry
+      c.ledger = (c.ledger || []).filter(x => x.id !== entry.id);
+      // Roll back dailySupply truck (and remove empty day rec if we created it)
+      if (dayRec) {
+        dayRec.trucks = (dayRec.trucks || []).filter(t => t._linkSupplyId !== entry._linkSupplyId);
+        if (createdNewDayRec && dayRec.trucks.length === 0) {
+          state.dailySupply = state.dailySupply.filter(d => d !== dayRec);
+        }
+      }
+      alert('保存失败:' + (err.message || err) + '\n\n所有改动已回滚,你的数据没有变化。请重试。');
+      return;
+    }
+  }
 
   // === Auto-generate Receipt / Invoice ===
   // Rule: only the form's deposit/pickup types trigger auto-docs.
@@ -10381,12 +10504,18 @@ let aiChatHistory = [];  // [{ role: 'user'|'assistant', content: '...' }]
 function aiSystemPrompt() {
   return `你是 Michael 的私人业务顾问 AI,他在英国做托盘批发(从 SSS 进货,卖给客户,还有合作伙伴 Emma 和中间人 Hugo)。
 
-【业务模型】
-- Michael 从 SSS 买托盘 (£${state.params.buyPrice}/托) → 卖给客户 (£${state.params.sellPrice}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
-- 客户先预付款给 Michael(进客户余额),取货时按 sellPrice 扣
-- 客户另外直接付 Hugo £${state.params.hugoFee || 7}/托 + V £${state.params.vFee || 2}/托(不进 Michael P&L)
+【业务模型(2026-05-20 起,新模式)】
+- Michael 自己付钱给 SSS 进货 (£${state.params.buyPrice}/托) → 卖给客户 (£${state.params.sellPrice}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
+- 资金流向: 客户预付 + Emma 转账 → Michael → SSS。Michael 是唯一付 SSS 的人。
+- SSS 池被分成两份: Michael 份额 + Emma 份额。每次取货只消耗取货人那一边的份额。
+- 客户先预付款给 Michael(进客户余额),Michael 取货时按 sellPrice 扣客户账本
+- Hugo 提成 £${state.params.hugoFee || 7}/托: 客户当面付 Michael 现金 → Michael 转给 Hugo (只针对 Michael 取的货)
+- V 费用 £${state.params.vFee || 2}/托: 客户直接付 V(过路钱,不进 Michael P&L)
 - 托盘有两种类型:TT 和 AMAZON
-- Michael 跟 Emma 轮流取货(轮换日制)。Emma 不喜欢 TT,Michael 客人喜欢 TT
+- **Michael 取货 vs Emma 取货是关键区分**:
+  - Michael 取货 → 客户跟 Michael 交易 → Michael 赚 myFee + 利润、欠 Hugo 现金、消耗 Michael SSS 份额
+  - Emma 取货 → 客户跟 Emma 直接交易 → Michael 一分不赚、不欠 Hugo、只消耗 Emma SSS 份额
+  - **Emma 自己跟 Hugo 结提成,不上 Michael 的账**
 - "Swap TT":Emma 取货日的 TT 给 Michael,Michael 之后还 Emma 等量 AMAZON。Michael 把这种 swap-TT 卖给客户加价 £${swapTtPremium()}/托(纯利)
 - 给客人的对账解释只说"我利润 £30/托 + Hugo £10/托"(简化版本,不是真实数字)
 

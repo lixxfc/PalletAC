@@ -2506,13 +2506,15 @@ function hugoMath() {
   };
 }
 
+// P1 audit fix (2026-05-22): include `in-emma` (new-mode credit events) alongside the
+// legacy `transfer` event type, so post-switch months don't appear as zero on charts.
 function monthlyAgg() {
   const map = {};
   const ensure = k => (map[k] = map[k] || { month: k, transfer: 0, pallets: 0, spent: 0 });
   for (const e of activeEvents()) {
     const k = e.date.slice(0, 7);
     const m = ensure(k);
-    if (e.type === 'transfer') m.transfer += e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma') m.transfer += e.amount || 0;
     else if (e.type === 'pickup') { m.pallets += e.pallets || 0; m.spent += e.amount || 0; }
   }
   return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
@@ -2522,7 +2524,7 @@ function monthTotals(ymStr) {
   const evs = activeEvents().filter(e => e.date.startsWith(ymStr));
   let t = 0, p = 0, s = 0;
   for (const e of evs) {
-    if (e.type === 'transfer') t += e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma') t += e.amount || 0;
     else if (e.type === 'pickup') { p += e.pallets || 0; s += e.amount || 0; }
   }
   return { t, p, s };
@@ -2955,7 +2957,7 @@ function buildDrilldownData(key) {
                 <div><span class="k">Emma 取</span><span class="v" style="float:right;color:var(--pink);">${mp.emma} 托</span></div>
                 ${mp.other ? `<div><span class="k">未知</span><span class="v" style="float:right;color:var(--text-dim);">${mp.other} 托</span></div>` : ''}
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>合计</b></span><span class="v total" style="float:right;">${mp.total} 托</span></div>
-                <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Hugo 应付:${mp.total} × £${rate} = £${fmt0(mp.total * rate)}</div>`,
+                <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Hugo 应付:${mp.michael} × £${rate} = £${fmt0(mp.michael * rate)} <span style="color:var(--text-dim);font-size:10px;">(只算 Michael 取货 · Emma 自己跟 Hugo 结)</span></div>`,
       rows
     };
   }
@@ -3214,7 +3216,13 @@ function renderPickups() {
     const btn = r.deleted
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
       : `${reassignBtn}<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+    // FIX (P0 audit #5, 2026-05-22): Hugo commission only applies to Michael's pickups
+    // in new mode. Emma settles with Hugo herself, so showing a £ amount on her rows
+    // was misleading and could lead to double-paying Hugo.
     const commission = (r.pallets || 0) * rate;
+    const commissionCell = (isNewMode() && !isMpick)
+      ? '<td class="dim" style="color:var(--text-dim);font-size:11px;">— <span style="font-size:10px;">(Emma 自结)</span></td>'
+      : `<td class="dim">${fmt(commission)}</td>`;
     const tp = r.palletType || 'Mixed';
     const typeBadge = tp === 'TT'
       ? '<span class="badge" style="background:rgba(67,56,202,0.30);color:#a5b4fc;font-weight:700;border:1px solid rgba(99,102,241,0.5);">TT</span>'
@@ -3228,7 +3236,7 @@ function renderPickups() {
       <td><b>${r.pallets}</b></td>
       <td class="dim">${escapeHtml(r.truck || '-')}</td>
       <td class="neg">-${fmt(r.amount)}</td>
-      <td class="dim">${fmt(commission)}</td>
+      ${commissionCell}
       <td class="dim">${escapeHtml(r.note || '')}${delInfo(r)}</td>
       <td>${btn}</td>
     </tr>`;
@@ -3415,56 +3423,120 @@ function _pmEsc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-// Compute statement data for given range — returns { rows[], opening, closing, totals... }
+// Compute statement data for given range — returns { rows[], opening, closing, totals..., mode }
+// MODE-AWARE (P0 audit fix, 2026-05-22):
+//   - Old mode: original logic — transfer = credit, pickup × £245 = debit (all pickups)
+//   - New mode: in-emma = credit, only Emma's own pickups × £245 = debit (Michael's pickups
+//     don't touch Emma's account in new mode). Opening anchored on emmaOpeningCredit param
+//     and reconstructed using new-mode-only events. Pre-switch legacy events are excluded
+//     (their net effect is baked into emmaOpeningCredit per Option B).
 function computeEmmaStatementData(from, to) {
   const buyPrice = state.params.buyPrice || 245;
+  const inNewMode = isNewMode();
+  const sw = newModeStartDate();
   const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
-  let opening = 0;
-  for (const e of sorted) {
-    if (e.date < from) {
-      if (e.type === 'transfer') opening += (e.amount || 0);
-      else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPrice;
+
+  if (!inNewMode) {
+    // ===== OLD MODE: original logic preserved =====
+    let opening = 0;
+    for (const e of sorted) {
+      if (e.date < from) {
+        if (e.type === 'transfer') opening += (e.amount || 0);
+        else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPrice;
+      }
     }
+    let running = opening;
+    let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0, totalHugoFee = 0;
+    const inRange = [];
+    for (const e of sorted) {
+      if (e.date >= from && e.date <= to) {
+        if (e.type === 'transfer') {
+          const amt = e.amount || 0;
+          totalIn += amt; running += amt; totalTransfers += 1;
+          if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
+          inRange.push({ ...e, _balance: running });
+        } else if (e.type === 'pickup') {
+          const palls = e.pallets || 0;
+          const amt = palls * buyPrice;
+          totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
+          inRange.push({ ...e, _balance: running, _amount: amt });
+        }
+      }
+    }
+    return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, buyPrice, mode: 'old' };
   }
+
+  // ===== NEW MODE (Option B accounting) =====
+  // Emma's "balance" = her SSS share = emmaOpeningCredit + Σ(in-emma) − Σ(Emma's pickups × buyPrice)
+  // Only NEW-MODE events (date >= switch) are considered. Pre-switch events are ignored
+  // because their net effect is already baked into emmaOpeningCredit per Option B semantics.
+  const emmaOpening = state.params.emmaOpeningCredit || 0;
+
+  // Opening at `from` = emmaOpeningCredit + new-mode deltas with date in [sw, from)
+  let opening = emmaOpening;
+  for (const e of sorted) {
+    if (e.date >= from) break;
+    if (sw && e.date < sw) continue;  // skip pre-switch (baked into opening)
+    if (e.type === 'in-emma') opening += (e.amount || 0);
+    else if (e.type === 'pickup' && !isMichaelPickup(e)) opening -= (e.pallets || 0) * buyPrice;
+  }
+
   let running = opening;
   let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0, totalHugoFee = 0;
   const inRange = [];
   for (const e of sorted) {
-    if (e.date >= from && e.date <= to) {
-      if (e.type === 'transfer') {
-        const amt = e.amount || 0;
-        totalIn += amt; running += amt; totalTransfers += 1;
-        if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
-        inRange.push({ ...e, _balance: running });
-      } else if (e.type === 'pickup') {
-        const palls = e.pallets || 0;
-        const amt = palls * buyPrice;
-        totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
-        inRange.push({ ...e, _balance: running, _amount: amt });
-      }
+    if (e.date < from || e.date > to) continue;
+    if (sw && e.date < sw) continue;  // skip pre-switch events in range
+    if (e.type === 'in-emma') {
+      const amt = e.amount || 0;
+      totalIn += amt; running += amt; totalTransfers += 1;
+      if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
+      inRange.push({ ...e, _balance: running });
+    } else if (e.type === 'pickup' && !isMichaelPickup(e)) {
+      // Only Emma's own pickups consume her share in new mode
+      const palls = e.pallets || 0;
+      const amt = palls * buyPrice;
+      totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
+      inRange.push({ ...e, _balance: running, _amount: amt });
     }
+    // Michael's pickups + legacy transfer events: NOT shown on Emma's new-mode statement
   }
-  return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, buyPrice };
+  return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, buyPrice, mode: 'new' };
 }
 
 // Compute Hugo commission data for given range
+// MODE-AWARE (P0 audit fix, 2026-05-22):
+//   - Only count Michael's pickups for commission (Emma settles with Hugo herself in new mode)
+//   - Include `out-hugo` cash payments in the period as paid-down
+//   - Legacy/prepay split via cutoff (`hugoPrepayStartDate`) preserved for old-mode statements
 function computeHugoStatementData(from, to) {
   const buyPrice = state.params.buyPrice || 245;
   const hugoRate = (state.params && state.params.hugoCommission) || 7;
   const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
+  const inNewMode = isNewMode();
+  const sw = newModeStartDate();
   const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
 
   let totalPallets = 0, totalCommission = 0;
   let legacyPallets = 0, legacyCommission = 0;
   let prepayPallets = 0, prepayCommission = 0;
   let prepayDeposited = 0;
+  let cashPaidInPeriod = 0;          // new-mode: out-hugo events in range
+  let emmaPalletsExcluded = 0;       // new-mode: Emma pickups skipped (for transparency)
 
   const pickupRows = [];
   const transferRows = [];
+  const cashRows = [];
 
   for (const e of sorted) {
     if (e.date < from || e.date > to) continue;
     if (e.type === 'pickup') {
+      // NEW MODE: only Michael's pickups count toward Hugo's commission.
+      // Emma's pickups are her own business with Hugo — don't appear on Michael's statement.
+      if (inNewMode && !isMichaelPickup(e)) {
+        emmaPalletsExcluded += (e.pallets || 0);
+        continue;
+      }
       const palls = e.pallets || 0;
       const commission = palls * hugoRate;
       const isLegacy = cutoff ? (e.date < cutoff) : true;
@@ -3479,8 +3551,13 @@ function computeHugoStatementData(from, to) {
       }
       pickupRows.push({ ...e, _commission: commission, _bucket: isLegacy ? 'legacy' : 'prepay' });
     } else if (e.type === 'transfer' && e.includesHugoFee && e.hugoFeeAmount > 0) {
+      // LEGACY old-mode: Emma included Hugo's fee in her bank transfer to Michael
       prepayDeposited += e.hugoFeeAmount;
       transferRows.push({ ...e });
+    } else if (e.type === 'out-hugo') {
+      // NEW MODE: Michael's direct cash payment to Hugo
+      cashPaidInPeriod += (e.amount || 0);
+      cashRows.push({ ...e });
     }
   }
 
@@ -3489,17 +3566,23 @@ function computeHugoStatementData(from, to) {
   const legacyOwedCash = Math.max(0, legacyCommission - legacyPaidCash);
   // Pool balance: deposits − consumed by post-cutoff pickups
   const prepayBalance = prepayDeposited - prepayCommission;
-  // Total still owed: legacy cash + any pool deficit
-  const totalOwed = legacyOwedCash + Math.max(0, -prepayBalance);
+  // Total still owed:
+  //   - New mode: commission accrued in period − cash already paid in period
+  //   - Old mode: legacy cash debt + any pool deficit
+  const totalOwed = inNewMode
+    ? Math.max(0, totalCommission - cashPaidInPeriod)
+    : legacyOwedCash + Math.max(0, -prepayBalance);
 
   return {
-    pickupRows, transferRows,
+    pickupRows, transferRows, cashRows,
     totalPallets, totalCommission,
     legacyPallets, legacyCommission, legacyPaidCash, legacyOwedCash,
     prepayPallets, prepayCommission, prepayDeposited, prepayBalance,
+    cashPaidInPeriod, emmaPalletsExcluded,
     totalOwed,
     cutoff,
     rate: hugoRate, buyPrice,
+    mode: inNewMode ? 'new' : 'old',
     // Backward-compat aliases
     paidViaEmma: prepayDeposited,
     stillOwed: totalOwed
@@ -3514,7 +3597,9 @@ function buildEmmaStatementEmailHtml(from, to) {
   const headerColor = '#0f4c75';
 
   const rowsHtml = data.rows.map(e => {
-    if (e.type === 'transfer') {
+    // FIX (P0 audit, 2026-05-22): accept both 'transfer' (old mode) and 'in-emma' (new mode)
+    // as credit row types. Pickup is anything else.
+    if (e.type === 'transfer' || e.type === 'in-emma') {
       const palletsStr = e.pallets ? ` (intended for ${e.pallets} pallet${e.pallets === 1 ? '' : 's'})` : '';
       const transferRow = `
         <tr>
@@ -3642,12 +3727,15 @@ function buildEmmaStatementEmailHtml(from, to) {
 }
 
 // === Email-friendly Hugo commission HTML — SPLIT MODE aware ===
+// P0 audit fix (2026-05-22): in new mode (`data.mode === 'new'`) force the unified
+// (single-table) layout, since the old "legacy debt + prepay pool via Emma" buckets
+// no longer apply — Michael pays Hugo cash directly per pickup.
 function buildHugoStatementEmailHtml(from, to) {
   const data = computeHugoStatementData(from, to);
   const company = state.company || {};
   const hugo = state.hugo || {};
   const headerColor = '#854d0e';
-  const split = !!data.cutoff;
+  const split = !!data.cutoff && data.mode !== 'new';
 
   // Build chronological pool flow rows (only post-cutoff events)
   let runningPool = 0;
@@ -3705,7 +3793,7 @@ function buildHugoStatementEmailHtml(from, to) {
         Here is your commission summary at <b>${_pmMoney(data.rate)}</b> per pallet for the period above.
       </div>
 
-      <!-- Top summary cards -->
+      <!-- Top summary cards (mode-aware) -->
       <div style="padding:18px 36px 0;">
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafbfc;border-radius:8px;border:1px solid #e2e8f0;">
           <tr>
@@ -3714,6 +3802,17 @@ function buildHugoStatementEmailHtml(from, to) {
               <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${data.totalPallets}</div>
               <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">Total commission ${_pmMoney(data.totalCommission)}</div>
             </td>
+            ${data.mode === 'new' ? `
+            <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#047857;text-transform:uppercase;">Cash Paid (period)</div>
+              <div style="font-size:18px;font-weight:700;color:#047857;margin-top:4px;">${_pmMoney(data.cashPaidInPeriod || 0)}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">Direct cash from Michael</div>
+            </td>
+            <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
+              <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Rate</div>
+              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${_pmMoney(data.rate)}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">per pallet</div>
+            </td>` : `
             <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
               <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#b91c1c;text-transform:uppercase;">Owed in Cash</div>
               <div style="font-size:18px;font-weight:700;color:#b91c1c;margin-top:4px;">${_pmMoney(data.legacyOwedCash)}</div>
@@ -3723,13 +3822,17 @@ function buildHugoStatementEmailHtml(from, to) {
               <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:${data.prepayBalance < 0 ? '#b91c1c' : '#047857'};text-transform:uppercase;">Pool at Emma</div>
               <div style="font-size:18px;font-weight:700;color:${data.prepayBalance < 0 ? '#b91c1c' : '#047857'};margin-top:4px;">${data.prepayBalance >= 0 ? '+' : '−'}${_pmMoney(Math.abs(data.prepayBalance))}</div>
               <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">${_pmMoney(data.prepayDeposited)} in − ${_pmMoney(data.prepayCommission)} used</div>
-            </td>
+            </td>`}
             <td style="padding:14px 16px;text-align:right;background:${data.totalOwed > 0 ? '#b91c1c' : '#047857'};color:#fff;border-top-right-radius:7px;border-bottom-right-radius:7px;">
               <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.8);text-transform:uppercase;">${data.totalOwed > 0 ? 'Total Outstanding' : 'Settled'}</div>
               <div style="font-size:18px;font-weight:800;margin-top:2px;">${_pmMoney(data.totalOwed)}</div>
             </td>
           </tr>
         </table>
+        ${data.mode === 'new' && data.emmaPalletsExcluded > 0 ? `
+        <div style="margin-top:10px;font-size:11px;color:#64748b;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;">
+          Note: ${data.emmaPalletsExcluded} pallet${data.emmaPalletsExcluded === 1 ? '' : 's'} that Emma collected herself in this period are settled by Emma directly and are not included above.
+        </div>` : ''}
       </div>
 
       ${split ? `
@@ -3820,9 +3923,11 @@ function buildHugoStatementEmailHtml(from, to) {
 
       <div style="padding:24px 36px;border-top:1px solid #f1f5f9;margin-top:18px;font-size:12px;color:#475569;line-height:1.7;">
         ${data.totalOwed > 0
-          ? (split
-            ? `Outstanding cash directly to Hugo: <b>${_pmMoney(data.legacyOwedCash)}</b>` + (data.prepayBalance < 0 ? ` · Pool needs top-up: <b>${_pmMoney(-data.prepayBalance)}</b>` : ` · Pool covers future pickups (balance ${_pmMoney(data.prepayBalance)})`) + '.'
-            : `Outstanding amount of <b>${_pmMoney(data.totalOwed)}</b> will be paid through Emma in the next transfer.`)
+          ? (data.mode === 'new'
+            ? `Outstanding cash to be paid by Michael directly: <b>${_pmMoney(data.totalOwed)}</b>${(data.cashPaidInPeriod || 0) > 0 ? ` (after ${_pmMoney(data.cashPaidInPeriod)} already paid in cash this period)` : ''}.`
+            : (split
+              ? `Outstanding cash directly to Hugo: <b>${_pmMoney(data.legacyOwedCash)}</b>` + (data.prepayBalance < 0 ? ` · Pool needs top-up: <b>${_pmMoney(-data.prepayBalance)}</b>` : ` · Pool covers future pickups (balance ${_pmMoney(data.prepayBalance)})`) + '.'
+              : `Outstanding amount of <b>${_pmMoney(data.totalOwed)}</b> will be paid through Emma in the next transfer.`))
           : 'All commission for this period has been settled. Thank you.'}
       </div>
       <div style="padding:24px 36px 0;font-size:13px;color:#0a0e1a;font-weight:600;">Best regards,</div>
@@ -3943,14 +4048,24 @@ function whatsAppEmmaStatement() {
   if (!from || !to) { alert('请填写日期范围'); return; }
   const data = computeEmmaStatementData(from, to);
   const emma = state.emma || {};
+  // P0 audit fix (2026-05-22): mode-aware wording.
+  // New mode: this is Emma's SSS share account, not "what Michael owes Emma".
+  const isNew = data.mode === 'new';
+  const intro = isNew
+    ? `SSS share statement (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):`
+    : `Statement summary (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):`;
+  const inLabel = isNew ? 'Transfers in: ' : 'Transfers in:    ';
+  const outLabel = isNew ? 'Pallets you collected: ' : 'Pallets out:     ';
+  const openLabel = isNew ? 'Opening SSS share:' : 'Opening balance:';
+  const closeLabel = isNew ? 'Closing SSS share:' : 'Closing balance:';
   const msg = `Hi ${emma.name || 'Emma'},
 
-Statement summary (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):
+${intro}
 
-Opening balance: ${_pmMoney(data.opening)}
-Transfers in:    ${_pmMoney(data.totalIn)} (${data.totalTransfers} payments)
-Pallets out:     ${_pmMoney(data.totalOut)} (${data.totalPallets} pallets)
-Closing balance: ${_pmMoney(data.closing)}
+${openLabel} ${_pmMoney(data.opening)}
+${inLabel}${_pmMoney(data.totalIn)} (${data.totalTransfers} payments)
+${outLabel}${_pmMoney(data.totalOut)} (${data.totalPallets} pallets)
+${closeLabel} ${_pmMoney(data.closing)}
 ${data.totalHugoFee > 0 ? '\nHugo fee in this period: ' + _pmMoney(data.totalHugoFee) + '\n' : ''}
 A full statement email is also on the way.
 
@@ -3969,15 +4084,31 @@ function whatsAppHugoStatement() {
   if (!from || !to) { alert('请填写日期范围'); return; }
   const data = computeHugoStatementData(from, to);
   const hugo = state.hugo || {};
+  // P0 audit fix (2026-05-22): in new mode Hugo is paid cash directly by Michael,
+  // NOT "through Emma in next transfer" — that old-mode language was misleading.
+  const isNew = data.mode === 'new';
+  let body;
+  if (isNew) {
+    body = `Pallets (yours, picked by Michael): ${data.totalPallets}
+Rate:           ${_pmMoney(data.rate)} / pallet
+Commission earned in period: ${_pmMoney(data.totalCommission)}
+Cash paid in period:         ${_pmMoney(data.cashPaidInPeriod || 0)}
+${data.stillOwed > 0 ? 'Still owed:     ' + _pmMoney(data.stillOwed) + ' (cash, Michael will pay directly)' : 'All settled. Thank you!'}`;
+    if (data.emmaPalletsExcluded > 0) {
+      body += `\n\n(${data.emmaPalletsExcluded} pallets that Emma picked up are settled by Emma separately — not in this summary.)`;
+    }
+  } else {
+    body = `Pallets:        ${data.totalPallets}
+Rate:           ${_pmMoney(data.rate)} / pallet
+Total earned:   ${_pmMoney(data.totalCommission)}
+Paid via Emma:  ${_pmMoney(data.paidViaEmma)}
+${data.stillOwed > 0 ? 'Still owed:     ' + _pmMoney(data.stillOwed) + ' (paid through Emma in next transfer)' : 'All settled. Thank you!'}`;
+  }
   const msg = `Hi ${hugo.name || 'Hugo'},
 
 Commission summary (${_pmFmtDate(from)} → ${_pmFmtDate(to)}):
 
-Pallets:        ${data.totalPallets}
-Rate:           ${_pmMoney(data.rate)} / pallet
-Total earned:   ${_pmMoney(data.totalCommission)}
-Paid via Emma:  ${_pmMoney(data.paidViaEmma)}
-${data.stillOwed > 0 ? 'Still owed:     ' + _pmMoney(data.stillOwed) + ' (paid through Emma in next transfer)' : 'All settled. Thank you!'}
+${body}
 
 A full breakdown email is also on the way.
 
@@ -4529,10 +4660,15 @@ function renderCharts() {
   });
 
   // 2. Running balance line (cumulative over all events by date, excluding deleted)
+  // P1 audit fix (2026-05-22): include `in-emma` (new-mode equivalent of transfer) so
+  // the post-switch line doesn't crash to negative — both event types represent money
+  // flowing IN (Emma's contribution). Note: this is the *combined pool view*, not the
+  // per-owner SSS share. For new mode the proper per-owner accounting lives on the
+  // dashboard cards (michaelSssShare / emmaSssShare); this chart is a historical aid.
   const sorted = [...activeEvents()].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
   const balData = sorted.map(e => {
-    if (e.type === 'transfer') running += e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma') running += e.amount || 0;
     else if (e.type === 'pickup') running -= e.amount || 0;
     return { date: e.date, bal: running };
   });
@@ -5002,16 +5138,25 @@ function updateOutSupplierPreview() {
   const amt = parseFloat(document.getElementById('os-amount').value) || 0;
   const buy = state.params.buyPrice || 245;
   const poolBefore = cashPoolBalance();
-  const sssBefore = sssBalance();
+  // P1 audit fix (2026-05-22): show Michael's SSS share, not the combined pool.
+  // In new mode the pool is split between Michael & Emma — paying SSS only grows
+  // Michael's share. Emma's share is unchanged. Showing the total was misleading.
+  const inNewMode = isNewMode();
+  const mShareBefore = inNewMode ? michaelSssShare().remaining : sssBalance();
+  const eShareBefore = inNewMode ? emmaSssShare().remaining : null;
   const box = document.getElementById('os-preview');
   if (!box) return;
   if (amt === 0) { box.innerHTML = ''; return; }
   const poolAfter = poolBefore - amt;
-  const sssAfter = sssBefore + amt;
+  const mShareAfter = mShareBefore + amt;
   const warn = poolAfter < 0 ? `<div style="color:var(--rose);">⚠ 资金池将透支 ${fmt(-poolAfter)} — 你可能要先收 Emma / 客户的钱</div>` : '';
+  const emmaNote = inNewMode
+    ? `<div style="color:var(--text-dim);font-size:11px;">Emma 的 SSS 份额不变(${fmt(eShareBefore)})· 这笔只进你的份额</div>`
+    : '';
   box.innerHTML = `
     <div>💰 资金池 ${fmt(poolBefore)} → <b style="color:${poolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(poolAfter)}</b></div>
-    <div>🏭 SSS 余额 ${fmt(sssBefore)} → <b style="color:var(--green);">${fmt(sssAfter)}</b>(够拉 ${Math.floor(sssAfter / buy)} 托)</div>
+    <div>🏭 ${inNewMode ? '你的 SSS 份额' : 'SSS 余额'} ${fmt(mShareBefore)} → <b style="color:var(--green);">${fmt(mShareAfter)}</b>(够拉 ${Math.floor(mShareAfter / buy)} 托)</div>
+    ${emmaNote}
     <div>📋 自动开 PINV-SSS${palls > 0 ? '(' + palls + ' 托 × £' + buy + ')' : ''}</div>
     ${warn}
   `;
@@ -5869,21 +6014,63 @@ function importJson(e) {
 }
 
 // ===== AI / INSIGHTS =====
+// P1 audit fix (2026-05-22): mode-aware insights. In new mode `balance()` is
+// the old-mode (Σ transfer − Σ pickup) figure — meaningless because pickup events
+// keep growing while `transfer` events are replaced by `in-emma`. Use the proper
+// new-mode metrics: cashPoolBalance, michaelSssShare, emmaSssShare, hugoOwedNew.
 function analyzeRules() {
   const insights = [];
-  const bal = balance();
-  const buy = state.params.buyPrice;
+  const buy = state.params.buyPrice || 245;
   const pickups = getPickups();
-  const transfers = getTransfers();
+  const inNewMode = isNewMode();
 
-  // Balance warning
-  if (bal < 0) {
-    insights.push({ type: 'bad', title: `余额透支 ${fmt(-bal)}`, text: '已经超支，先给 Emma 补款，否则下次取货不够。' });
-  } else if (bal < buy * 3) {
-    insights.push({ type: 'warn', title: `余额偏低 (${fmt(bal)})`, text: `只够 ${Math.floor(bal / buy)} 托盘左右。建议近期再转一笔，别到节骨眼没钱。` });
-  } else if (bal > buy * 50) {
-    insights.push({ type: 'info', title: `余额充裕 (${fmt(bal)})`, text: `够 ${Math.floor(bal / buy)} 托盘。可以考虑跟 SSS 谈批发折扣。` });
+  if (inNewMode) {
+    // === NEW MODE: balance is replaced by cash pool + per-owner SSS share ===
+    const cash = cashPoolBalance();
+    const mShare = michaelSssShare().remaining;
+    const eShare = emmaSssShare().remaining;
+    const hugoOwed = hugoOwedNew();
+
+    // Cash pool warnings — Michael's working capital
+    if (cash < 0) {
+      insights.push({ type: 'bad', title: `资金池透支 ${fmt(-cash)}`, text: '你已经垫资了 — 等客户付款 / Emma 转账进来。' });
+    } else if (cash < buy * 3) {
+      insights.push({ type: 'warn', title: `资金池偏低 (${fmt(cash)})`, text: `只够再付 ${Math.floor(cash / buy)} 托 SSS 货款。多收客户预付 / 等 Emma 转账。` });
+    }
+
+    // Your SSS share — what's actually pickup-able
+    if (mShare < 0) {
+      insights.push({ type: 'bad', title: `你的 SSS 份额透支 ${fmt(-mShare)}`, text: '你已经超额从 SSS 池拉货,下次拉之前必须先付一笔 SSS。' });
+    } else if (mShare < buy * 5) {
+      insights.push({ type: 'warn', title: `你的 SSS 份额偏低 (${fmt(mShare)})`, text: `只够再拉 ${Math.floor(mShare / buy)} 托。准备付 SSS。` });
+    } else if (mShare > buy * 100) {
+      insights.push({ type: 'info', title: `你的 SSS 份额充裕 (${fmt(mShare)})`, text: `够拉 ${Math.floor(mShare / buy)} 托。可以加快出货节奏。` });
+    }
+
+    // Emma share — informational only (her business but worth knowing)
+    if (eShare < 0) {
+      insights.push({ type: 'info', title: `Emma 的 SSS 份额透支 ${fmt(-eShare)}`, text: 'Emma 的份额已超额 — 她下次拉货前需要再给你转钱。' });
+    }
+
+    // Hugo owed — cash you need to set aside
+    if (hugoOwed > buy * 2) {
+      insights.push({ type: 'warn', title: `欠 Hugo 现金 ${fmt(hugoOwed)}`, text: '建议尽快用现金结一笔 Hugo,别让他等太久。' });
+    } else if (hugoOwed > 100) {
+      insights.push({ type: 'info', title: `欠 Hugo 现金 ${fmt(hugoOwed)}`, text: '常规累积,合适机会结一下。' });
+    }
+  } else {
+    // === OLD MODE: original balance-based logic preserved ===
+    const bal = balance();
+    if (bal < 0) {
+      insights.push({ type: 'bad', title: `余额透支 ${fmt(-bal)}`, text: '已经超支，先给 Emma 补款，否则下次取货不够。' });
+    } else if (bal < buy * 3) {
+      insights.push({ type: 'warn', title: `余额偏低 (${fmt(bal)})`, text: `只够 ${Math.floor(bal / buy)} 托盘左右。建议近期再转一笔，别到节骨眼没钱。` });
+    } else if (bal > buy * 50) {
+      insights.push({ type: 'info', title: `余额充裕 (${fmt(bal)})`, text: `够 ${Math.floor(bal / buy)} 托盘。可以考虑跟 SSS 谈批发折扣。` });
+    }
   }
+
+  // === Mode-agnostic insights below — load efficiency / frequency / growth / recency ===
 
   // Load efficiency
   const last7 = [...pickups].sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
@@ -5893,18 +6080,22 @@ function analyzeRules() {
     else if (avg >= 25) insights.push({ type: 'good', title: `装载率很好（均 ${avg.toFixed(1)} 托盘）`, text: '保持这个节奏就好。' });
   }
 
-  // Average transfer frequency
-  if (transfers.length >= 2) {
-    const sortedT = [...transfers].sort((a, b) => a.date.localeCompare(b.date));
+  // Transfer / in-emma frequency
+  const transferEvents = inNewMode
+    ? _newModeEvents().filter(e => e.type === 'in-emma')
+    : getTransfers();
+  if (transferEvents.length >= 2) {
+    const sortedT = [...transferEvents].sort((a, b) => a.date.localeCompare(b.date));
     const first = new Date(sortedT[0].date);
     const last = new Date(sortedT[sortedT.length - 1].date);
     const days = Math.max(1, (last - first) / 86400000);
-    const freq = days / transfers.length;
-    if (freq < 7) insights.push({ type: 'info', title: `转账频率较高 (均 ${freq.toFixed(1)} 天一次)`, text: '考虑一次多转一点，减少来回次数。' });
-    else if (freq > 30) insights.push({ type: 'warn', title: `转账频率较低 (均 ${freq.toFixed(0)} 天一次)`, text: '注意余额别断档。' });
+    const freq = days / transferEvents.length;
+    const lbl = inNewMode ? 'Emma 转账' : '转账';
+    if (freq < 7) insights.push({ type: 'info', title: `${lbl}频率较高 (均 ${freq.toFixed(1)} 天一次)`, text: '考虑一次多转一点，减少来回次数。' });
+    else if (freq > 30) insights.push({ type: 'warn', title: `${lbl}频率较低 (均 ${freq.toFixed(0)} 天一次)`, text: '注意 SSS 份额别断档。' });
   }
 
-  // Month-over-month pallet growth
+  // Month-over-month pallet growth (works for both modes since pickups is the source)
   const agg = monthlyAgg();
   if (agg.length >= 2) {
     const last = agg[agg.length - 1]; const prev = agg[agg.length - 2];
@@ -5913,7 +6104,7 @@ function analyzeRules() {
     else if (g < -15) insights.push({ type: 'bad', title: `本月托盘环比下降 ${Math.abs(g).toFixed(1)}%`, text: '检查是否少跑了车或者生意变了。' });
   }
 
-  // Recency: any pickup in last 3 days?
+  // Recency
   if (pickups.length > 0) {
     const latest = [...pickups].sort((a, b) => b.date.localeCompare(a.date))[0];
     const daysSince = Math.floor((Date.now() - new Date(latest.date).getTime()) / 86400000);
