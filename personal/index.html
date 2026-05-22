@@ -9471,7 +9471,12 @@ const aboveBarTotalPlugin = {
   }
 };
 
-// Chart.js plugin: draws "TT N 托/N 车" or "AMZ N 托/N 车" inside each bar segment
+// Chart.js plugin: draws a compact label inside each bar segment.
+// IMPROVED (2026-05-22): progressively shortens the label until it fits the bar
+// width — prevents overflow/clipping that was making the chart look messy when
+// bars are narrow (e.g. 4-way stack in the weekly chart, side-by-side weekday
+// chart). Falls back through: full → no spaces → drop trucks → drop prefix →
+// just pallets → just number. Skips entirely if even the bare number won't fit.
 const inBarLabelPlugin = {
   id: 'inBarLabel',
   afterDatasetsDraw(chart) {
@@ -9482,26 +9487,47 @@ const inBarLabelPlugin = {
       meta.data.forEach((bar, idx) => {
         const value = ds.data[idx];
         if (!value || value <= 0) return;
-        const trucks = (ds._truckCounts && ds._truckCounts[idx]) ? ds._truckCounts[idx] : null;
+        const trucks = (ds._truckCounts && ds._truckCounts[idx] != null) ? ds._truckCounts[idx] : null;
         const prefix = ds._labelPrefix || '';
-        const text = trucks != null
-          ? `${prefix} ${value} 托 / ${trucks} 车`
-          : `${prefix} ${value} 托`;
-        const { x, y, base, width, height } = bar.getProps(['x','y','base','width','height'], true);
-        const barH = Math.abs(base - y);
-        const barW = Math.abs(width || 0);
-        if (barH < 18 || barW < 50) return;  // too small to fit text — skip
+        const props = bar.getProps(['x','y','base','width','height'], true);
+        const barH = Math.abs(props.base - props.y);
+        const barW = Math.abs(props.width || 0);
+        if (barH < 14) return;  // segment too short vertically — no room for text
+
+        const palletsTxt = Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
+        const trucksTxt = (trucks != null && trucks > 0)
+          ? (Number.isInteger(trucks) ? String(trucks) : trucks.toFixed(1).replace(/\.0$/, ''))
+          : null;
+
+        // Candidate formats, most verbose → most compact.
+        // Plugin picks the first that fits within (barWidth - 8) of horizontal space.
+        const formats = [];
+        if (prefix && trucksTxt != null) {
+          formats.push(`${prefix} ${palletsTxt} 托 / ${trucksTxt} 车`);
+          formats.push(`${prefix} ${palletsTxt}托/${trucksTxt}车`);
+          formats.push(`${prefix} ${palletsTxt}/${trucksTxt}`);
+        }
+        if (prefix) formats.push(`${prefix} ${palletsTxt}`);
+        if (trucksTxt != null) formats.push(`${palletsTxt}托/${trucksTxt}车`);
+        formats.push(`${palletsTxt}托`);
+        formats.push(palletsTxt);
+
         ctx.save();
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '700 11px Inter, -apple-system, sans-serif';
+        ctx.font = '700 10.5px Inter, -apple-system, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const cx = x;
-        const cy = (y + base) / 2;
-        // Subtle text shadow for legibility
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        // Pick first format that fits horizontally within the bar
+        let chosen = null;
+        const maxW = Math.max(0, barW - 6);
+        for (const fmt of formats) {
+          if (ctx.measureText(fmt).width <= maxW) { chosen = fmt; break; }
+        }
+        if (!chosen) { ctx.restore(); return; }  // even bare number doesn't fit → skip
+
+        ctx.shadowColor = 'rgba(0,0,0,0.65)';
         ctx.shadowBlur = 3;
-        ctx.fillText(text, cx, cy);
+        ctx.fillText(chosen, props.x, (props.y + props.base) / 2);
         ctx.restore();
       });
     });
@@ -9569,10 +9595,13 @@ function renderSupplyWeekChart(weekMon) {
     data: {
       labels,
       datasets: [
-        { label: 'TT · Michael', data: mTT, backgroundColor: COLOR_TT_MICHAEL, borderColor: 'rgba(99,102,241,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mTTtr, _labelPrefix: 'TT·Mich' },
-        { label: 'TT · Emma',    data: eTT, backgroundColor: COLOR_TT_EMMA,    borderColor: 'rgba(196,113,237,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eTTtr, _labelPrefix: 'TT·Emma' },
-        { label: 'AMZ · Michael',data: mAMZ,backgroundColor: COLOR_AMZ_MICHAEL,borderColor: 'rgba(34,211,238,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mAMZtr, _labelPrefix: 'AMZ·Mich' },
-        { label: 'AMZ · Emma',   data: eAMZ,backgroundColor: COLOR_AMZ_EMMA,   borderColor: 'rgba(244,114,182,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eAMZtr, _labelPrefix: 'AMZ·Emma' }
+        // Bar-label prefix shortened from 'TT·Mich' etc. to just owner — color already encodes TT vs AMZ
+        // (legend at top shows the full mapping). Shorter prefix leaves room for the
+        // pallets/trucks numbers inside narrow stacked segments.
+        { label: 'TT · Michael', data: mTT, backgroundColor: COLOR_TT_MICHAEL, borderColor: 'rgba(99,102,241,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mTTtr, _labelPrefix: 'Mich' },
+        { label: 'TT · Emma',    data: eTT, backgroundColor: COLOR_TT_EMMA,    borderColor: 'rgba(196,113,237,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eTTtr, _labelPrefix: 'Emma' },
+        { label: 'AMZ · Michael',data: mAMZ,backgroundColor: COLOR_AMZ_MICHAEL,borderColor: 'rgba(34,211,238,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: mAMZtr, _labelPrefix: 'Mich' },
+        { label: 'AMZ · Emma',   data: eAMZ,backgroundColor: COLOR_AMZ_EMMA,   borderColor: 'rgba(244,114,182,1)', borderWidth: 1, stack: 'a', borderRadius: 4, _truckCounts: eAMZtr, _labelPrefix: 'Emma' }
       ]
     },
     options: {
