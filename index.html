@@ -4202,43 +4202,24 @@ function generateEmmaStatement() {
 
   const company = state.company || {};
   const emma = state.emma || {};
-  const buyPrice = state.params.buyPrice || 245;
-
-  // Sort active events (excluding soft-deleted)
-  const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
-
-  // Opening balance = transfers - pickups*buyPrice for events BEFORE `from`
-  let opening = 0;
-  for (const e of sorted) {
-    if (e.date < from) {
-      if (e.type === 'transfer') opening += (e.amount || 0);
-      else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPrice;
-    }
-  }
-
-  let running = opening;
-  let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0;
-  let totalHugoFee = 0;
-  const inRange = [];
-  for (const e of sorted) {
-    if (e.date >= from && e.date <= to) {
-      if (e.type === 'transfer') {
-        const amt = e.amount || 0;
-        totalIn += amt; running += amt; totalTransfers += 1;
-        // Note: Hugo fee does NOT affect Michael's pallet-credit balance with Emma —
-        // it's pass-through (Emma will give it to Hugo cash).
-        // We DO show it on the statement so Emma sees what she owes Hugo.
-        if (e.includesHugoFee && e.hugoFeeAmount) totalHugoFee += e.hugoFeeAmount;
-        inRange.push({ ...e, _balance: running });
-      } else if (e.type === 'pickup') {
-        const palls = e.pallets || 0;
-        const amt = palls * buyPrice;
-        totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
-        inRange.push({ ...e, _balance: running, _amount: amt });
-      }
-    }
-  }
-  const closing = running;
+  // FIX (P0 audit critical, 2026-05-22): previously this PDF generator had its OWN
+  // inline copy of the data logic that was stuck in old mode — it counted EVERY
+  // pickup as Emma's debt and EVERY transfer as Michael paying Emma, producing
+  // nonsense like "Michael owes Emma £26,215" in new mode. Now we call the shared
+  // mode-aware computeEmmaStatementData() — same function used by the email + WhatsApp
+  // paths — so all three outputs are consistent and correct for new mode.
+  const data = computeEmmaStatementData(from, to);
+  const buyPrice = data.buyPrice;
+  const inNewMode = (data.mode === 'new');
+  const opening = data.opening;
+  const closing = data.closing;
+  const totalIn = data.totalIn;
+  const totalOut = data.totalOut;
+  const totalPallets = data.totalPallets;
+  const totalPickups = data.totalPickups;
+  const totalTransfers = data.totalTransfers;
+  const totalHugoFee = data.totalHugoFee;
+  const inRange = data.rows;
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const money = v => '£' + (Math.round(v * 100) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -4252,9 +4233,10 @@ function generateEmmaStatement() {
   const stmtNo = 'STMT-EMMA-' + new Date().toISOString().slice(0,10).replace(/-/g,'');
 
   const rowsHtml = inRange.map(e => {
-    if (e.type === 'transfer') {
+    // FIX (P0 audit, 2026-05-22): accept both 'transfer' (old) and 'in-emma' (new) as credit rows.
+    if (e.type === 'transfer' || e.type === 'in-emma') {
       const palletsStr = e.pallets ? ` (intended for ${e.pallets} pallet${e.pallets === 1 ? '' : 's'})` : '';
-      let desc = `<b>Pallet Payment</b>${palletsStr}`;
+      let desc = `<b>${inNewMode && e.type === 'in-emma' ? 'Transfer In' : 'Pallet Payment'}</b>${palletsStr}`;
       if (e.note) desc += ` <span class="muted">&mdash; ${esc(e.note)}</span>`;
       const transferRow = `<tr>
         <td class="date-col">${fmtDate(e.date)}</td>
@@ -4290,8 +4272,20 @@ function generateEmmaStatement() {
     }
   }).join('');
 
-  const balanceLabel = closing < 0 ? 'Amount Owed' : 'Credit Balance';
+  // P0 audit (2026-05-22): mode-aware balance labels.
+  // OLD MODE: closing < 0 means Michael owes Emma cash; > 0 means Emma is in credit at Michael
+  // NEW MODE: closing = Emma's SSS share at Michael. < 0 means her share is overdrawn (she pulled more than she put in); > 0 means available pickup-credit
+  const balanceLabel = inNewMode
+    ? (closing < 0 ? 'SSS Share Overdrawn' : 'SSS Share Available')
+    : (closing < 0 ? 'Amount Owed' : 'Credit Balance');
   const balanceClass = closing < 0 ? 'owed' : 'credit';
+  // Document title / header label
+  const docTitleLabel = inNewMode ? 'Partner SSS Account' : 'Supplier Account';
+  const docMetaLabel = inNewMode ? 'Statement For · Partner' : 'Statement For · Supplier';
+  const inColLabel = inNewMode ? 'Transfers In' : 'Pallet Payments';
+  const inColSub = inNewMode ? 'transfer' : 'transfer';
+  const outColLabel = inNewMode ? 'Pickups (Yours)' : 'Pallets Cost';
+  const outColSub = inNewMode ? 'pallets you collected' : 'pallets';
 
   const denseClass = inRange.length > 40 ? 'dense mega' : (inRange.length > 20 ? 'dense' : '');
 
@@ -4484,7 +4478,7 @@ function generateEmmaStatement() {
         </div>
       </div>
       <div class="doc-title">
-        <div class="label">Supplier Account</div>
+        <div class="label">${docTitleLabel}</div>
         <h1>Statement</h1>
         <div class="no">No. ${esc(stmtNo)}</div>
         <div class="date">Issued ${fmtDate(new Date().toISOString().slice(0, 10))}</div>
@@ -4494,8 +4488,8 @@ function generateEmmaStatement() {
 
   <div class="meta">
     <div class="meta-block">
-      <div class="label">Statement For · Supplier</div>
-      <div class="primary">${esc(emma.name || 'Supplier')}</div>
+      <div class="label">${docMetaLabel}</div>
+      <div class="primary">${esc(emma.name || (inNewMode ? 'Partner' : 'Supplier'))}</div>
       <div class="lines">
         ${emma.address ? esc(emma.address) + '<br>' : ''}
         ${emma.postcode ? esc(emma.postcode) + '<br>' : ''}
@@ -4523,14 +4517,14 @@ function generateEmmaStatement() {
       <div class="value">${money(opening)}</div>
     </div>
     <div class="sum-item">
-      <div class="label" style="color:#1e40af;">Pallet Payments</div>
+      <div class="label" style="color:#1e40af;">${inColLabel}</div>
       <div class="value pos">${money(totalIn)}</div>
-      <div class="sub">${totalTransfers} transfer${totalTransfers === 1 ? '' : 's'} · added to credit</div>
+      <div class="sub">${totalTransfers} ${inColSub}${totalTransfers === 1 ? '' : 's'}${inNewMode ? ' · adds to your SSS share' : ' · added to credit'}</div>
     </div>
     <div class="sum-item">
-      <div class="label">Pallets Cost</div>
+      <div class="label">${outColLabel}</div>
       <div class="value neg">${money(totalOut)}</div>
-      <div class="sub">${totalPallets} pallet${totalPallets === 1 ? '' : 's'}</div>
+      <div class="sub">${totalPallets} ${outColSub}${totalPallets === 1 || outColSub.endsWith('s') ? '' : 's'}</div>
     </div>
     ${totalHugoFee > 0 ? `<div class="sum-item">
       <div class="label" style="color:#854d0e;">Hugo Pass-through</div>
@@ -4597,11 +4591,17 @@ function generateEmmaStatement() {
   <div class="footer-grid">
     <div class="note-block">
       <div class="label">Notes</div>
-      <p>This statement summarises payments sent to the supplier and pallets collected during the period. All pallet collections are valued at the unit price shown opposite. Please review and let us know of any discrepancies.</p>
+      <p>${inNewMode
+        ? 'This statement summarises your bank transfers into the SSS pool and the pallets you collected during the period. Each pallet is valued at the SSS unit price shown opposite. Please review and let us know of any discrepancies.'
+        : 'This statement summarises payments sent to the supplier and pallets collected during the period. All pallet collections are valued at the unit price shown opposite. Please review and let us know of any discrepancies.'}</p>
       ${totalHugoFee > 0 ? `<p style="margin-top:10px;background:#fef9c3;padding:10px 12px;border-radius:6px;border-left:3px solid #fbbf24;color:#713f12;"><b>Hugo Fee:</b> ${money(totalHugoFee)} included in payments above. Please pass this amount in cash to Hugo.</p>` : ''}
       ${closing < 0
-        ? `<p style="margin-top:10px;"><b style="color:var(--neg);">Note:</b> account shows an outstanding balance of <b>${money(Math.abs(closing))}</b> due to the supplier.</p>`
-        : `<p style="margin-top:10px;">Account currently holds a credit of <b style="color:var(--pos);">${money(Math.abs(closing))}</b>, available against future pallet collections.</p>`
+        ? `<p style="margin-top:10px;"><b style="color:var(--neg);">Note:</b> ${inNewMode
+            ? `your SSS share is overdrawn by <b>${money(Math.abs(closing))}</b>. Please send a transfer to restore it before your next pickup.`
+            : `account shows an outstanding balance of <b>${money(Math.abs(closing))}</b> due to the supplier.`}</p>`
+        : `<p style="margin-top:10px;">${inNewMode
+            ? `Your SSS share holds <b style="color:var(--pos);">${money(Math.abs(closing))}</b> — enough for approximately <b>${Math.floor(closing / buyPrice)}</b> pallet${Math.floor(closing / buyPrice) === 1 ? '' : 's'}.`
+            : `Account currently holds a credit of <b style="color:var(--pos);">${money(Math.abs(closing))}</b>, available against future pallet collections.</p>`}</p>`
       }
     </div>
     <div class="pay-block">
