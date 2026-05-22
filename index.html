@@ -3247,11 +3247,25 @@ function renderPickups() {
 
 function renderLog() {
   // Derive log entries from events (creation + deletion + restore markers)
+  // P0 audit fix (2026-05-22): label ALL new-mode event types, not just transfer/pickup.
+  // Previously in-emma / out-supplier / out-hugo / in-customer were all rendered as "取货"
+  // — wildly wrong for the audit log.
+  const labelEvent = (e) => {
+    const noteSuffix = e.note ? ' <span class="dim">· ' + escapeHtml(e.note) + '</span>' : '';
+    if (e.type === 'transfer')      return `转账给 Emma <b class="pos">+${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'in-emma')       return `Emma 转账给我 <b class="pos">+${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'in-customer')   return `客户转账 <b class="pos">+${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'out-supplier')  return `付 SSS <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'out-hugo')      return `付 Hugo 现金 <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'pickup') {
+      const who = (e.pickedUpBy === 'Emma' || (e.createdBy || '').toLowerCase() === 'emma@maomail.uk') ? 'Emma' : 'Michael';
+      return `${who} 取货 <b>${e.pallets || 0}</b> 托${e.truck ? ' <span class="dim">· ' + escapeHtml(e.truck) + '</span>' : ''} <span class="dim">(${fmt(e.amount || 0)})</span>`;
+    }
+    return `${escapeHtml(e.type || '?')} <b>${fmt(e.amount || 0)}</b>${noteSuffix}`;
+  };
   const entries = [];
   for (const e of state.events) {
-    const summary = e.type === 'transfer'
-      ? `转账 <b class="pos">+${fmt(e.amount || 0)}</b>${e.note ? ' <span class="dim">· ' + escapeHtml(e.note) + '</span>' : ''}`
-      : `取货 <b>${e.pallets}</b> 托盘${e.truck ? ' <span class="dim">· ' + escapeHtml(e.truck) + '</span>' : ''} <span class="dim">(-${fmt(e.amount || 0)})</span>`;
+    const summary = labelEvent(e);
     if (e.createdAt) {
       entries.push({ at: e.createdAt, by: e.createdBy, action: 'created', summary });
     }
@@ -6134,23 +6148,46 @@ async function runAI() {
   btn.disabled = true; btn.textContent = '分析中…';
   out.classList.remove('empty');
 
-  const bal = balance();
-  const tt = totalTransfer();
-  const ts = totalSpent();
+  // P0 audit fix (2026-05-22): mode-aware AI analysis. In new mode the old
+  // balance()/totalTransfer()/totalSpent() metrics are meaningless (transfer events
+  // are gone — replaced by in-emma; pickups still accrue). The AI was being fed
+  // numbers like "current balance £-26,215" → garbage recommendations.
   const tp = totalPallets();
   const ins = analyzeRules();
   const agg = monthlyAgg();
   const buy = state.params.buyPrice;
+  const inNewMode = isNewMode();
 
   const lines = [];
   lines.push('【核心状况】');
-  lines.push(`当前余额 ${fmt(bal)}，约够 ${Math.max(0, Math.floor(bal / buy))} 托盘。`);
-  lines.push(`累计：转账 ${fmt(tt)} / 取货 ${fmt(ts)} / ${tp} 托盘。`);
-  lines.push(`Hugo 提成（£${hugoRate()}/托盘）：累计应付 ${fmt(hugoTotal())}。`);
-  if (agg.length >= 1) {
-    const last = agg[agg.length - 1];
-    const ym = new Date().toISOString().slice(0, 7);
-    lines.push(`本月：转账 ${fmt(last.transfer)}、取货 ${last.pallets} 托盘 (花 ${fmt(last.spent)}, Hugo 提成 ${fmt(hugoMonth(ym))})。`);
+  if (inNewMode) {
+    // NEW MODE: cash pool + per-owner SSS share + Hugo owed
+    const cash = cashPoolBalance();
+    const mShare = michaelSssShare();
+    const eShare = emmaSssShare();
+    const hugoOwed = hugoOwedNew();
+    lines.push(`资金池(我手上的现金) ${fmt(cash)}.`);
+    lines.push(`我的 SSS 份额 ${fmt(mShare.remaining)} (够拉 ${Math.max(0, Math.floor(mShare.remaining / buy))} 托) · Emma 份额 ${fmt(eShare.remaining)}.`);
+    lines.push(`欠 Hugo 现金 ${fmt(hugoOwed)}.`);
+    lines.push(`累计托盘 ${tp} 托.`);
+    if (agg.length >= 1) {
+      const last = agg[agg.length - 1];
+      const ym = new Date().toISOString().slice(0, 7);
+      lines.push(`本月：取货 ${last.pallets} 托(成本 ${fmt(last.spent)}, Hugo 提成 ${fmt(hugoMonth(ym))}).`);
+    }
+  } else {
+    // OLD MODE: keep original metrics
+    const bal = balance();
+    const tt = totalTransfer();
+    const ts = totalSpent();
+    lines.push(`当前余额 ${fmt(bal)}，约够 ${Math.max(0, Math.floor(bal / buy))} 托盘。`);
+    lines.push(`累计：转账 ${fmt(tt)} / 取货 ${fmt(ts)} / ${tp} 托盘。`);
+    lines.push(`Hugo 提成（£${hugoRate()}/托盘）：累计应付 ${fmt(hugoTotal())}。`);
+    if (agg.length >= 1) {
+      const last = agg[agg.length - 1];
+      const ym = new Date().toISOString().slice(0, 7);
+      lines.push(`本月：转账 ${fmt(last.transfer)}、取货 ${last.pallets} 托盘 (花 ${fmt(last.spent)}, Hugo 提成 ${fmt(hugoMonth(ym))})。`);
+    }
   }
 
   lines.push('\n【最该注意的事】');
@@ -6161,17 +6198,36 @@ async function runAI() {
   lines.push('\n【节奏建议】');
   if (tp && getPickups().length) {
     const avg = tp / getPickups().length;
-    lines.push(`平均每趟 ${avg.toFixed(1)} 托盘。如果每趟多拉 1 个，一月多拉约 ${Math.round(20)} 托盘，多花 £${20 * buy}（占用资金）但效率更高。`);
+    lines.push(`平均每趟 ${avg.toFixed(1)} 托盘。如果每趟多拉 1 个，一月多拉约 20 托盘，多花 £${20 * buy}（占用资金）但效率更高。`);
   }
-  if (bal > 0 && tp && agg.length >= 1) {
-    const monthSpent = agg[agg.length - 1].spent || 1;
-    const monthsLeft = bal / monthSpent;
-    lines.push(`按本月花费节奏，余额还能撑约 ${monthsLeft.toFixed(1)} 个月。`);
+  if (inNewMode) {
+    const mShare = michaelSssShare().remaining;
+    if (mShare > 0 && agg.length >= 1) {
+      const monthSpent = agg[agg.length - 1].spent || 1;
+      const monthsLeft = mShare / monthSpent;
+      lines.push(`按本月花费节奏，你的 SSS 份额还能撑约 ${monthsLeft.toFixed(1)} 个月。`);
+    }
+  } else {
+    const bal = balance();
+    if (bal > 0 && tp && agg.length >= 1) {
+      const monthSpent = agg[agg.length - 1].spent || 1;
+      const monthsLeft = bal / monthSpent;
+      lines.push(`按本月花费节奏，余额还能撑约 ${monthsLeft.toFixed(1)} 个月。`);
+    }
   }
 
   lines.push('\n【下一步】');
-  if (bal < buy * 5) lines.push('• 近期内再给 Emma 转一笔，免得断档。');
-  else lines.push('• 余额健康，正常节奏即可。');
+  if (inNewMode) {
+    const mShare = michaelSssShare().remaining;
+    const cash = cashPoolBalance();
+    if (mShare < buy * 5) lines.push('• 近期内再付一笔 SSS，否则下次取货不够。');
+    if (cash < 0) lines.push('• 你的资金池透支了，等客户付款 / Emma 转账进来。');
+    if (mShare >= buy * 5 && cash >= 0) lines.push('• 资金状况健康，正常节奏即可。');
+  } else {
+    const bal = balance();
+    if (bal < buy * 5) lines.push('• 近期内再给 Emma 转一笔，免得断档。');
+    else lines.push('• 余额健康，正常节奏即可。');
+  }
   lines.push(`• 每次取货记得写车次（T-xxx），方便以后核对。`);
   lines.push(`• 月底来看一眼"月度汇总"，有没有离谱的月份。`);
 
