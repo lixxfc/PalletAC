@@ -3980,6 +3980,10 @@ function _seGetPartBalance() {
 }
 function _seGetHugoPool() {
   // Returns { cutoff, deposited, used, balance } or null if no cache
+  // LEGACY: kept for backward compat with old-mode display only. NEW MODE preview uses
+  // _seGetHugoOwed() instead — Hugo's commission for Michael's pickups is paid CASH
+  // (customer hands £7/托 to Michael at pickup, Michael forwards to Hugo); Emma settles
+  // Hugo herself for her own pickups. There is no shared "pool" in new mode.
   if (!_partnershipCache) return null;
   const params = _partnershipCache.params || {};
   const cutoff = params.hugoPrepayStartDate || null;
@@ -3992,6 +3996,69 @@ function _seGetHugoPool() {
     else if (e.type === 'pickup' && cutoff && e.date >= cutoff) used += (e.pallets || 0) * rate;
   }
   return { cutoff, deposited, used, balance: deposited - used, rate };
+}
+
+// === NEW MODE owner-aware helpers (mirror partnership index.html) ===
+// In new mode the SSS pool is split: part belongs to Michael, part to Emma. A pickup
+// only consumes the picker's share, not the other person's. Hugo commission for
+// Michael's pickups is owed by Michael; Emma's pickups are off-books for Michael.
+
+function _seIsNewMode() {
+  return !!(_partnershipCache && _partnershipCache.params && _partnershipCache.params.partnershipMode === 'new');
+}
+function _seNewModeStartDate() {
+  return _partnershipCache && _partnershipCache.params ? _partnershipCache.params.partnershipNewModeDate : null;
+}
+function _seNewModeEvents() {
+  if (!_partnershipCache) return [];
+  const sw = _seNewModeStartDate();
+  return (_partnershipCache.events || []).filter(e => !e.deleted && e.date && (!sw || e.date >= sw));
+}
+function _seIsMichaelPickup(e) {
+  if (!e || e.type !== 'pickup') return false;
+  if (e.pickedUpBy === 'Michael') return true;
+  if (e.pickedUpBy === 'Emma') return false;
+  // Fallback for legacy events lacking pickedUpBy: use createdBy email
+  const cb = (e.createdBy || '').toLowerCase();
+  if (cb === 'emma@maomail.uk') return false;
+  return true;  // default = Michael
+}
+// Returns { michael:{opening,in,used,remaining}, emma:{opening,in,used,remaining} } or null
+function _seGetSssShares() {
+  if (!_partnershipCache) return null;
+  const params = _partnershipCache.params || {};
+  const buyPrice = params.buyPrice || 245;
+  const sssOpening = params.sssOpeningCredit || 0;
+  const emmaOpening = params.emmaOpeningCredit || 0;
+  const michaelOpening = sssOpening - emmaOpening;
+  let outSupplier = 0, inEmma = 0, michaelUsed = 0, emmaUsed = 0;
+  for (const e of _seNewModeEvents()) {
+    if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
+    else if (e.type === 'in-emma') inEmma += (e.amount || 0);
+    else if (e.type === 'pickup') {
+      const cost = (e.pallets || 0) * buyPrice;
+      if (_seIsMichaelPickup(e)) michaelUsed += cost;
+      else emmaUsed += cost;
+    }
+  }
+  const michaelIn = michaelOpening + outSupplier - inEmma;
+  const emmaIn = emmaOpening + inEmma;
+  return {
+    michael: { opening: michaelOpening, in: michaelIn, used: michaelUsed, remaining: michaelIn - michaelUsed },
+    emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    remaining: emmaIn - emmaUsed }
+  };
+}
+// Returns { accrued, paid, owed, rate } or null. Only Michael's pickups accrue.
+function _seGetHugoOwed() {
+  if (!_partnershipCache) return null;
+  const params = _partnershipCache.params || {};
+  const rate = params.hugoCommission || 7;
+  let accrued = 0, paid = 0;
+  for (const e of _seNewModeEvents()) {
+    if (e.type === 'pickup' && _seIsMichaelPickup(e)) accrued += (e.pallets || 0) * rate;
+    else if (e.type === 'out-hugo') paid += (e.amount || 0);
+  }
+  return { accrued, paid, owed: accrued - paid, rate };
 }
 
 function updateSmartEntryPreview() {
@@ -4018,28 +4085,33 @@ function updateSmartEntryPreview() {
   const totalProfit = baseProfit + swapBonus;
 
   // Cost & customer payment
-  const totalCostToEmma = totalPallets * buyPrice;
+  const totalSssCost = totalPallets * buyPrice;        // SSS-side cost: pallets × £245
   const customerLedgerCharge = _seTrucks.reduce((s, t) => {
     if (!t.customerId) return s;
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     return s + (t.pallets || 0) * unit;
   }, 0);
 
-  // Hugo / V cash flows
+  // Hugo / V cash flows (only meaningful when Michael picks up)
   const hugoCommission = totalPallets * hugoFeeRate;
   const vCommission = totalPallets * vFeeRate;
   const myFeeKept = totalPallets * myFee;
   const cashFromCustomer = myFeeKept + hugoCommission + vCommission;
 
-  // Partnership balance (Emma) before/after — from cache
-  const emmaBalBefore = _seGetPartBalance();
-  const emmaBalAfter = (emmaBalBefore != null) ? (emmaBalBefore - totalCostToEmma) : null;
-  const emmaCanLiftAfter = (emmaBalAfter != null && buyPrice > 0) ? Math.floor(Math.max(0, emmaBalAfter) / buyPrice) : null;
+  // === Owner-aware accounting (NEW mode) ===
+  // The picker is the person whose SSS share gets debited. Michael earns profit + handles
+  // Hugo/V cash only on HIS OWN pickups; Emma's pickups are off-books for Michael.
+  const pickupOwner = document.getElementById('se-pickup-by').value || 'Michael';
+  const isMichaelPick = (pickupOwner === 'Michael');
+  const shares = _seGetSssShares();
+  const ownerShareBefore = shares ? (isMichaelPick ? shares.michael.remaining : shares.emma.remaining) : null;
+  const ownerShareAfter = ownerShareBefore != null ? (ownerShareBefore - totalSssCost) : null;
+  const ownerCanLiftAfter = (ownerShareAfter != null && buyPrice > 0) ? Math.floor(Math.max(0, ownerShareAfter) / buyPrice) : null;
 
-  // Hugo pool — from cache
-  const hugoPool = _seGetHugoPool();
-  const isPostCutoff = (hugoPool && hugoPool.cutoff && date >= hugoPool.cutoff);
-  const hugoPoolAfter = (hugoPool && isPostCutoff) ? (hugoPool.balance - hugoCommission) : null;
+  // Profit & cash that actually flow to Michael (zero if Emma picks up)
+  const effectiveProfit = isMichaelPick ? totalProfit : 0;
+  const effectiveCashFromCustomer = isMichaelPick ? cashFromCustomer : 0;
+  const hugoOwedBefore = _seGetHugoOwed();
 
   // Customer balances before/after (per customer)
   const byCust = {};
@@ -4073,18 +4145,32 @@ function updateSmartEntryPreview() {
     黄卡"SSS 取货总览":${document.getElementById('se-pickup-by').value} 这边 +${totalPallets} 托
   `, 'var(--green)');
 
-  const emmaSection = sec('🤝', '合伙账 — Emma 余额', `
-    取货成本:${totalPallets} × £${buyPrice} = <b style="color:var(--rose);">-${fmt(totalCostToEmma)}</b><br>
-    ${emmaBalBefore != null ? `Emma 当前余额 <b>${fmt(emmaBalBefore)}</b> → 取货后 <b style="color:${emmaBalAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(emmaBalAfter)}</b>${emmaCanLiftAfter != null ? ` (够拉 ${emmaCanLiftAfter} 托)` : ''}` : '<span style="color:var(--text-dim);">(合伙账缓存还没加载,刷新页面)</span>'}
+  // === SSS Share card (owner-aware) ===
+  const sssCardTitle = isMichaelPick ? '合伙账 — 你的 SSS 份额' : '合伙账 — Emma 的 SSS 份额';
+  const sssOwnerLabel = isMichaelPick ? '你' : 'Emma';
+  const emmaSection = sec('🤝', sssCardTitle, `
+    取货成本:${totalPallets} × £${buyPrice} = <b style="color:var(--rose);">-${fmt(totalSssCost)}</b><br>
+    ${ownerShareBefore != null
+      ? `${sssOwnerLabel}当前 SSS 份额 <b>${fmt(ownerShareBefore)}</b> → 取货后 <b style="color:${ownerShareAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(ownerShareAfter)}</b>${ownerCanLiftAfter != null ? ` (够拉 ${ownerCanLiftAfter} 托)` : ''}`
+      : '<span style="color:var(--text-dim);">(合伙账缓存还没加载,关掉重新打开录入框)</span>'}
   `, 'var(--cyan)');
 
-  const hugoBucket = isPostCutoff ? '消耗 Emma 预付池' : (hugoPool && hugoPool.cutoff ? `累加旧账(取货日 ${date} 早于 cutoff ${hugoPool.cutoff})` : '累加 Hugo 累计应得');
-  const hugoBucketColor = isPostCutoff ? 'var(--green)' : 'var(--amber)';
-  const hugoSection = sec('💰', '合伙账 — Hugo 提成', `
-    应得:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b><br>
-    去向:<b style="color:${hugoBucketColor};">${hugoBucket}</b><br>
-    ${isPostCutoff && hugoPool ? `预付池:${fmt(hugoPool.balance)} → <b style="color:${hugoPoolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(hugoPoolAfter)}</b>` : ''}
-  `, 'var(--amber)');
+  // === Hugo card (owner-aware) ===
+  // Michael picks up:  customer hands cash → Michael owes Hugo more → Michael pays cash
+  // Emma picks up:     entirely off Michael's books (Emma settles with Hugo herself)
+  let hugoSection;
+  if (isMichaelPick) {
+    const owedAfter = hugoOwedBefore ? (hugoOwedBefore.owed + hugoCommission) : null;
+    hugoSection = sec('💰', '合伙账 — Hugo 提成 (你欠 Hugo)', `
+      本次应付:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b><br>
+      <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCommission)} 现金 → 你转给 Hugo (cash, 不进系统)</span>
+      ${owedAfter != null ? `<br>Hugo 累计应付 <b>${fmt(hugoOwedBefore.owed)}</b> → 取货后 <b style="color:var(--amber);">${fmt(owedAfter)}</b>` : ''}
+    `, 'var(--amber)');
+  } else {
+    hugoSection = sec('💰', '合伙账 — Hugo 提成', `
+      <span style="color:var(--text-dim);">Emma 取货 · Emma 自己跟 Hugo 结 · 不上你的账</span>
+    `, 'var(--text-dim)');
+  }
 
   let custInner = '';
   for (const cd of Object.values(byCust)) {
@@ -4108,31 +4194,49 @@ function updateSmartEntryPreview() {
     ? `普通:${normalPallets} × £51 = ${fmt(normalPallets * 51)}<br>Swap:${swapPallets} × £81(£51 + £30 加成)= ${fmt(swapPallets * 81)}<br>合计 = <b>${fmt(totalProfit)}</b>`
     : `${totalPallets} × £51(£${sellPrice} + £${myFee} - £${buyPrice})= <b>${fmt(totalProfit)}</b>`;
 
-  const profitSection = sec('💵', '你的实际利润(自动累加到所有 KPI)', `
-    <div style="background:rgba(34,211,165,0.06);padding:10px 12px;border-radius:6px;margin-bottom:8px;">
-      <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">公式 (每托)</div>
-      <div style="font-family:'SF Mono',monospace;font-size:11px;line-height:1.7;">
-        卖价 £${sellPrice} <span style="color:var(--text-dim);">(进客户账本)</span><br>
-        + 你费 £${myFee} <span style="color:var(--text-dim);">(客户当面付现金)</span><br>
-        - 买价 £${buyPrice} <span style="color:var(--text-dim);">(付给 Emma)</span><br>
-        = <b style="color:var(--green);">£51 / 托</b> 净利润
-        ${swapPallets > 0 ? '<br>+ Swap £30 / 托(只针对 Swap 托盘)' : ''}
+  // === Profit card (owner-aware) ===
+  // Only Michael picks up → Michael earns £51/托 (sellPrice + myFee − buyPrice).
+  // Emma picks up → customer paid Emma direct, Michael earns £0.
+  let profitSection;
+  if (isMichaelPick) {
+    profitSection = sec('💵', '你的实际利润(自动累加到所有 KPI)', `
+      <div style="background:rgba(34,211,165,0.06);padding:10px 12px;border-radius:6px;margin-bottom:8px;">
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px;">公式 (每托)</div>
+        <div style="font-family:'SF Mono',monospace;font-size:11px;line-height:1.7;">
+          卖价 £${sellPrice} <span style="color:var(--text-dim);">(进客户账本)</span><br>
+          + 你费 £${myFee} <span style="color:var(--text-dim);">(客户当面付现金)</span><br>
+          - 买价 £${buyPrice} <span style="color:var(--text-dim);">(SSS 出货成本,扣你的 SSS 份额)</span><br>
+          = <b style="color:var(--green);">£51 / 托</b> 净利润
+          ${swapPallets > 0 ? '<br>+ Swap £30 / 托(只针对 Swap 托盘)' : ''}
+        </div>
       </div>
-    </div>
-    <div>本次:${profitFormula}</div>
-    <div style="margin-top:8px;color:var(--green);">
-      ✓ "累计净利润" KPI · "本周利润" KPI · "上月利润" KPI · 客户"累计利润" · 月度走势图 — <b>全部立刻 +${fmt(totalProfit)}</b>
-    </div>
-  `, 'var(--green)');
+      <div>本次:${profitFormula}</div>
+      <div style="margin-top:8px;color:var(--green);">
+        ✓ "累计净利润" KPI · "本周利润" KPI · "上月利润" KPI · 客户"累计利润" · 月度走势图 — <b>全部立刻 +${fmt(totalProfit)}</b>
+      </div>
+    `, 'var(--green)');
+  } else {
+    profitSection = sec('💵', '你的实际利润', `
+      <span style="color:var(--text-dim);">Emma 取货,客户跟 Emma 直接交易 · <b style="color:var(--text);">你这次没赚 (£0)</b>。利润 KPI 不变化。</span>
+    `, 'var(--text-dim)');
+  }
 
-  const cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${(myFee + hugoFeeRate + vFeeRate) * totalPallets} — 提醒别忘了)`, `
-    <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
-      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £51 利润里)</td></tr>
-      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo(过路钱)</td></tr>
-      <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
-      <tr style="border-top:1px dashed rgba(139,150,255,0.2);"><td style="padding:6px 0 0;font-weight:700;">总计客户现金</td><td style="padding:6px 0 0;text-align:right;font-weight:700;color:var(--text);">${fmt(cashFromCustomer)}</td><td></td></tr>
-    </table>
-  `, 'var(--text-dim)');
+  // === Cash card (owner-aware) ===
+  let cashSection;
+  if (isMichaelPick) {
+    cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${(myFee + hugoFeeRate + vFeeRate) * totalPallets} — 提醒别忘了)`, `
+      <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £51 利润里)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo(过路钱)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
+        <tr style="border-top:1px dashed rgba(139,150,255,0.2);"><td style="padding:6px 0 0;font-weight:700;">总计客户现金</td><td style="padding:6px 0 0;text-align:right;font-weight:700;color:var(--text);">${fmt(cashFromCustomer)}</td><td></td></tr>
+      </table>
+    `, 'var(--text-dim)');
+  } else {
+    cashSection = sec('💵', '现金交易', `
+      <span style="color:var(--text-dim);">Emma 取货 · 客户付现金给 Emma · <b style="color:var(--text);">你这边没有现金进出</b>。</span>
+    `, 'var(--text-dim)');
+  }
 
   const linkedSection = sec('📊', '其他自动联动(零代码,免费送)', `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:11.5px;">
@@ -4239,6 +4343,8 @@ async function saveSmartPickup() {
   }
 
   // 3) Partnership pickup events (one per truck) — staged for cross-table write
+  // IMPORTANT: write `pickedUpBy` explicitly (authoritative field per handoff §6) so
+  // downstream consumers don't have to fall back to parsing createdBy email.
   const newPartEvents = validTrucks.map(t => ({
     id: crypto.randomUUID(),
     type: 'pickup',
@@ -4249,7 +4355,8 @@ async function saveSmartPickup() {
     truck: t.truckNum || '',
     note: t.note || '智能录入',
     isSwap: !!t.isSwap,
-    createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,
+    pickedUpBy: usedPickupBy,                                              // 'Michael' | 'Emma'
+    createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
     createdAt: new Date().toISOString(),
     _linkSupplyId: linkId
   }));
