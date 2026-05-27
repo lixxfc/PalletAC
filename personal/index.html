@@ -4497,6 +4497,13 @@ async function saveSmartPickup() {
   ensureInvoicesArray();
   ensureReceiptsArray();
 
+  // FIX (2026-05-27): generate ONE UNIQUE _pickupUid per truck (not per submission).
+  // Previously all trucks in one smart-entry submission shared a single _linkSupplyId,
+  // which downstream cross-table sync functions used as the matching key — so
+  // editing/deleting one truck mass-modified all sibling trucks. Now each truck has
+  // its own _pickupUid, and all sync functions match on _pickupUid first (1:1 strict).
+  const truckUids = validTrucks.map(() => crypto.randomUUID());
+
   // 1) Daily supply day record — find record matching BOTH date AND pickupBy.
   // BUG FIX (2026-05): previously matched only on date, then silently overwrote the
   // form's pickupBy with the existing record's. This meant selecting "Emma" on a
@@ -4517,20 +4524,23 @@ async function saveSmartPickup() {
     state.dailySupply.push(dayRec);
   }
   // Append trucks (new copies, not references)
-  for (const t of validTrucks) {
+  for (let i = 0; i < validTrucks.length; i++) {
+    const t = validTrucks[i];
     dayRec.trucks.push({
       type: t.type,
       pallets: t.pallets,
       swapped: !!t.isSwap,
       truckNum: t.truckNum || '',
       note: t.note || '',
-      _linkSupplyId: linkId
+      _linkSupplyId: linkId,
+      _pickupUid: truckUids[i]
     });
   }
 
   // 2) Customer ledger entries + auto-INV (per truck with customer)
   const newCustomerEntries = [];  // for rollback if partnership write fails
-  for (const t of validTrucks) {
+  for (let i = 0; i < validTrucks.length; i++) {
+    const t = validTrucks[i];
     if (!t.customerId) continue;
     const customer = state.customers.find(c => c.id === t.customerId);
     if (!customer) continue;
@@ -4548,7 +4558,8 @@ async function saveSmartPickup() {
       pallets: t.pallets,
       truck: t.truckNum || '',
       note: t.note || '',
-      _linkSupplyId: linkId
+      _linkSupplyId: linkId,
+      _pickupUid: truckUids[i]
     };
     customer.ledger.push(ledgerEntry);
     newCustomerEntries.push({ customer, entry: ledgerEntry });
@@ -4563,7 +4574,7 @@ async function saveSmartPickup() {
   // 3) Partnership pickup events (one per truck) — staged for cross-table write
   // IMPORTANT: write `pickedUpBy` explicitly (authoritative field per handoff §6) so
   // downstream consumers don't have to fall back to parsing createdBy email.
-  const newPartEvents = validTrucks.map(t => ({
+  const newPartEvents = validTrucks.map((t, i) => ({
     id: crypto.randomUUID(),
     type: 'pickup',
     date,
@@ -4576,7 +4587,8 @@ async function saveSmartPickup() {
     pickedUpBy: usedPickupBy,                                              // 'Michael' | 'Emma'
     createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
     createdAt: new Date().toISOString(),
-    _linkSupplyId: linkId
+    _linkSupplyId: linkId,
+    _pickupUid: truckUids[i]                                               // per-truck 1:1 sync key
   }));
 
   // ============================================
@@ -6789,6 +6801,7 @@ async function addLedger() {
     const unitPrice = effectiveUnitPrice(isSwap);
     const palletType = (document.getElementById('lg-type-select') ? document.getElementById('lg-type-select').value : 'TT') || 'TT';
     const linkId = crypto.randomUUID();
+    const pickupUid = crypto.randomUUID();  // 1:1 per-truck sync key (2026-05-27 fix)
     entry = {
       id: crypto.randomUUID(), date, type: 'pickup',
       amount: pallets * unitPrice,
@@ -6797,7 +6810,8 @@ async function addLedger() {
       swapPremium: isSwap ? swapTtPremium() : 0,  // snapshot of premium at time of save
       palletType: isSwap ? 'TT' : palletType,
       pallets, truck, note,
-      _linkSupplyId: linkId          // FIX (P0 audit): link to partnership event + dailySupply truck
+      _linkSupplyId: linkId,         // FIX (P0 audit): link to partnership event + dailySupply truck
+      _pickupUid: pickupUid          // per-truck unique ID for 1:1 cross-table sync
     };
     isPickup = true;
   } else if (type === 'deposit') {
@@ -6848,7 +6862,8 @@ async function addLedger() {
       swapped: !!entry.isSwap,
       truckNum: entry.truck || '',
       note: entry.note || '客户账本录入',
-      _linkSupplyId: entry._linkSupplyId
+      _linkSupplyId: entry._linkSupplyId,
+      _pickupUid: entry._pickupUid
     });
 
     // Build the partnership pickup event
@@ -6867,7 +6882,8 @@ async function addLedger() {
       pickedUpBy: 'Michael',                  // authoritative field
       createdBy: userEmail,                   // legacy fallback
       createdAt: new Date().toISOString(),
-      _linkSupplyId: entry._linkSupplyId
+      _linkSupplyId: entry._linkSupplyId,
+      _pickupUid: entry._pickupUid            // per-truck 1:1 sync key
     };
 
     // Cross-table write — partnership first, rollback personal if it fails
@@ -7056,10 +7072,10 @@ async function delLedger(id) {
     linkedRec.linkedDepositId = null;
   }
 
-  // FIX (2026-05-27 audit): if this is a pickup with _linkSupplyId, also soft-delete
-  // the matching partnership event so SSS share / Hugo accrual / 本月托盘 KPIs reflect
-  // the deletion. Without this, deleting from the customer page left an orphan
-  // pickup event in partnership_data that kept getting counted everywhere.
+  // FIX (2026-05-27 audit + P0): if this is a pickup with _linkSupplyId, also soft-delete
+  // the matching partnership event. STRICT 1:1 match: use _pickupUid if available, else
+  // fall back to (linkSupplyId + palletType + pallets + isSwap). Previously this used
+  // _linkSupplyId alone, which mass-deleted sibling trucks from the same submission.
   let partnershipSyncMsg = '';
   if (e.type === 'pickup' && e._linkSupplyId) {
     try {
@@ -7067,24 +7083,42 @@ async function delLedger(id) {
         .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
       if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
       const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
-      if (Array.isArray(latestData.events)) {
-        let touched = 0;
-        for (const pev of latestData.events) {
-          if (pev.type === 'pickup' && pev._linkSupplyId === e._linkSupplyId && !pev.deleted) {
-            pev.deleted = true;
-            pev.deletedAt = new Date().toISOString();
-            pev.deletedBy = ((currentUser && currentUser.email) || 'personal-app') + ' (via delLedger)';
-            touched++;
-          }
-        }
-        if (touched > 0) {
-          const { error: writeErr } = await db
-            .from('partnership_data').update({ data: latestData, updated_at: new Date().toISOString() })
-            .eq('workspace_id', 'main');
-          if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
-          _partnershipCache = latestData;
-          partnershipSyncMsg = ' · 合伙账 ' + touched + ' 条同步软删';
-        }
+      // Identifying snapshot of THIS specific ledger entry (not the linkId group)
+      const snap = {
+        _pickupUid: e._pickupUid,
+        _linkSupplyId: e._linkSupplyId,
+        palletType: e.palletType,
+        pallets: e.pallets,
+        isSwap: !!e.isSwap
+      };
+      const matches = (latestData.events || []).filter(pev =>
+        pev.type === 'pickup' && !pev.deleted && (
+          (snap._pickupUid && pev._pickupUid && pev._pickupUid === snap._pickupUid) ||
+          (!snap._pickupUid &&
+           pev._linkSupplyId === snap._linkSupplyId &&
+           (pev.palletType || '') === (snap.palletType || '') &&
+           (pev.pallets || 0) === (snap.pallets || 0) &&
+           !!pev.isSwap === snap.isSwap)
+        )
+      );
+      let touched = 0;
+      let ambiguous = matches.length - 1;
+      if (matches.length >= 1) {
+        const pev = matches[0];   // only soft-delete the FIRST match
+        pev.deleted = true;
+        pev.deletedAt = new Date().toISOString();
+        pev.deletedBy = ((currentUser && currentUser.email) || 'personal-app') + ' (via delLedger)';
+        touched = 1;
+      }
+      if (touched > 0) {
+        const { error: writeErr } = await db
+          .from('partnership_data').update({ data: latestData, updated_at: new Date().toISOString() })
+          .eq('workspace_id', 'main');
+        if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
+        _partnershipCache = latestData;
+        partnershipSyncMsg = ' · 合伙账 1 条同步软删' + (ambiguous > 0 ? ` (另有 ${ambiguous} 条字段重复未动)` : '');
+      } else {
+        partnershipSyncMsg = ' · ⚠ 合伙账未找到对应事件(可能已删)';
       }
     } catch (err) {
       console.error('[delLedger] partnership sync failed:', err);
@@ -7219,6 +7253,16 @@ async function saveLedgerEdit() {
     newAmount = Math.abs(newAmount);
   }
 
+  // Snapshot OLD pickup fields BEFORE mutating the local entry — needed for the
+  // partnership-side 1:1 matcher (so we find the right partnership event).
+  const oldSnap = isPickup ? {
+    _pickupUid: e._pickupUid,
+    _linkSupplyId: e._linkSupplyId,
+    palletType: e.palletType,
+    pallets: e.pallets,
+    isSwap: !!e.isSwap
+  } : null;
+
   e.date = newDate;
   e.amount = newAmount;
   e.note = newNote;
@@ -7261,32 +7305,42 @@ async function saveLedgerEdit() {
     linkedRec.updatedAt = new Date().toISOString();
   }
 
-  // FIX (2026-05-27 audit): if pickup edit, propagate to partnership_data event
-  // (matched via _linkSupplyId). Without this, editing pallet count / type / date
-  // here updated only the customer-side ledger + INV, leaving partnership's view
-  // (SSS share / Hugo accrual / 本月托盘) stale.
+  // FIX (2026-05-27 audit + P0): pickup edit propagates to partnership_data event.
+  // STRICT 1:1 match using oldSnap (captured BEFORE local mutation). Previously
+  // matched by _linkSupplyId alone, which corrupted sibling trucks.
   let partnershipSyncMsg = '';
-  if (isPickup && e._linkSupplyId) {
+  if (isPickup && oldSnap && oldSnap._linkSupplyId) {
     try {
       const { data: latestRow, error: readErr } = await db
         .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
       if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
       const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
       const buyPrice = (latestData.params && latestData.params.buyPrice) || state.params.buyPrice || 245;
+      // Find matches by oldSnap (1:1 strict)
+      const matches = (latestData.events || []).filter(pev =>
+        pev.type === 'pickup' && !pev.deleted && (
+          (oldSnap._pickupUid && pev._pickupUid && pev._pickupUid === oldSnap._pickupUid) ||
+          (!oldSnap._pickupUid &&
+           pev._linkSupplyId === oldSnap._linkSupplyId &&
+           (pev.palletType || '') === (oldSnap.palletType || '') &&
+           (pev.pallets || 0) === (oldSnap.pallets || 0) &&
+           !!pev.isSwap === oldSnap.isSwap)
+        )
+      );
+      const ambiguous = Math.max(0, matches.length - 1);
       let touched = 0;
-      for (const pev of (latestData.events || [])) {
-        if (pev.type === 'pickup' && pev._linkSupplyId === e._linkSupplyId && !pev.deleted) {
-          pev.date       = newDate;
-          pev.pallets    = newPallets;
-          pev.palletType = newIsSwap ? 'TT' : newPalletType;
-          pev.isSwap     = newIsSwap;
-          pev.truck      = newTruck;
-          pev.note       = newNote;
-          pev.amount     = newPallets * buyPrice;     // SSS-cost side, not customer-amount
-          pev.updatedAt  = new Date().toISOString();
-          pev._editedFromPersonal = true;
-          touched++;
-        }
+      if (matches.length >= 1) {
+        const pev = matches[0];   // only update the first match
+        pev.date       = newDate;
+        pev.pallets    = newPallets;
+        pev.palletType = newIsSwap ? 'TT' : newPalletType;
+        pev.isSwap     = newIsSwap;
+        pev.truck      = newTruck;
+        pev.note       = newNote;
+        pev.amount     = newPallets * buyPrice;
+        pev.updatedAt  = new Date().toISOString();
+        pev._editedFromPersonal = true;
+        touched = 1;
       }
       if (touched > 0) {
         const { error: writeErr } = await db
@@ -7294,7 +7348,9 @@ async function saveLedgerEdit() {
           .eq('workspace_id', 'main');
         if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
         _partnershipCache = latestData;
-        partnershipSyncMsg = ' · 合伙账 ' + touched + ' 条同步';
+        partnershipSyncMsg = ' · 合伙账 1 条同步' + (ambiguous > 0 ? ` (另有 ${ambiguous} 条字段重复未动)` : '');
+      } else {
+        partnershipSyncMsg = ' · ⚠ 合伙账未找到对应事件';
       }
     } catch (err) {
       console.error('[saveLedgerEdit] partnership sync failed:', err);
@@ -11325,26 +11381,50 @@ async function _personalCleanupStalePartnershipDeletes() {
   _personalCleanupRan = true;
   if (!_partnershipCache || !Array.isArray(_partnershipCache.events)) return;
 
-  // Collect linkSupplyIds of deleted partnership pickup events.
-  const deletedLinkIds = new Set();
+  // FIX (2026-05-27 P0): build a per-event snapshot list, NOT just linkIds.
+  // Previously this mass-deleted anything in the linkId group, which removed
+  // sibling trucks that weren't actually deleted.
+  const deletedPickupSnaps = [];
   for (const e of _partnershipCache.events) {
     if (e.type === 'pickup' && e.deleted && e._linkSupplyId) {
-      deletedLinkIds.add(e._linkSupplyId);
+      deletedPickupSnaps.push({
+        _pickupUid: e._pickupUid,
+        _linkSupplyId: e._linkSupplyId,
+        palletType: e.palletType,
+        pallets: e.pallets,
+        isSwap: !!e.isSwap
+      });
     }
   }
-  if (deletedLinkIds.size === 0) return;
+  if (deletedPickupSnaps.length === 0) return;
 
-  // 1. Collect ledger-entry ids to be removed (needed to void linked INVs first).
+  // Strict 1:1 matcher: a personal item matches a partnership-side deletion iff
+  // either _pickupUid 1:1 OR (same linkSupplyId + same palletType/pallets/isSwap).
+  const matchesAnyDeletion = (item) => {
+    for (const snap of deletedPickupSnaps) {
+      if (snap._pickupUid && item._pickupUid) {
+        if (snap._pickupUid === item._pickupUid) return true;
+        continue;
+      }
+      if (snap._linkSupplyId && item._linkSupplyId === snap._linkSupplyId &&
+          (snap.palletType || '') === (item.palletType || item.type || '') &&
+          (snap.pallets || 0) === (item.pallets || 0) &&
+          snap.isSwap === !!(item.isSwap || item.swapped)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // 1. Collect ledger-entry ids to remove (need them to void INVs first)
   const ledgerIdsToRemove = new Set();
   for (const c of (state.customers || [])) {
     for (const e of (c.ledger || [])) {
-      if (e._linkSupplyId && deletedLinkIds.has(e._linkSupplyId)) {
-        ledgerIdsToRemove.add(e.id);
-      }
+      if (matchesAnyDeletion(e)) ledgerIdsToRemove.add(e.id);
     }
   }
 
-  // 2. Void linked INVs (preserve audit trail — don't hard-delete)
+  // 2. Void linked INVs
   let invoicesVoided = 0;
   for (const inv of (state.invoices || [])) {
     if (inv.linkedPickupId && ledgerIdsToRemove.has(inv.linkedPickupId) && inv.status !== 'void') {
@@ -11360,16 +11440,16 @@ async function _personalCleanupStalePartnershipDeletes() {
   for (const c of (state.customers || [])) {
     if (!Array.isArray(c.ledger)) continue;
     const before = c.ledger.length;
-    c.ledger = c.ledger.filter(e => !(e._linkSupplyId && deletedLinkIds.has(e._linkSupplyId)));
+    c.ledger = c.ledger.filter(e => !ledgerIdsToRemove.has(e.id));
     ledgerRemoved += (before - c.ledger.length);
   }
 
-  // 4. Remove dailySupply trucks (and drop now-empty day records)
+  // 4. Remove dailySupply trucks
   let trucksRemoved = 0;
   for (const dayRec of (state.dailySupply || [])) {
     if (!Array.isArray(dayRec.trucks)) continue;
     const before = dayRec.trucks.length;
-    dayRec.trucks = dayRec.trucks.filter(t => !(t._linkSupplyId && deletedLinkIds.has(t._linkSupplyId)));
+    dayRec.trucks = dayRec.trucks.filter(t => !matchesAnyDeletion(t));
     trucksRemoved += (before - dayRec.trucks.length);
   }
   state.dailySupply = (state.dailySupply || []).filter(d => (d.trucks || []).length > 0);

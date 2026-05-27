@@ -5968,11 +5968,42 @@ function addPickup() {
 // any orphan personal-data items left over from those legacy deletes.
 // ============================================================
 
+// === Strict 1:1 pickup matcher (2026-05-27 P0 fix) ===
+// Returns true if `item` (ledger entry / dailySupply truck / partnership event)
+// represents the SAME specific pickup as the snapshot `snap`. Priority:
+//   1. _pickupUid 1:1 match (preferred — exists for items created after this fix)
+//   2. _linkSupplyId AND old field match (legacy fallback for items without UID)
+// snap = { _pickupUid?, _linkSupplyId, palletType, pallets, isSwap, truckNum? }
+function _pickupItemMatches(item, snap) {
+  if (!item || !snap) return false;
+  // PRIORITY 1: per-truck UID 1:1 match
+  if (snap._pickupUid && item._pickupUid) {
+    return item._pickupUid === snap._pickupUid;
+  }
+  // PRIORITY 2: legacy fallback — must share linkSupplyId AND match old fields
+  if (!snap._linkSupplyId || item._linkSupplyId !== snap._linkSupplyId) return false;
+  if ((item.palletType || '') !== (snap.palletType || '')) return false;
+  if ((item.pallets || 0) !== (snap.pallets || 0)) return false;
+  if (!!item.isSwap !== !!snap.isSwap) return false;
+  // truck number not always reliable — skip
+  return true;
+}
+
 async function _deletePickupFromPersonal(ev) {
   if (!currentUser || !currentUser.id) return { ok: false, error: '未登录' };
   if (!ev || ev.type !== 'pickup') return { ok: false, error: '不是 pickup 事件' };
   const linkId = ev._linkSupplyId;
   if (!linkId) return { ok: false, error: '事件无 _linkSupplyId,无法匹配个人账' };
+
+  // Identifying snapshot of the specific pickup being deleted (NOT the whole group)
+  const snap = {
+    _pickupUid: ev._pickupUid,
+    _linkSupplyId: linkId,
+    palletType: ev.palletType,
+    pallets: ev.pallets,
+    isSwap: !!ev.isSwap,
+    truckNum: ev.truck
+  };
 
   try {
     const { data: row, error: readErr } = await db
@@ -5981,44 +6012,55 @@ async function _deletePickupFromPersonal(ev) {
     if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
     const pdata = row.data;
 
-    // Build snapshot BEFORE we touch anything — so restore can recreate exactly
+    // Build snapshot BEFORE we touch anything — so restore can recreate exactly.
+    // STRICT 1:1 matching now — only the SPECIFIC pickup's siblings, not the whole linkId group.
     const snapshot = { ledgerEntries: [], supplyTrucks: [], voidedInvoices: [] };
-
-    // 1) Find matching customer ledger entries
     const ledgerIdsToVoid = [];
+    let ambiguousLedger = 0, ambiguousTrucks = 0;
+
+    // 1) Customer ledger entries — match strictly 1:1
     for (const c of (pdata.customers || [])) {
-      for (const e of (c.ledger || [])) {
-        if (e._linkSupplyId === linkId) {
-          snapshot.ledgerEntries.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(e)) });
-          ledgerIdsToVoid.push(e.id);
-        }
+      const matched = (c.ledger || []).filter(e => _pickupItemMatches(e, snap));
+      if (matched.length > 1) ambiguousLedger += (matched.length - 1);
+      if (matched.length >= 1) {
+        const e = matched[0];   // only first match if ambiguous
+        snapshot.ledgerEntries.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(e)) });
+        ledgerIdsToVoid.push(e.id);
       }
     }
-    // 2) Find matching dailySupply trucks
+    // 2) dailySupply trucks — strictly 1:1
     for (const dayRec of (pdata.dailySupply || [])) {
       if (!Array.isArray(dayRec.trucks)) continue;
-      for (const tr of dayRec.trucks) {
-        if (tr._linkSupplyId === linkId) {
-          snapshot.supplyTrucks.push({ dayId: dayRec.id, dayDate: dayRec.date, dayPickupBy: dayRec.pickupBy, truck: JSON.parse(JSON.stringify(tr)) });
-        }
+      const matched = dayRec.trucks.filter(t => _pickupItemMatches(t, snap));
+      if (matched.length > 1) ambiguousTrucks += (matched.length - 1);
+      if (matched.length >= 1) {
+        const tr = matched[0];
+        snapshot.supplyTrucks.push({ dayId: dayRec.id, dayDate: dayRec.date, dayPickupBy: dayRec.pickupBy, truck: JSON.parse(JSON.stringify(tr)) });
       }
     }
-    // 3) Find linked INVs (matched by ledger entry id, not linkSupplyId)
+    // 3) Linked INVs (matched by ledger entry id, not linkSupplyId)
     for (const inv of (pdata.invoices || [])) {
       if (inv.linkedPickupId && ledgerIdsToVoid.includes(inv.linkedPickupId)) {
         snapshot.voidedInvoices.push({ id: inv.id, previousStatus: inv.status || 'issued' });
       }
     }
 
-    // Now do the actual removal
+    // Now do the actual removal — only specific matched items, preserve others
+    const ledgerIdsToRemove = snapshot.ledgerEntries.map(x => x.entry.id);
     for (const c of (pdata.customers || [])) {
-      c.ledger = (c.ledger || []).filter(e => e._linkSupplyId !== linkId);
+      c.ledger = (c.ledger || []).filter(e => !ledgerIdsToRemove.includes(e.id));
     }
-    for (const dayRec of (pdata.dailySupply || [])) {
-      if (!Array.isArray(dayRec.trucks)) continue;
-      dayRec.trucks = dayRec.trucks.filter(t => t._linkSupplyId !== linkId);
+    // For trucks: identify via _pickupUid first, else field match. Remove ONLY one per snap.
+    for (const tg of snapshot.supplyTrucks) {
+      for (const dayRec of (pdata.dailySupply || [])) {
+        if (dayRec.id !== tg.dayId) continue;
+        if (!Array.isArray(dayRec.trucks)) continue;
+        // Remove first matching truck
+        const idx = dayRec.trucks.findIndex(t => _pickupItemMatches(t, snap));
+        if (idx >= 0) dayRec.trucks.splice(idx, 1);
+        break;
+      }
     }
-    // Drop now-empty day records
     pdata.dailySupply = (pdata.dailySupply || []).filter(d => (d.trucks || []).length > 0);
     // Void invoices
     for (const inv of (pdata.invoices || [])) {
@@ -6029,7 +6071,7 @@ async function _deletePickupFromPersonal(ev) {
       }
     }
 
-    // Persist personal_data
+    // Persist
     const { error: writeErr } = await db
       .from('personal_data').update({ data: pdata, updated_at: new Date().toISOString() })
       .eq('user_id', currentUser.id);
@@ -6043,7 +6085,10 @@ async function _deletePickupFromPersonal(ev) {
         ledgerEntries: snapshot.ledgerEntries.length,
         supplyTrucks: snapshot.supplyTrucks.length,
         voidedInvoices: snapshot.voidedInvoices.length
-      }
+      },
+      warnings: (ambiguousLedger || ambiguousTrucks)
+        ? `数据有 ${ambiguousLedger} 个 ledger / ${ambiguousTrucks} 辆车的字段重复 — 只删了第一条匹配。请人工核对。`
+        : null
     };
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
@@ -6369,10 +6414,12 @@ async function saveEditPickup() {
   const newPartnershipAmount = newPallets * buyPrice;            // SSS cost side
   const linkId = ev._linkSupplyId;
 
-  // === 2. Snapshot the OLD partnership event (for rollback) ===
+  // === 2. Snapshot the OLD partnership event (for rollback + 1:1 matching) ===
   const oldEvSnapshot = JSON.parse(JSON.stringify({
     date: ev.date, palletType: ev.palletType, pallets: ev.pallets,
-    truck: ev.truck, note: ev.note, isSwap: ev.isSwap, amount: ev.amount
+    truck: ev.truck, note: ev.note, isSwap: ev.isSwap, amount: ev.amount,
+    _pickupUid: ev._pickupUid,           // for strict 1:1 cross-table matching
+    _linkSupplyId: ev._linkSupplyId
   }));
 
   // === 3. Apply mutation to partnership event in memory ===
@@ -6438,11 +6485,26 @@ async function _editPickupInPersonal(ev, oldSnap) {
 
     let counts = { ledger: 0, supplyTrucks: 0, invoices: 0 };
     const updatedLedgerIds = [];
+    let ambiguousLedger = 0, ambiguousTrucks = 0;
 
-    // 1. Customer ledger entries with this linkId
+    // FIX (2026-05-27 P0): strict 1:1 matching using oldSnap's pickup-identifying
+    // fields. Previously this iterated ALL items with the shared _linkSupplyId,
+    // which corrupted SIBLING trucks (e.g. editing a TT pickup also overwrote the
+    // AMZ truck recorded in the same submission).
+    const matchSnap = {
+      _pickupUid: oldSnap._pickupUid,
+      _linkSupplyId: linkId,
+      palletType: oldSnap.palletType,
+      pallets: oldSnap.pallets,
+      isSwap: !!oldSnap.isSwap
+    };
+
+    // 1. Customer ledger entry — find the ONE matching, update only that
     for (const c of (pdata.customers || [])) {
-      for (const entry of (c.ledger || [])) {
-        if (entry._linkSupplyId !== linkId) continue;
+      const matched = (c.ledger || []).filter(e => _pickupItemMatches(e, matchSnap));
+      if (matched.length > 1) ambiguousLedger += (matched.length - 1);
+      if (matched.length >= 1) {
+        const entry = matched[0];
         entry.date        = ev.date;
         entry.pallets     = ev.pallets;
         entry.truck       = ev.truck;
@@ -6458,11 +6520,14 @@ async function _editPickupInPersonal(ev, oldSnap) {
       }
     }
 
-    // 2. dailySupply trucks with this linkId
+    // 2. dailySupply truck — find the ONE matching, update only that
     for (const dayRec of (pdata.dailySupply || [])) {
       if (!Array.isArray(dayRec.trucks)) continue;
-      for (const tr of dayRec.trucks) {
-        if (tr._linkSupplyId !== linkId) continue;
+      const matchedIdxs = [];
+      dayRec.trucks.forEach((t, idx) => { if (_pickupItemMatches(t, matchSnap)) matchedIdxs.push(idx); });
+      if (matchedIdxs.length > 1) ambiguousTrucks += (matchedIdxs.length - 1);
+      if (matchedIdxs.length >= 1) {
+        const tr = dayRec.trucks[matchedIdxs[0]];
         tr.type     = ev.isSwap ? 'TT' : (ev.palletType || 'TT');
         tr.pallets  = ev.pallets;
         tr.swapped  = !!ev.isSwap;
@@ -6470,9 +6535,8 @@ async function _editPickupInPersonal(ev, oldSnap) {
         tr.note     = ev.note;
         counts.supplyTrucks++;
       }
-      // Update day record's date if all its trucks are this linkId AND date changed
-      const sameLinkTrucks = dayRec.trucks.filter(t => t._linkSupplyId === linkId);
-      if (sameLinkTrucks.length === dayRec.trucks.length && dayRec.trucks.length > 0 && dayRec.date !== ev.date) {
+      // Update day-record date only if this is its ONLY truck and matches the edited one
+      if (dayRec.trucks.length === 1 && matchedIdxs.length === 1 && dayRec.date !== ev.date) {
         dayRec.date = ev.date;
       }
     }
@@ -6501,7 +6565,13 @@ async function _editPickupInPersonal(ev, oldSnap) {
     if (writeErr) return { ok: false, error: '写 personal_data 失败:' + writeErr.message };
 
     _personalCustomerCache = pdata;
-    return { ok: true, counts };
+    return {
+      ok: true,
+      counts,
+      warnings: (ambiguousLedger || ambiguousTrucks)
+        ? `数据有 ${ambiguousLedger} 个 ledger / ${ambiguousTrucks} 辆车的字段重复 — 只改了第一条匹配。请人工核对。`
+        : null
+    };
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
   }
