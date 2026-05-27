@@ -2138,7 +2138,11 @@ async function fetchPersonalCustomerCache() {
   } catch (e) { console.warn('[new-mode] personal fetch error:', e); return null; }
 }
 
-// Customer deposits since the new-mode switch date (sum across all customers)
+// Customer NET cash flow since the new-mode switch date (sum across all customers).
+// FIX (integrity audit, 2026-05-27): previously only summed `deposit` events. Missed
+// `refund` events entirely — those are cash Michael paid BACK to customers and must
+// be subtracted from the cash pool. Without this fix, cashPoolBalance() showed too
+// much money whenever there were post-switch refunds.
 function customerDepositsSinceSwitch() {
   if (!_personalCustomerCache) return 0;
   const sw = newModeStartDate();
@@ -2147,8 +2151,15 @@ function customerDepositsSinceSwitch() {
   let total = 0;
   for (const c of customers) {
     for (const e of (c.ledger || [])) {
-      if (e.type !== 'deposit' || !e.date || e.date < sw) continue;
-      total += (e.amount || 0);
+      if (!e.date || e.date < sw) continue;
+      const amt = +(e.amount || 0);
+      if (!isFinite(amt)) continue;
+      if (e.type === 'deposit') total += amt;
+      else if (e.type === 'refund') total -= amt;
+      // pickup is intentionally excluded — pickups don't move cash (customer's
+      // running pre-paid balance just gets debited; the cash already flowed in
+      // when the deposit was made). Other types (adjust) are converted to
+      // deposit/refund at write time, so we never see raw 'adjust' here.
     }
   }
   return total;
@@ -2455,7 +2466,16 @@ function hugoMonth(ymStr) {
 function hugoMath() {
   const rate = hugoRate();
   const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
-  const pickupsAll = getPickups();
+  // FIX (integrity audit, 2026-05-27): in NEW MODE, only Michael's pickups generate
+  // commission Michael owes — Emma settles with Hugo herself for her own pickups.
+  // Previously this function summed ALL pickups, which meant any KPI / display that
+  // called hugoMath() in new mode silently included Emma's commission as if Michael
+  // owed it. We filter at the source here so every downstream consumer is correct.
+  // (`hugoOwedNew()` is the proper new-mode function and is preferred when available,
+  // but hugoMath() is still used by the legacy KPI grid + a few drilldowns.)
+  const pickupsAll = isNewMode()
+    ? getPickups().filter(e => isMichaelPickup(e))
+    : getPickups();
   const transfersHugoAll = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
 
   if (!cutoff) {
@@ -2506,15 +2526,17 @@ function hugoMath() {
   };
 }
 
-// P1 audit fix (2026-05-22): include `in-emma` (new-mode credit events) alongside the
-// legacy `transfer` event type, so post-switch months don't appear as zero on charts.
+// Audit fix 2026-05-22: include `in-emma` alongside legacy `transfer` so post-switch
+// months don't appear as zero. Audit fix 2026-05-27: also include `in-customer`
+// (manual customer transfers) — previously these were dropped from the monthly
+// inflow line entirely, understating new-mode resource intake in trend charts.
 function monthlyAgg() {
   const map = {};
   const ensure = k => (map[k] = map[k] || { month: k, transfer: 0, pallets: 0, spent: 0 });
   for (const e of activeEvents()) {
     const k = e.date.slice(0, 7);
     const m = ensure(k);
-    if (e.type === 'transfer' || e.type === 'in-emma') m.transfer += e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma' || e.type === 'in-customer') m.transfer += e.amount || 0;
     else if (e.type === 'pickup') { m.pallets += e.pallets || 0; m.spent += e.amount || 0; }
   }
   return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
@@ -2524,7 +2546,7 @@ function monthTotals(ymStr) {
   const evs = activeEvents().filter(e => e.date.startsWith(ymStr));
   let t = 0, p = 0, s = 0;
   for (const e of evs) {
-    if (e.type === 'transfer' || e.type === 'in-emma') t += e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma' || e.type === 'in-customer') t += e.amount || 0;
     else if (e.type === 'pickup') { p += e.pallets || 0; s += e.amount || 0; }
   }
   return { t, p, s };
@@ -4718,16 +4740,19 @@ function renderCharts() {
   });
 
   // 2. Running balance line (cumulative over all events by date, excluding deleted)
-  // P1 audit fix (2026-05-22): include `in-emma` (new-mode equivalent of transfer) so
-  // the post-switch line doesn't crash to negative — both event types represent money
-  // flowing IN (Emma's contribution). Note: this is the *combined pool view*, not the
-  // per-owner SSS share. For new mode the proper per-owner accounting lives on the
-  // dashboard cards (michaelSssShare / emmaSssShare); this chart is a historical aid.
+  // Audit fixes (2026-05-22 → 2026-05-27):
+  //   - Include `in-emma` (new-mode credit) and `in-customer` (manual customer cash in)
+  //     alongside legacy `transfer` so the post-switch line reflects all inflows.
+  //   - Include `out-supplier` and `out-hugo` outflows so the line drops when money
+  //     leaves to SSS / Hugo, not just when pickups happen.
+  // Note: this chart shows the *combined pool / cash view*, not the per-owner SSS
+  // share. For new mode the proper per-owner accounting lives on the dashboard cards
+  // (michaelSssShare / emmaSssShare); this chart is a historical aid only.
   const sorted = [...activeEvents()].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
   const balData = sorted.map(e => {
-    if (e.type === 'transfer' || e.type === 'in-emma') running += e.amount || 0;
-    else if (e.type === 'pickup') running -= e.amount || 0;
+    if (e.type === 'transfer' || e.type === 'in-emma' || e.type === 'in-customer') running += e.amount || 0;
+    else if (e.type === 'pickup' || e.type === 'out-supplier' || e.type === 'out-hugo') running -= e.amount || 0;
     return { date: e.date, bal: running };
   });
   const ctx2 = document.getElementById('chart-balance');

@@ -3029,16 +3029,25 @@ function pickupMetrics(row) {
   return { revenue, cost, fee, profit, swapBonus };
 }
 
+// FIX (integrity audit, 2026-05-27): add `|| 0` fallback so a single corrupt amount
+// (undefined / null / string / NaN) on one ledger entry does not poison the customer's
+// entire balance with NaN — which would cascade into KPIs, statements and dashboards.
 function customerBalance(c) {
   let bal = 0;
-  for (const e of c.ledger) {
-    if (e.type === 'deposit') bal += e.amount;
-    else bal -= e.amount;
+  for (const e of (c.ledger || [])) {
+    const amt = +(e.amount || 0);
+    if (!isFinite(amt)) continue;
+    if (e.type === 'deposit') bal += amt;
+    else bal -= amt;
   }
   return bal;
 }
-function customerTotalDeposit(c) { return c.ledger.filter(e => e.type === 'deposit').reduce((s, e) => s + e.amount, 0); }
-function customerTotalPallets(c) { return c.ledger.filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0); }
+function customerTotalDeposit(c) {
+  return (c.ledger || []).filter(e => e.type === 'deposit').reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
+}
+function customerTotalPallets(c) {
+  return (c.ledger || []).filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0);
+}
 function customerProfit(c) {
   // Base profit (per-pallet margin) + any swap-TT bonus (£30/pallet for tagged pickups)
   let base = customerTotalPallets(c) * perPalletProfit();
@@ -4062,17 +4071,22 @@ function _seGetSssShares() {
     emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    remaining: emmaIn - emmaUsed }
   };
 }
-// Returns { accrued, paid, owed, rate } or null. Only Michael's pickups accrue.
+// Returns { accrued, paid, owed, rate, opening } or null. Only Michael's pickups accrue.
+// FIX (integrity audit, 2026-05-27): added `hugoOpeningOwed` to mirror partnership's
+// hugoOwedNew() at index.html:2270. Without this, the personal-app smart-entry
+// preview and any caller showed less "owed Hugo" than the partnership dashboard,
+// because the snapshot of pre-switch Hugo debt wasn't being accounted for.
 function _seGetHugoOwed() {
   if (!_partnershipCache) return null;
   const params = _partnershipCache.params || {};
   const rate = params.hugoCommission || 7;
+  const opening = +(params.hugoOpeningOwed || 0) || 0;   // pre-switch debt snapshot
   let accrued = 0, paid = 0;
   for (const e of _seNewModeEvents()) {
     if (e.type === 'pickup' && _seIsMichaelPickup(e)) accrued += (e.pallets || 0) * rate;
-    else if (e.type === 'out-hugo') paid += (e.amount || 0);
+    else if (e.type === 'out-hugo') paid += (+(e.amount || 0) || 0);
   }
-  return { accrued, paid, owed: accrued - paid, rate };
+  return { opening, accrued, paid, owed: opening + accrued - paid, rate };
 }
 
 function updateSmartEntryPreview() {
