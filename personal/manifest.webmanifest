@@ -1,0 +1,51 @@
+{
+  "name": "Pallet OS · 托盘业务管家",
+  "short_name": "Pallet OS",
+  "description": "Michael 的托盘批发账目管理 — 客户账本 / 每日供货 / 月度汇总 / 智能提醒",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#05060F",
+  "theme_color": "#05060F",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "今日取货录入",
+      "short_name": "录入",
+      "description": "5 合 1 智能录入入口",
+      "url": "./?action=smart-entry",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "客户账本",
+      "short_name": "客户",
+      "description": "查看所有客户账目",
+      "url": "./?view=customers",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
