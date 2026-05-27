@@ -1069,7 +1069,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
                 <span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);font-size:9px;font-weight:700;">实时</span>
               </div>
               <div id="nm-pool-value" style="font-size:34px;font-weight:800;color:var(--green);letter-spacing:-1px;margin-top:8px;font-variant-numeric:tabular-nums;">£0</div>
-              <div id="nm-pool-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">入 - 出 = 当前你银行账户上的钱</div>
+              <div id="nm-pool-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">入金 − 出金 · 业务现金净位置（不等于你银行余额）</div>
             </div>
             <div style="flex:2;min-width:280px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
               <div style="padding:10px 14px;background:rgba(34,211,165,0.05);border:1px solid rgba(34,211,165,0.18);border-radius:8px;">
@@ -6510,6 +6510,19 @@ function renderNewModeKpis() {
   set('nm-pool-outflow', fmt(outflow));
   set('nm-pool-inflow-sub', `客户 ${fmt(inCustTotal)} + Emma ${fmt(inEmma)}`);
   set('nm-pool-outflow-sub', `SSS ${fmt(outSss)} + Hugo ${fmt(outHugo)}`);
+  // Dynamic sub-text: when pool < 0, label it correctly as Michael's bridging
+  // capital (he fronted money from his own pocket) — NOT a bank overdraft.
+  // Pure cosmetic text change, no value computation altered.
+  const poolSubEl = document.getElementById('nm-pool-sub');
+  if (poolSubEl) {
+    if (pool < 0) {
+      poolSubEl.innerHTML = `你已垫资 <b style="color:var(--amber);">${fmt(-pool)}</b> · 业务还在回收期 <span style="color:var(--text-dim);">· 不等于你银行余额</span>`;
+    } else if (pool > 0) {
+      poolSubEl.innerHTML = `业务净盈余 <b style="color:var(--green);">${fmt(pool)}</b> · 已自我循环 <span style="color:var(--text-dim);">· 不等于你银行余额</span>`;
+    } else {
+      poolSubEl.textContent = '业务收支平衡 · 不等于你银行余额';
+    }
+  }
 
   // 2. SSS balance
   const sss = sssBalance();
