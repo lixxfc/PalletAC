@@ -1887,6 +1887,43 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
   </div>
 </div>
 
+<!-- Edit Pickup Modal (partnership-side) — modify date / type / pallets / truck / swap / note,
+     synchronously propagates the change to personal_data (customer ledger amount,
+     dailySupply truck fields, linked INV amount + line items). -->
+<div class="modal-backdrop" id="edit-pickup-modal">
+  <div class="modal-card" style="max-width:560px;">
+    <div class="modal-head">
+      <div class="modal-title">✎ 修改取货记录</div>
+      <button class="modal-close" onclick="closeEditPickupModal()">×</button>
+    </div>
+    <div class="page-sub" id="ep-context">改完保存,会自动更新合伙账事件 + 客户账本流水 + 每日供货 + INV 发票金额。</div>
+    <div class="form-grid mt-4" style="grid-template-columns: 1fr 1fr;">
+      <div class="form-row"><label>日期</label><input type="date" id="ep-date"></div>
+      <div class="form-row"><label>托盘类型</label>
+        <select id="ep-type">
+          <option value="TT">TT</option>
+          <option value="AMAZON">AMAZON</option>
+          <option value="Mixed">混合</option>
+        </select>
+      </div>
+      <div class="form-row"><label>托盘数</label><input type="number" id="ep-pallets" min="1" step="1"></div>
+      <div class="form-row"><label>车次（可选）</label><input type="text" id="ep-truck" placeholder="T-001"></div>
+      <div class="form-row" style="grid-column:1 / -1;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" id="ep-swap" style="width:18px;height:18px;cursor:pointer;">
+          <span>🔁 Swap TT (跟 Emma 换的,客户加价 £<span id="ep-swap-prem">30</span>/托)</span>
+        </label>
+      </div>
+      <div class="form-row" style="grid-column:1 / -1;"><label>备注（可选）</label><input type="text" id="ep-note" placeholder="可选"></div>
+    </div>
+    <div id="ep-preview" style="margin-top:14px;padding:12px 14px;background:rgba(196,181,253,0.06);border:1px solid rgba(196,181,253,0.18);border-radius:10px;font-size:12px;line-height:1.7;display:none;"></div>
+    <div class="row mt-4" style="gap:8px;justify-content:flex-end;">
+      <button class="btn ghost" onclick="closeEditPickupModal()">取消</button>
+      <button class="btn primary" id="ep-save-btn" onclick="saveEditPickup()">保存修改</button>
+    </div>
+  </div>
+</div>
+
 <!-- Send Email Modal — for emailing Emma / Hugo statements -->
 <div class="modal-backdrop" id="email-send-modal">
   <div class="modal-card" style="max-width: 580px;">
@@ -3231,13 +3268,16 @@ function renderPickups() {
     const cls = r.deleted ? ' class="row-deleted"' : '';
     const isMpick = isMichaelPickup(r);
     // In new mode, show "改归属" + "重新同步" buttons
+    const editBtn = (!r.deleted)
+      ? `<button class="btn sm ghost" onclick="openEditPickupModal('${r.id}')" title="修改此条取货(日期/类型/托盘数/车次/Swap/备注) · 同步更新个人账 + INV" style="margin-right:4px;">✎ 改</button>`
+      : '';
     const reassignBtn = (!r.deleted && isNewMode())
       ? `<button class="btn sm ghost" onclick="reassignPickupOwner('${r.id}')" title="改归属(Michael ↔ Emma)· 同时同步到个人 App" style="margin-right:4px;">${isMpick ? '→Emma' : '→Michael'}</button>` +
         `<button class="btn sm ghost" onclick="resyncPickupToPersonal('${r.id}')" title="只同步到个人 App(不翻转)" style="margin-right:4px;">🔄</button>`
       : '';
     const btn = r.deleted
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
-      : `${reassignBtn}<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
+      : `${editBtn}${reassignBtn}<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
     // FIX (P0 audit #5, 2026-05-22): Hugo commission only applies to Michael's pickups
     // in new mode. Emma settles with Hugo herself, so showing a £ amount on her rows
     // was misleading and could lead to double-paying Hugo.
@@ -5842,15 +5882,247 @@ function addPickup() {
   flash('已记录取货 ' + pallets + ' 托盘');
 }
 
-function delEvent(id) {
+// ============================================================
+// CROSS-APP PROPAGATION FOR PARTNERSHIP PICKUP DELETE / RESTORE
+//
+// CRITICAL BUG FIX (2026-05-27): Previously, deleting a pickup event in the
+// partnership app only soft-deleted the partnership-side event. The personal-app
+// side (customer ledger entry, dailySupply truck, linked INV) was NEVER touched,
+// so personal-app KPIs (本周利润, 累计净利润, 客户余额, etc.) still counted the
+// "deleted" pickup. This broke financial integrity across the two apps.
+//
+// New behavior:
+//   delEvent(pickup)     → snapshot related personal-data items into the
+//                          partnership event, then remove them from personal_data.
+//                          INVs are marked status='void' (audit preserved).
+//
+//   restoreEvent(pickup) → read snapshot off the event and re-create the
+//                          customer ledger entry / dailySupply truck. Restore
+//                          the INV's previous status. Clear the snapshot.
+//
+// The snapshot lives on the partnership event as ev._cascadeSnapshot and is
+// removed once successfully restored. Pickups deleted BEFORE this fix have no
+// snapshot, so a one-time _cleanupStalePickupDeletes() runs on load to scrub
+// any orphan personal-data items left over from those legacy deletes.
+// ============================================================
+
+async function _deletePickupFromPersonal(ev) {
+  if (!currentUser || !currentUser.id) return { ok: false, error: '未登录' };
+  if (!ev || ev.type !== 'pickup') return { ok: false, error: '不是 pickup 事件' };
+  const linkId = ev._linkSupplyId;
+  if (!linkId) return { ok: false, error: '事件无 _linkSupplyId,无法匹配个人账' };
+
+  try {
+    const { data: row, error: readErr } = await db
+      .from('personal_data').select('data').eq('user_id', currentUser.id).maybeSingle();
+    if (readErr) return { ok: false, error: '读 personal_data 失败:' + readErr.message };
+    if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
+    const pdata = row.data;
+
+    // Build snapshot BEFORE we touch anything — so restore can recreate exactly
+    const snapshot = { ledgerEntries: [], supplyTrucks: [], voidedInvoices: [] };
+
+    // 1) Find matching customer ledger entries
+    const ledgerIdsToVoid = [];
+    for (const c of (pdata.customers || [])) {
+      for (const e of (c.ledger || [])) {
+        if (e._linkSupplyId === linkId) {
+          snapshot.ledgerEntries.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(e)) });
+          ledgerIdsToVoid.push(e.id);
+        }
+      }
+    }
+    // 2) Find matching dailySupply trucks
+    for (const dayRec of (pdata.dailySupply || [])) {
+      if (!Array.isArray(dayRec.trucks)) continue;
+      for (const tr of dayRec.trucks) {
+        if (tr._linkSupplyId === linkId) {
+          snapshot.supplyTrucks.push({ dayId: dayRec.id, dayDate: dayRec.date, dayPickupBy: dayRec.pickupBy, truck: JSON.parse(JSON.stringify(tr)) });
+        }
+      }
+    }
+    // 3) Find linked INVs (matched by ledger entry id, not linkSupplyId)
+    for (const inv of (pdata.invoices || [])) {
+      if (inv.linkedPickupId && ledgerIdsToVoid.includes(inv.linkedPickupId)) {
+        snapshot.voidedInvoices.push({ id: inv.id, previousStatus: inv.status || 'issued' });
+      }
+    }
+
+    // Now do the actual removal
+    for (const c of (pdata.customers || [])) {
+      c.ledger = (c.ledger || []).filter(e => e._linkSupplyId !== linkId);
+    }
+    for (const dayRec of (pdata.dailySupply || [])) {
+      if (!Array.isArray(dayRec.trucks)) continue;
+      dayRec.trucks = dayRec.trucks.filter(t => t._linkSupplyId !== linkId);
+    }
+    // Drop now-empty day records
+    pdata.dailySupply = (pdata.dailySupply || []).filter(d => (d.trucks || []).length > 0);
+    // Void invoices
+    for (const inv of (pdata.invoices || [])) {
+      if (inv.linkedPickupId && ledgerIdsToVoid.includes(inv.linkedPickupId)) {
+        inv.status = 'void';
+        inv.voidedAt = new Date().toISOString();
+        inv.voidReason = '关联取货已在合伙账删除';
+      }
+    }
+
+    // Persist personal_data
+    const { error: writeErr } = await db
+      .from('personal_data').update({ data: pdata, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id);
+    if (writeErr) return { ok: false, error: '写 personal_data 失败:' + writeErr.message };
+
+    _personalCustomerCache = pdata;
+    return {
+      ok: true,
+      snapshot,
+      counts: {
+        ledgerEntries: snapshot.ledgerEntries.length,
+        supplyTrucks: snapshot.supplyTrucks.length,
+        voidedInvoices: snapshot.voidedInvoices.length
+      }
+    };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+async function _restorePickupToPersonal(ev) {
+  if (!currentUser || !currentUser.id) return { ok: false, error: '未登录' };
+  const snap = ev && ev._cascadeSnapshot;
+  if (!snap) return { ok: false, error: '该事件无快照,无法恢复关联数据' };
+
+  try {
+    const { data: row, error: readErr } = await db
+      .from('personal_data').select('data').eq('user_id', currentUser.id).maybeSingle();
+    if (readErr) return { ok: false, error: '读 personal_data 失败:' + readErr.message };
+    const pdata = (row && row.data) || { customers: [], dailySupply: [], invoices: [] };
+    if (!Array.isArray(pdata.customers)) pdata.customers = [];
+    if (!Array.isArray(pdata.dailySupply)) pdata.dailySupply = [];
+    if (!Array.isArray(pdata.invoices)) pdata.invoices = [];
+
+    // 1) Restore customer ledger entries
+    for (const { customerId, entry } of (snap.ledgerEntries || [])) {
+      const c = pdata.customers.find(x => x.id === customerId);
+      if (!c) continue;
+      if (!Array.isArray(c.ledger)) c.ledger = [];
+      // Avoid double-restore if the entry somehow already exists
+      if (!c.ledger.find(e => e.id === entry.id)) c.ledger.push(entry);
+    }
+    // 2) Restore dailySupply trucks
+    for (const { dayId, dayDate, dayPickupBy, truck } of (snap.supplyTrucks || [])) {
+      // Find existing day record by id OR by (date + pickupBy)
+      let day = pdata.dailySupply.find(d => d.id === dayId)
+             || pdata.dailySupply.find(d => d.date === dayDate && (d.pickupBy || 'Michael') === (dayPickupBy || 'Michael'));
+      if (!day) {
+        day = { id: dayId || crypto.randomUUID(), date: dayDate, pickupBy: dayPickupBy || 'Michael', manualOverride: false, trucks: [], note: '' };
+        pdata.dailySupply.push(day);
+      }
+      if (!Array.isArray(day.trucks)) day.trucks = [];
+      // Avoid double-restore
+      if (!day.trucks.find(t => t._linkSupplyId === truck._linkSupplyId && t.pallets === truck.pallets && t.type === truck.type)) {
+        day.trucks.push(truck);
+      }
+    }
+    // 3) Un-void invoices
+    for (const { id, previousStatus } of (snap.voidedInvoices || [])) {
+      const inv = pdata.invoices.find(i => i.id === id);
+      if (inv) {
+        inv.status = previousStatus || 'issued';
+        delete inv.voidedAt;
+        delete inv.voidReason;
+      }
+    }
+
+    const { error: writeErr } = await db
+      .from('personal_data').update({ data: pdata, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id);
+    if (writeErr) return { ok: false, error: '写 personal_data 失败:' + writeErr.message };
+
+    _personalCustomerCache = pdata;
+    return {
+      ok: true,
+      counts: {
+        ledgerEntries: (snap.ledgerEntries || []).length,
+        supplyTrucks: (snap.supplyTrucks || []).length,
+        unvoidedInvoices: (snap.voidedInvoices || []).length
+      }
+    };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+// One-time cleanup for pickups that were deleted BEFORE this fix (no snapshot).
+// Their personal-data side never got cleaned up, so we do it now. Idempotent.
+// Runs once per page load; logs to console, doesn't surface UI unless something
+// was actually cleaned (then a flash message tells the user).
+let _stalePickupDeleteCleanupRan = false;
+async function _cleanupStalePickupDeletes() {
+  if (_stalePickupDeleteCleanupRan) return;
+  _stalePickupDeleteCleanupRan = true;
+  if (!Array.isArray(state.events)) return;
+  const candidates = state.events.filter(e =>
+    e.type === 'pickup' && e.deleted === true && e._linkSupplyId && !e._cascadeSnapshot
+  );
+  if (candidates.length === 0) return;
+  console.log('[cleanup] found', candidates.length, 'stale deleted pickups without cascade snapshot');
+  let totalRemoved = 0;
+  for (const ev of candidates) {
+    const res = await _deletePickupFromPersonal(ev);
+    if (res.ok) {
+      ev._cascadeSnapshot = res.snapshot;
+      ev._cascadeCleanupAt = new Date().toISOString();
+      const n = (res.counts.ledgerEntries || 0) + (res.counts.supplyTrucks || 0);
+      totalRemoved += n;
+      console.log('[cleanup] cleaned', ev.id, 'removed', n, 'personal-data items');
+    } else {
+      console.warn('[cleanup] failed for', ev.id, ':', res.error);
+    }
+  }
+  if (totalRemoved > 0) {
+    save();  // persist the new _cascadeSnapshot annotations
+    renderAll();
+    flash(`🧹 修复了 ${candidates.length} 条历史删除的连带数据 (共 ${totalRemoved} 项)`);
+  }
+}
+
+async function delEvent(id) {
   const ev = state.events.find(e => e.id === id);
   if (!ev) return;
   if (ev.deleted) return;
-  if (!confirm('删除这条记录？（记录会保留但显示为删除线，可恢复）')) return;
+
+  const isPickupWithLink = (ev.type === 'pickup' && ev._linkSupplyId);
+  const cascadeNote = isPickupWithLink
+    ? '\n\n会同时处理:\n  • 个人 App 客户账本对应流水\n  • 每日供货对应车辆\n  • 关联发票 INV (标记作废)\n\n点恢复时全部可逆。'
+    : '';
+  if (!confirm('删除这条记录？（记录会保留但显示为删除线,可恢复）' + cascadeNote)) return;
+
   ev.deleted = true;
   ev.deletedAt = new Date().toISOString();
   ev.deletedBy = (currentUser && currentUser.email) ? currentUser.email : '?';
-  save(); renderAll();
+
+  // Cross-app cascade for pickups
+  if (isPickupWithLink) {
+    const res = await _deletePickupFromPersonal(ev);
+    if (res.ok) {
+      ev._cascadeSnapshot = res.snapshot;
+      ev._cascadeDeletedAt = new Date().toISOString();
+      save(); renderAll();
+      const c = res.counts;
+      flash(`✓ 已删除 · 同步清理 ${c.ledgerEntries} 条客户流水 / ${c.supplyTrucks} 辆车 / ${c.voidedInvoices} 张 INV`);
+    } else {
+      // Partnership marked deleted but personal sync failed — flag the event for retry
+      ev._cascadePending = true;
+      ev._cascadeError = res.error;
+      save(); renderAll();
+      flash('⚠ 合伙账已删,但个人账同步失败:' + res.error + ' · 点恢复后重新删除可重试');
+    }
+  } else {
+    save(); renderAll();
+    flash('✓ 已删除');
+  }
 }
 
 // Push a partnership pickup event's owner to personal_data dailySupply
@@ -5974,14 +6246,236 @@ async function reassignPickupOwner(id) {
   }
 }
 
-function restoreEvent(id) {
+// ============================================================
+// EDIT PICKUP — partnership-side modal that cascades to personal_data.
+// User changes date / type / pallet count / truck / swap / note → we update
+// (1) the partnership event itself,
+// (2) the matching customer ledger entry (amount/pallets/swap fields/palletType),
+// (3) the matching dailySupply truck (type/pallets/swap/truckNum/note),
+// (4) the linked INV (amount + lineItems).
+// All four updates are atomic from the user's perspective:
+// fetch latest personal_data → mutate in-memory → write back. If the write
+// fails we roll back the in-memory partnership-event mutation too.
+// ============================================================
+let _editingPickupId = null;
+
+function openEditPickupModal(id) {
+  const ev = state.events.find(e => e.id === id);
+  if (!ev || ev.type !== 'pickup') { flash('找不到取货记录'); return; }
+  if (ev.deleted) { flash('已删除的记录无法直接修改 — 先恢复再改'); return; }
+  _editingPickupId = id;
+  const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
+  set('ep-date', ev.date || '');
+  set('ep-type', (ev.palletType === 'AMAZON' || ev.palletType === 'TT') ? ev.palletType : 'Mixed');
+  set('ep-pallets', ev.pallets || 0);
+  set('ep-truck', ev.truck || '');
+  set('ep-note', ev.note || '');
+  const swap = document.getElementById('ep-swap'); if (swap) swap.checked = !!ev.isSwap;
+  const prem = document.getElementById('ep-swap-prem');
+  if (prem) prem.textContent = (state.params.swapPremium != null ? state.params.swapPremium : 30);
+  // Context line: show owner + linked customer name if any
+  const owner = isMichaelPickup(ev) ? 'Michael' : 'Emma';
+  const ctxEl = document.getElementById('ep-context');
+  if (ctxEl) {
+    ctxEl.innerHTML = `<b>归属</b>: ${owner} · <b>当前金额</b>: £${fmt(ev.amount || 0)} · <b>当前托盘</b>: ${ev.pallets} 托 ${ev.palletType || ''}${ev.isSwap ? ' (Swap)' : ''} · 改完保存会同步更新客户账本 / 每日供货 / INV`;
+  }
+  document.getElementById('edit-pickup-modal').classList.add('open');
+}
+
+function closeEditPickupModal() {
+  _editingPickupId = null;
+  document.getElementById('edit-pickup-modal').classList.remove('open');
+}
+
+async function saveEditPickup() {
+  if (!_editingPickupId) return;
+  const ev = state.events.find(e => e.id === _editingPickupId);
+  if (!ev) { flash('找不到取货记录'); return; }
+
+  // === 1. Read form ===
+  const newDate    = document.getElementById('ep-date').value;
+  const newType    = document.getElementById('ep-type').value;
+  const newPallets = parseInt(document.getElementById('ep-pallets').value) || 0;
+  const newTruck   = (document.getElementById('ep-truck').value || '').trim();
+  const newNote    = (document.getElementById('ep-note').value || '').trim();
+  const newSwap    = !!document.getElementById('ep-swap').checked;
+  if (!newDate)             { alert('日期不能为空'); return; }
+  if (newPallets <= 0)      { alert('托盘数必须 > 0'); return; }
+
+  const buyPrice = state.params.buyPrice || 245;
+  const swapPrem = (state.params.swapPremium != null) ? state.params.swapPremium : 30;
+  const newPartnershipAmount = newPallets * buyPrice;            // SSS cost side
+  const linkId = ev._linkSupplyId;
+
+  // === 2. Snapshot the OLD partnership event (for rollback) ===
+  const oldEvSnapshot = JSON.parse(JSON.stringify({
+    date: ev.date, palletType: ev.palletType, pallets: ev.pallets,
+    truck: ev.truck, note: ev.note, isSwap: ev.isSwap, amount: ev.amount
+  }));
+
+  // === 3. Apply mutation to partnership event in memory ===
+  ev.date       = newDate;
+  ev.palletType = newSwap ? 'TT' : newType;   // Swap forces TT
+  ev.pallets    = newPallets;
+  ev.truck      = newTruck;
+  ev.note       = newNote;
+  ev.isSwap     = newSwap;
+  ev.amount     = newPartnershipAmount;
+  ev.updatedAt  = new Date().toISOString();
+  ev._lastEditedBy = (currentUser && currentUser.email) || '?';
+
+  const btn = document.getElementById('ep-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+
+  // === 4. Cascade to personal_data ===
+  let personalRes = { ok: true, counts: { ledger: 0, supplyTrucks: 0, invoices: 0 } };
+  if (linkId) {
+    personalRes = await _editPickupInPersonal(ev, oldEvSnapshot);
+  }
+
+  if (!personalRes.ok) {
+    // Roll back partnership-side mutation
+    ev.date       = oldEvSnapshot.date;
+    ev.palletType = oldEvSnapshot.palletType;
+    ev.pallets    = oldEvSnapshot.pallets;
+    ev.truck      = oldEvSnapshot.truck;
+    ev.note       = oldEvSnapshot.note;
+    ev.isSwap     = oldEvSnapshot.isSwap;
+    ev.amount     = oldEvSnapshot.amount;
+    delete ev.updatedAt;
+    delete ev._lastEditedBy;
+    if (btn) { btn.disabled = false; btn.textContent = '保存修改'; }
+    alert('个人账同步失败,所有改动已回滚:\n' + personalRes.error);
+    return;
+  }
+
+  // === 5. Save partnership_data ===
+  save(); renderAll();
+  closeEditPickupModal();
+  const c = personalRes.counts;
+  flash(`✓ 已修改 · 同步更新 ${c.ledger} 条客户流水 / ${c.supplyTrucks} 辆车 / ${c.invoices} 张 INV`);
+}
+
+async function _editPickupInPersonal(ev, oldSnap) {
+  if (!currentUser || !currentUser.id) return { ok: false, error: '未登录' };
+  const linkId = ev._linkSupplyId;
+  if (!linkId) return { ok: true, counts: { ledger: 0, supplyTrucks: 0, invoices: 0 } };
+
+  try {
+    const { data: row, error: readErr } = await db
+      .from('personal_data').select('data').eq('user_id', currentUser.id).maybeSingle();
+    if (readErr) return { ok: false, error: '读 personal_data 失败:' + readErr.message };
+    if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
+    const pdata = row.data;
+
+    // Pricing snapshot — match what saveSmartPickup stored
+    const sellPrice = (pdata.params && pdata.params.sellPrice) || 265;
+    const swapPrem  = (pdata.params && pdata.params.swapPremium != null) ? pdata.params.swapPremium : 30;
+    const unitPrice = ev.isSwap ? (sellPrice + swapPrem) : sellPrice;
+    const customerAmount = ev.pallets * unitPrice;
+
+    let counts = { ledger: 0, supplyTrucks: 0, invoices: 0 };
+    const updatedLedgerIds = [];
+
+    // 1. Customer ledger entries with this linkId
+    for (const c of (pdata.customers || [])) {
+      for (const entry of (c.ledger || [])) {
+        if (entry._linkSupplyId !== linkId) continue;
+        entry.date        = ev.date;
+        entry.pallets     = ev.pallets;
+        entry.truck       = ev.truck;
+        entry.note        = ev.note;
+        entry.isSwap      = !!ev.isSwap;
+        entry.palletType  = ev.isSwap ? 'TT' : (ev.palletType || 'TT');
+        entry.unitPrice   = unitPrice;
+        entry.swapPremium = ev.isSwap ? swapPrem : 0;
+        entry.amount      = customerAmount;
+        entry.updatedAt   = new Date().toISOString();
+        counts.ledger++;
+        updatedLedgerIds.push(entry.id);
+      }
+    }
+
+    // 2. dailySupply trucks with this linkId
+    for (const dayRec of (pdata.dailySupply || [])) {
+      if (!Array.isArray(dayRec.trucks)) continue;
+      for (const tr of dayRec.trucks) {
+        if (tr._linkSupplyId !== linkId) continue;
+        tr.type     = ev.isSwap ? 'TT' : (ev.palletType || 'TT');
+        tr.pallets  = ev.pallets;
+        tr.swapped  = !!ev.isSwap;
+        tr.truckNum = ev.truck;
+        tr.note     = ev.note;
+        counts.supplyTrucks++;
+      }
+      // Update day record's date if all its trucks are this linkId AND date changed
+      const sameLinkTrucks = dayRec.trucks.filter(t => t._linkSupplyId === linkId);
+      if (sameLinkTrucks.length === dayRec.trucks.length && dayRec.trucks.length > 0 && dayRec.date !== ev.date) {
+        dayRec.date = ev.date;
+      }
+    }
+
+    // 3. Linked invoices — update amount + line items + date
+    for (const inv of (pdata.invoices || [])) {
+      if (!inv.linkedPickupId || !updatedLedgerIds.includes(inv.linkedPickupId)) continue;
+      inv.amount = customerAmount;
+      inv.invoiceDate = ev.date;
+      // Update line items: take the first pallet line item and refresh qty/unitPrice/total
+      if (Array.isArray(inv.lineItems) && inv.lineItems.length > 0) {
+        // Find the pallet-related line (heuristic: largest line, or first one with "pallet" / "托" in description)
+        let palletLine = inv.lineItems.find(li => /托|pallet|amz|amazon|tt|swap/i.test(li.description || ''));
+        if (!palletLine) palletLine = inv.lineItems[0];
+        palletLine.qty = ev.pallets;
+        palletLine.unitPrice = unitPrice;
+        palletLine.description = (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets;
+      }
+      inv.updatedAt = new Date().toISOString();
+      counts.invoices++;
+    }
+
+    const { error: writeErr } = await db
+      .from('personal_data').update({ data: pdata, updated_at: new Date().toISOString() })
+      .eq('user_id', currentUser.id);
+    if (writeErr) return { ok: false, error: '写 personal_data 失败:' + writeErr.message };
+
+    _personalCustomerCache = pdata;
+    return { ok: true, counts };
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) };
+  }
+}
+
+async function restoreEvent(id) {
   const ev = state.events.find(e => e.id === id);
   if (!ev || !ev.deleted) return;
-  if (!confirm('恢复这条记录？')) return;
+  const hasSnapshot = !!ev._cascadeSnapshot;
+  const restoreMsg = hasSnapshot
+    ? '恢复这条记录?\n\n会同时恢复:\n  • 个人 App 客户账本对应流水\n  • 每日供货对应车辆\n  • 关联 INV 状态'
+    : '恢复这条记录?';
+  if (!confirm(restoreMsg)) return;
+
+  // 1) Cross-app: restore personal data first (if we have a snapshot)
+  if (hasSnapshot) {
+    const res = await _restorePickupToPersonal(ev);
+    if (!res.ok) {
+      alert('个人账恢复失败:' + res.error + '\n\n合伙账事件保持删除状态,稍后重试。');
+      return;
+    }
+  }
+
+  // 2) Un-delete the partnership event
   delete ev.deleted;
   delete ev.deletedAt;
   delete ev.deletedBy;
+  delete ev._cascadeSnapshot;
+  delete ev._cascadeDeletedAt;
+  delete ev._cascadeCleanupAt;
+  delete ev._cascadePending;
+  delete ev._cascadeError;
+
   save(); renderAll();
+  if (hasSnapshot) flash('✓ 已恢复 · 个人账连带数据已还原');
+  else flash('✓ 已恢复 (此事件无关联个人账数据)');
 }
 
 function saveSettings() {
@@ -6745,6 +7239,9 @@ function renderAll() {
   if (navInv) navInv.classList.toggle('hide', !isNewMode());
   // Refresh quick quote so balance and unit price stay in sync
   if (typeof updateEmmaQuote === 'function') updateEmmaQuote();
+  // One-time cleanup of stale deleted pickups that never cascaded to personal_data.
+  // Idempotent — only runs once per page load. Fires async so render doesn't block.
+  if (typeof _cleanupStalePickupDeletes === 'function') _cleanupStalePickupDeletes();
 }
 
 // === Monthly History Cards (partnership dashboard, bottom) ===
