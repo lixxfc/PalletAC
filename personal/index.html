@@ -7056,9 +7056,45 @@ async function delLedger(id) {
     linkedRec.linkedDepositId = null;
   }
 
+  // FIX (2026-05-27 audit): if this is a pickup with _linkSupplyId, also soft-delete
+  // the matching partnership event so SSS share / Hugo accrual / 本月托盘 KPIs reflect
+  // the deletion. Without this, deleting from the customer page left an orphan
+  // pickup event in partnership_data that kept getting counted everywhere.
+  let partnershipSyncMsg = '';
+  if (e.type === 'pickup' && e._linkSupplyId) {
+    try {
+      const { data: latestRow, error: readErr } = await db
+        .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
+      if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
+      const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
+      if (Array.isArray(latestData.events)) {
+        let touched = 0;
+        for (const pev of latestData.events) {
+          if (pev.type === 'pickup' && pev._linkSupplyId === e._linkSupplyId && !pev.deleted) {
+            pev.deleted = true;
+            pev.deletedAt = new Date().toISOString();
+            pev.deletedBy = ((currentUser && currentUser.email) || 'personal-app') + ' (via delLedger)';
+            touched++;
+          }
+        }
+        if (touched > 0) {
+          const { error: writeErr } = await db
+            .from('partnership_data').update({ data: latestData, updated_at: new Date().toISOString() })
+            .eq('workspace_id', 'main');
+          if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
+          _partnershipCache = latestData;
+          partnershipSyncMsg = ' · 合伙账 ' + touched + ' 条同步软删';
+        }
+      }
+    } catch (err) {
+      console.error('[delLedger] partnership sync failed:', err);
+      partnershipSyncMsg = ' · ⚠ 合伙账同步失败:' + (err.message || err);
+    }
+  }
+
   c.ledger = c.ledger.filter(x => x.id !== id);
   save(); renderAll();
-  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : ''));
+  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : '') + partnershipSyncMsg);
 }
 
 // ============================================================
@@ -7155,7 +7191,7 @@ function updateLedgerEditPreview() {
     <div class="pv-warning">⚠ 改后余额为负 — 客户透支!</div>`;
 }
 
-function saveLedgerEdit() {
+async function saveLedgerEdit() {
   if (!_editingLedgerId || !currentCustomer) { closeLedgerEdit(); return; }
   const c = state.customers.find(x => x.id === currentCustomer);
   if (!c) { closeLedgerEdit(); return; }
@@ -7225,9 +7261,50 @@ function saveLedgerEdit() {
     linkedRec.updatedAt = new Date().toISOString();
   }
 
+  // FIX (2026-05-27 audit): if pickup edit, propagate to partnership_data event
+  // (matched via _linkSupplyId). Without this, editing pallet count / type / date
+  // here updated only the customer-side ledger + INV, leaving partnership's view
+  // (SSS share / Hugo accrual / 本月托盘) stale.
+  let partnershipSyncMsg = '';
+  if (isPickup && e._linkSupplyId) {
+    try {
+      const { data: latestRow, error: readErr } = await db
+        .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
+      if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
+      const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
+      const buyPrice = (latestData.params && latestData.params.buyPrice) || state.params.buyPrice || 245;
+      let touched = 0;
+      for (const pev of (latestData.events || [])) {
+        if (pev.type === 'pickup' && pev._linkSupplyId === e._linkSupplyId && !pev.deleted) {
+          pev.date       = newDate;
+          pev.pallets    = newPallets;
+          pev.palletType = newIsSwap ? 'TT' : newPalletType;
+          pev.isSwap     = newIsSwap;
+          pev.truck      = newTruck;
+          pev.note       = newNote;
+          pev.amount     = newPallets * buyPrice;     // SSS-cost side, not customer-amount
+          pev.updatedAt  = new Date().toISOString();
+          pev._editedFromPersonal = true;
+          touched++;
+        }
+      }
+      if (touched > 0) {
+        const { error: writeErr } = await db
+          .from('partnership_data').update({ data: latestData, updated_at: new Date().toISOString() })
+          .eq('workspace_id', 'main');
+        if (writeErr) throw new Error('写 partnership_data 失败:' + writeErr.message);
+        _partnershipCache = latestData;
+        partnershipSyncMsg = ' · 合伙账 ' + touched + ' 条同步';
+      }
+    } catch (err) {
+      console.error('[saveLedgerEdit] partnership sync failed:', err);
+      partnershipSyncMsg = ' · ⚠ 合伙账同步失败:' + (err.message || err);
+    }
+  }
+
   save(); renderAll();
   closeLedgerEdit();
-  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : ''));
+  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg);
 }
 
 function saveSettings() {
