@@ -2320,20 +2320,42 @@ function hugoOwedNew() {
 }
 
 // 5. Month pallets (post-switch, split by who)
+// FIX (2026-05-27): use the authoritative isMichaelPickup() rather than the previous
+// independent isEmma/isMichael flags that could BOTH be true when pickedUpBy and
+// createdBy disagree (caused misclassification). isMichaelPickup gives pickedUpBy
+// priority over createdBy email fallback — matches the rest of the system.
 function monthPalletsNew(ymStr) {
   const evs = _newModeEvents();
-  let michael = 0, emma = 0, other = 0;
+  let michael = 0, michaelTT = 0, michaelAMZ = 0;
+  let emma = 0, emmaTT = 0, emmaAMZ = 0;
+  let michaelTrucks = 0, emmaTrucks = 0;
+  let michaelSwap = 0, emmaSwap = 0;
   for (const e of evs) {
     if (e.type !== 'pickup') continue;
     if (!e.date || !e.date.startsWith(ymStr)) continue;
     const palls = e.pallets || 0;
-    const isEmma = e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk';
-    const isMichael = e.pickedUpBy === 'Michael' || e.createdBy === 'harreds.ceo@gmail.com';
-    if (isEmma) emma += palls;
-    else if (isMichael) michael += palls;
-    else other += palls;
+    const isMP = isMichaelPickup(e);
+    if (isMP) {
+      michael += palls;
+      michaelTrucks += 1;
+      if (e.palletType === 'TT') michaelTT += palls;
+      else if (e.palletType === 'AMAZON') michaelAMZ += palls;
+      if (e.isSwap) michaelSwap += palls;
+    } else {
+      emma += palls;
+      emmaTrucks += 1;
+      if (e.palletType === 'TT') emmaTT += palls;
+      else if (e.palletType === 'AMAZON') emmaAMZ += palls;
+      if (e.isSwap) emmaSwap += palls;
+    }
   }
-  return { michael, emma, other, total: michael + emma + other };
+  return {
+    michael, emma,
+    other: 0,                 // backward-compat: kept zero (isMichaelPickup is binary)
+    total: michael + emma,
+    michaelTT, michaelAMZ, michaelTrucks, michaelSwap,
+    emmaTT, emmaAMZ, emmaTrucks, emmaSwap
+  };
 }
 
 function setSyncStatus(status) {
@@ -3003,20 +3025,60 @@ function buildDrilldownData(key) {
     const ym = new Date().toISOString().slice(0, 7);
     const mp = monthPalletsNew(ym);
     const rate = state.params.hugoCommission || 7;
+    const buyPrice = state.params.buyPrice || 245;
+    const swapPrem = (state.params.swapPremium != null) ? state.params.swapPremium : 30;
     const monthPickups = _newModeEvents().filter(e => e.type === 'pickup' && (e.date || '').startsWith(ym));
-    const rows = monthPickups.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(e => ({
-      date: e.date,
-      desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''} · <b style="color:${(e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk') ? 'var(--pink)' : '#67e8f9'};">${(e.pickedUpBy || (e.createdBy === 'emma@maomail.uk' ? 'Emma' : 'Michael'))}</b>`,
-      amount: e.pallets || 0
-    }));
+    // Build detailed rows: date | who | type | pallets | swap | truck | amount | notes
+    const rows = monthPickups
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .map(e => {
+        const mp = isMichaelPickup(e);
+        const ownerBadge = mp
+          ? '<b style="color:#67e8f9;">Michael</b>'
+          : '<b style="color:var(--pink);">Emma</b>';
+        const typeBadge = e.palletType === 'TT'
+          ? '<span class="badge" style="background:rgba(99,102,241,0.30);color:#a5b4fc;font-weight:700;font-size:10px;">TT</span>'
+          : e.palletType === 'AMAZON'
+          ? '<span class="badge" style="background:rgba(34,211,238,0.18);color:#67e8f9;font-weight:700;font-size:10px;">AMZ</span>'
+          : '<span class="badge" style="background:rgba(148,163,196,0.15);color:var(--text-dim);font-size:10px;">混</span>';
+        const swapBadge = e.isSwap
+          ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>'
+          : '';
+        const truckTxt = e.truck ? ` <span style="color:var(--text-dim);font-size:11px;">· ${escapeHtml(e.truck)}</span>` : '';
+        const noteTxt  = e.note  ? ` <span style="color:var(--text-dim);font-size:11px;">· ${escapeHtml(e.note)}</span>` : '';
+        return {
+          date: e.date,
+          desc: `${typeBadge}${swapBadge} <b>${e.pallets} 托</b> · ${ownerBadge}${truckTxt}${noteTxt}`,
+          amount: -((e.pallets || 0) * buyPrice)  // SSS-side cost (negative = consumed share)
+        };
+      });
     return {
       title: '📦 本月托盘 · 数据来源',
-      sub: `${ym} · Michael ${mp.michael} 托 · Emma ${mp.emma} 托 · 合计 ${mp.total} 托`,
-      formula: `<div><span class="k">Michael 取</span><span class="v" style="float:right;color:#67e8f9;">${mp.michael} 托</span></div>
-                <div><span class="k">Emma 取</span><span class="v" style="float:right;color:var(--pink);">${mp.emma} 托</span></div>
-                ${mp.other ? `<div><span class="k">未知</span><span class="v" style="float:right;color:var(--text-dim);">${mp.other} 托</span></div>` : ''}
-                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>合计</b></span><span class="v total" style="float:right;">${mp.total} 托</span></div>
-                <div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Hugo 应付:${mp.michael} × £${rate} = £${fmt0(mp.michael * rate)} <span style="color:var(--text-dim);font-size:10px;">(只算 Michael 取货 · Emma 自己跟 Hugo 结)</span></div>`,
+      sub: `${ym} · Michael ${mp.michael} 托(${mp.michaelTrucks} 车) · Emma ${mp.emma} 托(${mp.emmaTrucks} 车) · 合计 ${mp.total} 托`,
+      formula: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                  <div style="padding:10px 12px;background:rgba(103,232,249,0.06);border:1px solid rgba(103,232,249,0.20);border-radius:8px;">
+                    <div style="font-size:9px;font-weight:800;color:#67e8f9;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">Michael 取的</div>
+                    <div style="font-size:22px;font-weight:800;color:#67e8f9;line-height:1;">${mp.michael} 托</div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.6;">
+                      ${mp.michaelTrucks} 车 · TT ${mp.michaelTT} · AMZ ${mp.michaelAMZ}${mp.michaelSwap ? ' · Swap ' + mp.michaelSwap : ''}
+                    </div>
+                  </div>
+                  <div style="padding:10px 12px;background:rgba(244,114,182,0.06);border:1px solid rgba(244,114,182,0.20);border-radius:8px;">
+                    <div style="font-size:9px;font-weight:800;color:var(--pink);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px;">Emma 取的</div>
+                    <div style="font-size:22px;font-weight:800;color:var(--pink);line-height:1;">${mp.emma} 托</div>
+                    <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.6;">
+                      ${mp.emmaTrucks} 车 · TT ${mp.emmaTT} · AMZ ${mp.emmaAMZ}${mp.emmaSwap ? ' · Swap ' + mp.emmaSwap : ''}
+                    </div>
+                  </div>
+                </div>
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:10px;padding-top:8px;"><span class="k"><b>本月合计</b></span><span class="v total" style="float:right;">${mp.total} 托 · ${mp.michaelTrucks + mp.emmaTrucks} 车</span></div>
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);line-height:1.7;">
+                  Hugo 应付:<b style="color:var(--amber);">${mp.michael} × £${rate} = £${fmt0(mp.michael * rate)}</b> <span style="font-size:10px;">(只算 Michael 取货 · Emma 自己跟 Hugo 结)</span><br>
+                  SSS 成本:Michael <b>£${fmt0(mp.michael * buyPrice)}</b> · Emma <b>£${fmt0(mp.emma * buyPrice)}</b> · 合计 <b>£${fmt0((mp.michael + mp.emma) * buyPrice)}</b>
+                </div>
+                <div style="margin-top:8px;font-size:10.5px;color:var(--text-dim);background:rgba(0,229,255,0.05);padding:7px 10px;border-radius:6px;border-left:2px solid var(--cyan);line-height:1.6;">
+                  <b>说明</b>:本月托盘只数 <b>未删除</b> 的取货事件。如果你删除了某条记录,它会立刻从此处消失。归属判定优先看 pickedUpBy 字段,无此字段则回落到 createdBy 邮箱(harreds.ceo=Michael / emma@maomail.uk=Emma)。
+                </div>`,
       rows
     };
   }
