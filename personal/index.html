@@ -11226,8 +11226,88 @@ function _ensurePartnershipCacheForAlerts() {
   if (typeof _seFetchPartnershipCache !== 'function') return;
   _alertsCacheFetched = true;
   _seFetchPartnershipCache().then(() => {
+    // Cleanup any local items that were left over from a partnership-side delete
+    // that hadn't propagated yet (covers the case where Michael deletes pickups in
+    // partnership app then opens personal app first — the partnership-side
+    // _cleanupStalePickupDeletes hasn't run yet).
+    if (typeof _personalCleanupStalePartnershipDeletes === 'function') {
+      _personalCleanupStalePartnershipDeletes();
+    }
     if (typeof renderSmartAlerts === 'function') renderSmartAlerts();
   });
+}
+
+// === Symmetric cleanup: personal-side mirror of the partnership's
+// _cleanupStalePickupDeletes. Looks at the partnership cache, finds any pickup
+// events flagged deleted, and removes the corresponding local items (customer
+// ledger entry, dailySupply truck, voids linked INV). Idempotent — only fires
+// once per page load, and only acts if there are actual stale items to clean.
+let _personalCleanupRan = false;
+async function _personalCleanupStalePartnershipDeletes() {
+  if (_personalCleanupRan) return;
+  _personalCleanupRan = true;
+  if (!_partnershipCache || !Array.isArray(_partnershipCache.events)) return;
+
+  // Collect linkSupplyIds of deleted partnership pickup events.
+  const deletedLinkIds = new Set();
+  for (const e of _partnershipCache.events) {
+    if (e.type === 'pickup' && e.deleted && e._linkSupplyId) {
+      deletedLinkIds.add(e._linkSupplyId);
+    }
+  }
+  if (deletedLinkIds.size === 0) return;
+
+  // 1. Collect ledger-entry ids to be removed (needed to void linked INVs first).
+  const ledgerIdsToRemove = new Set();
+  for (const c of (state.customers || [])) {
+    for (const e of (c.ledger || [])) {
+      if (e._linkSupplyId && deletedLinkIds.has(e._linkSupplyId)) {
+        ledgerIdsToRemove.add(e.id);
+      }
+    }
+  }
+
+  // 2. Void linked INVs (preserve audit trail — don't hard-delete)
+  let invoicesVoided = 0;
+  for (const inv of (state.invoices || [])) {
+    if (inv.linkedPickupId && ledgerIdsToRemove.has(inv.linkedPickupId) && inv.status !== 'void') {
+      inv.status = 'void';
+      inv.voidedAt = new Date().toISOString();
+      inv.voidReason = '关联取货已在合伙账删除';
+      invoicesVoided++;
+    }
+  }
+
+  // 3. Remove ledger entries
+  let ledgerRemoved = 0;
+  for (const c of (state.customers || [])) {
+    if (!Array.isArray(c.ledger)) continue;
+    const before = c.ledger.length;
+    c.ledger = c.ledger.filter(e => !(e._linkSupplyId && deletedLinkIds.has(e._linkSupplyId)));
+    ledgerRemoved += (before - c.ledger.length);
+  }
+
+  // 4. Remove dailySupply trucks (and drop now-empty day records)
+  let trucksRemoved = 0;
+  for (const dayRec of (state.dailySupply || [])) {
+    if (!Array.isArray(dayRec.trucks)) continue;
+    const before = dayRec.trucks.length;
+    dayRec.trucks = dayRec.trucks.filter(t => !(t._linkSupplyId && deletedLinkIds.has(t._linkSupplyId)));
+    trucksRemoved += (before - dayRec.trucks.length);
+  }
+  state.dailySupply = (state.dailySupply || []).filter(d => (d.trucks || []).length > 0);
+
+  if (ledgerRemoved + trucksRemoved + invoicesVoided === 0) return;
+
+  // Persist + refresh UI
+  try {
+    if (typeof saveUserDataNow === 'function') await saveUserDataNow();
+    else if (typeof save === 'function') save();
+  } catch (err) {
+    console.warn('[personal-cleanup] save failed:', err);
+  }
+  renderAll();
+  flash(`🧹 清理了 ${ledgerRemoved} 条客户流水 / ${trucksRemoved} 辆车 / ${invoicesVoided} 张 INV (合伙账已删除的)`);
 }
 
 function renderAll() {
