@@ -890,6 +890,38 @@ select option { background: var(--bg-2); color: var(--text); }
 .alert-tab-content.active { display: grid; gap: 8px; }
 .alert-tab-empty { text-align: center; padding: 30px 0; color: var(--text-dim); font-size: 12px; font-style: italic; }
 
+/* === Customer detail page tabs (2026-05-28) === */
+/* Pure DOM grouping wrapper for the customer-detail page. Display-only — every
+   inner #id is preserved; render functions inject into them unchanged. */
+.cust-tabs {
+  display: flex; gap: 6px; padding: 6px;
+  background: rgba(5, 6, 15, 0.45); border: 1px solid rgba(139, 150, 255, 0.12);
+  border-radius: 14px; margin-top: 24px;
+  overflow-x: auto;
+}
+.cust-tab {
+  padding: 11px 20px; border-radius: 10px; border: 0;
+  background: transparent; color: var(--text-dim); cursor: pointer;
+  font-size: 14px; font-weight: 700; white-space: nowrap;
+  font-family: inherit;
+  transition: all 0.18s ease;
+}
+.cust-tab:hover { color: var(--text); background: rgba(139, 150, 255, 0.08); }
+.cust-tab.active {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.28), rgba(0, 229, 255, 0.20));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.25), inset 0 0 0 1px rgba(255,255,255,0.06);
+}
+.cust-tab-count {
+  display: inline-block; margin-left: 6px; font-size: 11px;
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(139, 150, 255, 0.16); color: var(--text-dim); font-weight: 600;
+}
+.cust-tab.active .cust-tab-count { background: rgba(255,255,255,0.18); color: #fff; }
+.cust-tab-pane { display: none; }
+.cust-tab-pane.active { display: block; animation: custTabFade 0.2s ease; }
+@keyframes custTabFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
 /* Command palette (Cmd+K) */
 .cmdk-backdrop {
   display: none; position: fixed; inset: 0; z-index: 200;
@@ -2079,7 +2111,23 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
           </div>
 
-          <div class="card-title mt-6">新增流水</div>
+          <!-- ===== Customer detail tabs (2026-05-28) =====
+               Pure UI grouping. Each pane contains pre-existing sections with their
+               original IDs preserved. All render functions (renderCustomerDetail,
+               renderClientBreakdown, renderCustomerReceipts, renderCustomerInvoices,
+               etc.) keep targeting the same DOM ids — so logic / calculations /
+               cross-table sync are completely unaffected. -->
+          <div class="cust-tabs">
+            <button class="cust-tab active" data-tab="ledger" onclick="setCustomerTab('ledger')">📋 流水</button>
+            <button class="cust-tab" data-tab="weekly" onclick="setCustomerTab('weekly')">📊 周利润</button>
+            <button class="cust-tab" data-tab="breakdown" onclick="setCustomerTab('breakdown')">📄 周度明细</button>
+            <button class="cust-tab" data-tab="receipts" onclick="setCustomerTab('receipts')">🧾 Receipts <span class="cust-tab-count" id="cust-tab-cnt-rec">0</span></button>
+            <button class="cust-tab" data-tab="invoices" onclick="setCustomerTab('invoices')">📃 Invoices <span class="cust-tab-count" id="cust-tab-cnt-inv">0</span></button>
+          </div>
+
+          <!-- TAB PANE 1: 流水 (新增流水 + 流水明细) -->
+          <div class="cust-tab-pane active" data-tab-pane="ledger" style="margin-top:18px;">
+          <div class="card-title">新增流水</div>
           <div class="form-grid mt-4">
             <div class="form-row"><label>日期</label><input type="date" id="lg-date" oninput="updateLedgerPreview()"></div>
             <div class="form-row"><label>类型</label>
@@ -2123,8 +2171,11 @@ select option { background: var(--bg-2); color: var(--text); }
             </table>
           </div>
           <div id="ledger-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap;"></div>
+          </div><!-- /TAB PANE 1: ledger -->
 
-          <div class="card-title mt-6">本客户周利润明细 <span class="badge">周一 → 周日</span></div>
+          <!-- TAB PANE 2: 周利润 (本客户周利润明细) -->
+          <div class="cust-tab-pane" data-tab-pane="weekly" style="margin-top:18px;">
+          <div class="card-title">本客户周利润明细 <span class="badge">周一 → 周日</span></div>
           <div class="page-sub">该客户每周的取货数、营收、利润(按 £<span id="cw-perp">51</span> / 托盘 净利)</div>
           <div class="table-wrap mt-4">
             <table>
@@ -2132,9 +2183,12 @@ select option { background: var(--bg-2); color: var(--text); }
               <tbody id="cust-weekly-body"></tbody>
             </table>
           </div>
+          </div><!-- /TAB PANE 2: weekly -->
 
+          <!-- TAB PANE 3: 周度明细 (内部仍有客人版/我的版子 tab) -->
+          <div class="cust-tab-pane" data-tab-pane="breakdown" style="margin-top:18px;">
           <!-- ===== Weekly Statements (Customer-facing & Self) ===== -->
-          <div class="row mt-6" style="align-items:start;flex-wrap:wrap;gap:14px;">
+          <div class="row" style="align-items:start;flex-wrap:wrap;gap:14px;">
             <div class="grow" style="min-width:240px;">
               <div class="card-title">周度明细 <span class="badge">两份视图</span></div>
               <div class="page-sub">客人版只算我的费用(托盘款客人已预付,跟系统里的预付款是另一笔账)</div>
@@ -2181,7 +2235,11 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
           </div>
 
-          <div class="row mt-6" style="align-items:center;">
+          </div><!-- /TAB PANE 3: breakdown -->
+
+          <!-- TAB PANE 4: Receipts (收款历史) -->
+          <div class="cust-tab-pane" data-tab-pane="receipts" style="margin-top:18px;">
+          <div class="row" style="align-items:center;">
             <div class="grow">
               <div class="card-title" style="color:var(--green);">收款历史 Receipts <span class="badge" id="cd-rec-count" style="background:rgba(34,211,165,0.18);color:var(--green);">0 张</span></div>
               <div class="page-sub">客户预付时<b style="color:var(--green);">自动生成</b> · 可打印 / 改备注 / 作废 · <span class="dim">REC-DDMMYYYY-NNN</span></div>
@@ -2194,7 +2252,11 @@ select option { background: var(--bg-2); color: var(--text); }
             </table>
           </div>
 
-          <div class="row mt-6" style="align-items:center;">
+          </div><!-- /TAB PANE 4: receipts -->
+
+          <!-- TAB PANE 5: Invoices (发票历史) -->
+          <div class="cust-tab-pane" data-tab-pane="invoices" style="margin-top:18px;">
+          <div class="row" style="align-items:center;">
             <div class="grow">
               <div class="card-title">发票历史 Invoices <span class="badge" id="cd-inv-count">0 张</span></div>
               <div class="page-sub">客户取货时<b style="color:var(--cyan);">自动生成</b> · 可标记付款 / 作废 / 重新打印 · <span class="dim">INV-DDMMYYYY-NNN</span></div>
@@ -2207,6 +2269,7 @@ select option { background: var(--bg-2); color: var(--text); }
               <tbody id="cust-invoice-body"></tbody>
             </table>
           </div>
+          </div><!-- /TAB PANE 5: invoices -->
         </div>
       </div>
     </section>
@@ -2945,6 +3008,19 @@ let currentCustomer = null;
 const LEDGER_PAGE_DAYS = 15;
 let _ledgerPage = 1;
 let _ledgerShowAll = false;
+
+// === Customer detail page tabs (2026-05-28) ===
+// Pure DOM grouping. Switching tabs only toggles CSS classes — no data is
+// fetched/computed/synced. All inner DOM ids remain valid and render functions
+// continue to inject into them whether visible or not.
+let _customerActiveTab = 'ledger';
+function setCustomerTab(name) {
+  _customerActiveTab = name;
+  const root = document.getElementById('customer-detail');
+  if (!root) return;
+  root.querySelectorAll('.cust-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  root.querySelectorAll('.cust-tab-pane').forEach(p => p.classList.toggle('active', p.dataset.tabPane === name));
+}
 
 function ledgerPagePrev() {
   if (_ledgerPage > 1) { _ledgerPage--; renderCustomerDetail(); }
@@ -6042,6 +6118,9 @@ function openCustomer(id) {
   // Reset ledger pagination when switching customers
   _ledgerPage = 1;
   _ledgerShowAll = false;
+  // Reset tab to default (流水)
+  _customerActiveTab = 'ledger';
+  setTimeout(() => setCustomerTab('ledger'), 0);  // run after DOM displays
   document.getElementById('customer-grid').classList.add('hide');
   document.querySelector('[data-view="customers"] .page-head button').classList.add('hide');
   document.getElementById('customer-detail').classList.remove('hide');
@@ -8488,10 +8567,12 @@ function deleteInvoiceForever(id) {
 function renderCustomerInvoices(c) {
   const tb = document.getElementById('cust-invoice-body');
   const cnt = document.getElementById('cd-inv-count');
+  const tabCnt = document.getElementById('cust-tab-cnt-inv');
   if (!tb) return;
-  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; return; }
+  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; if (tabCnt) tabCnt.textContent = '0'; return; }
   const list = customerInvoices(c.id);
   if (cnt) cnt.textContent = list.length + ' 张';
+  if (tabCnt) tabCnt.textContent = String(list.length);
   if (!list.length) {
     tb.innerHTML = `<tr><td colspan="7" class="dim" style="text-align:center;padding:30px;">还没有发票 — 点上方"＋ 新建 Invoice"开第一张</td></tr>`;
     return;
@@ -9620,9 +9701,11 @@ function editReceiptNote(id) {
 function renderCustomerReceipts(c) {
   const tb = document.getElementById('cust-receipt-body');
   const cnt = document.getElementById('cd-rec-count');
+  const tabCnt = document.getElementById('cust-tab-cnt-rec');
   if (!tb) return;
-  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; return; }
+  if (!c) { tb.innerHTML = ''; if (cnt) cnt.textContent = '0 张'; if (tabCnt) tabCnt.textContent = '0'; return; }
   const list = customerReceipts(c.id);
+  if (tabCnt) tabCnt.textContent = String(list.length);
   if (cnt) cnt.textContent = list.length + ' 张';
   if (!list.length) {
     tb.innerHTML = `<tr><td colspan="6" class="dim" style="text-align:center;padding:30px;">还没有收款单 — 客户预付时自动生成</td></tr>`;
