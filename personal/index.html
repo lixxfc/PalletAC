@@ -2111,13 +2111,18 @@ select option { background: var(--bg-2); color: var(--text); }
           <div id="lg-preview" class="preview-box"></div>
           <div class="row mt-4"><button class="btn primary" onclick="addLedger()">＋ 添加流水</button></div>
 
-          <div class="card-title mt-6">流水明细 <span class="badge" id="cd-count">0 条</span></div>
+          <div class="card-title mt-6 row" style="align-items:center;gap:12px;flex-wrap:wrap;">
+            <div class="grow" style="min-width:200px;">流水明细 <span class="badge" id="cd-count">0 条</span></div>
+            <div id="ledger-page-info" style="font-size:11px;color:var(--text-dim);"></div>
+            <button class="btn ghost sm" id="ledger-show-all-btn" onclick="ledgerToggleShowAll()" style="display:none;">全部</button>
+          </div>
           <div class="table-wrap mt-4">
             <table>
               <thead><tr><th>日期</th><th>类型</th><th>托盘</th><th>车次</th><th>金额</th><th>余额</th><th>备注</th><th></th></tr></thead>
               <tbody id="ledger-body"></tbody>
             </table>
           </div>
+          <div id="ledger-pagination" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap;"></div>
 
           <div class="card-title mt-6">本客户周利润明细 <span class="badge">周一 → 周日</span></div>
           <div class="page-sub">该客户每周的取货数、营收、利润(按 £<span id="cw-perp">51</span> / 托盘 净利)</div>
@@ -2931,6 +2936,27 @@ const OWNER_EMAIL = 'harreds.ceo@gmail.com';
 let currentUser = null;
 let state = null;
 let currentCustomer = null;
+
+// === Customer ledger pagination state (2026-05-28) ===
+// Display ledger entries 15 unique dates per page (newest dates first).
+// "全部" toggle bypasses pagination. Reset on customer switch.
+// IMPORTANT: this is PURE DISPLAY — running balance / customer balance / cross-table
+// sync / all calculations operate on the FULL c.ledger array, not the visible page.
+const LEDGER_PAGE_DAYS = 15;
+let _ledgerPage = 1;
+let _ledgerShowAll = false;
+
+function ledgerPagePrev() {
+  if (_ledgerPage > 1) { _ledgerPage--; renderCustomerDetail(); }
+}
+function ledgerPageNext() {
+  _ledgerPage++; renderCustomerDetail();
+}
+function ledgerToggleShowAll() {
+  _ledgerShowAll = !_ledgerShowAll;
+  if (!_ledgerShowAll) _ledgerPage = 1;
+  renderCustomerDetail();
+}
 let charts = {};
 let authMode = 'signin';
 
@@ -5666,10 +5692,70 @@ function renderCustomerDetail() {
   // Update prev/next customer position indicator
   if (typeof updateCustomerSwitcher === 'function') updateCustomerSwitcher();
 
+  // Pass 1: compute running balance for ALL entries chronologically
+  // (the per-row balance shown should reflect cumulative-since-account-opened,
+  // even when only a slice of dates is visible due to pagination)
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
   let running = 0;
-  const rowsHtml = sorted.map(e => {
-    if (e.type === 'deposit') running += e.amount; else running -= e.amount;
+  const entriesWithRunning = sorted.map(e => {
+    if (e.type === 'deposit') running += (+(e.amount || 0) || 0);
+    else running -= (+(e.amount || 0) || 0);
+    return { e, running };
+  });
+
+  // Pass 2: paginate by unique date (15 days per page).
+  // 全部 toggle bypasses pagination entirely.
+  const uniqueDatesDesc = [...new Set(entriesWithRunning.map(x => x.e.date).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a));
+  const totalPages = Math.max(1, Math.ceil(uniqueDatesDesc.length / LEDGER_PAGE_DAYS));
+  const safePage = Math.min(Math.max(1, _ledgerPage), totalPages);
+  if (safePage !== _ledgerPage) _ledgerPage = safePage;  // clamp
+  const pageDatesArr = _ledgerShowAll
+    ? uniqueDatesDesc
+    : uniqueDatesDesc.slice((safePage - 1) * LEDGER_PAGE_DAYS, safePage * LEDGER_PAGE_DAYS);
+  const pageDates = new Set(pageDatesArr);
+  // Entries IN this page (chronological)
+  const pageEntries = entriesWithRunning.filter(x => pageDates.has(x.e.date));
+
+  // Render page-info / pagination UI
+  const showAllBtn = document.getElementById('ledger-show-all-btn');
+  const pageInfo = document.getElementById('ledger-page-info');
+  const pager = document.getElementById('ledger-pagination');
+  if (showAllBtn) {
+    if (uniqueDatesDesc.length > LEDGER_PAGE_DAYS) {
+      showAllBtn.style.display = '';
+      showAllBtn.textContent = _ledgerShowAll ? '↩ 分页(15天/页)' : '查看全部';
+    } else {
+      showAllBtn.style.display = 'none';
+    }
+  }
+  if (pageInfo) {
+    if (_ledgerShowAll) {
+      pageInfo.textContent = `显示全部 ${uniqueDatesDesc.length} 天 · ${entriesWithRunning.length} 条`;
+    } else if (uniqueDatesDesc.length > LEDGER_PAGE_DAYS) {
+      const start = pageDatesArr[pageDatesArr.length - 1] || '';
+      const end = pageDatesArr[0] || '';
+      pageInfo.textContent = `第 ${safePage} / ${totalPages} 页 · ${start} → ${end} · ${pageEntries.length}/${entriesWithRunning.length} 条`;
+    } else {
+      pageInfo.textContent = entriesWithRunning.length > 0 ? `${entriesWithRunning.length} 条 · ${uniqueDatesDesc.length} 天` : '';
+    }
+  }
+  if (pager) {
+    if (!_ledgerShowAll && uniqueDatesDesc.length > LEDGER_PAGE_DAYS) {
+      const prevDisabled = safePage <= 1;
+      const nextDisabled = safePage >= totalPages;
+      pager.innerHTML = `
+        <button class="btn ghost sm" onclick="ledgerPagePrev()" ${prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>← 上一页 (新)</button>
+        <span style="color:var(--text-dim);font-size:11px;padding:0 8px;">第 ${safePage} / ${totalPages} 页</span>
+        <button class="btn ghost sm" onclick="ledgerPageNext()" ${nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>下一页 (旧) →</button>
+      `;
+    } else {
+      pager.innerHTML = '';
+    }
+  }
+
+  // Pass 3: build row HTML from page entries (newest first when injected)
+  const rowsHtml = pageEntries.map(({ e, running }) => {
     const typeMap = { deposit: ['预付', 'badge-deposit'], pickup: ['取货', 'badge-pickup'], refund: ['退款', 'badge-refund'], adjust: ['调整', 'badge-adjust'] };
     const [label, cls] = typeMap[e.type] || ['?', 'badge-adjust'];
     const sign = e.type === 'deposit' ? '+' : '-';
@@ -5953,6 +6039,9 @@ function createCustomer() {
 }
 function openCustomer(id) {
   currentCustomer = id;
+  // Reset ledger pagination when switching customers
+  _ledgerPage = 1;
+  _ledgerShowAll = false;
   document.getElementById('customer-grid').classList.add('hide');
   document.querySelector('[data-view="customers"] .page-head button').classList.add('hide');
   document.getElementById('customer-detail').classList.remove('hide');
