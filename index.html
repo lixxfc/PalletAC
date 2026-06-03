@@ -5693,18 +5693,79 @@ function printPinv(id) {
 }
 
 // === Cancel partnership invoice ===
+// CRITICAL BUG FIX (2026-06-03): previously toggling inv.status only changed the
+// invoice's display state. The underlying `out-supplier` (PINV) or `in-emma` (SINV)
+// event stayed active, so 资金池 / SSS share / 累计出金 / 累计入金 all kept counting
+// the cancelled transaction. Now the underlying event is soft-deleted/restored
+// atomically with the invoice status flip.
 function cancelPartnershipInvoice(id) {
   const inv = (state.partnershipInvoices || []).find(i => i.id === id);
   if (!inv) return;
+  const linkedEv = inv.linkedEventId
+    ? (state.events || []).find(e => e.id === inv.linkedEventId)
+    : null;
+
   if (inv.status === 'cancelled') {
-    if (!confirm('恢复(取消作废)?')) return;
+    // ── RESTORE path: un-cancel invoice AND restore underlying event ──
+    const evNote = linkedEv && linkedEv.deleted
+      ? `\n\n同时恢复:\n  • 关联资金流事件 (${linkedEv.type})\n  • 资金池 / SSS 份额 / 累计入金 / 累计出金 立刻反映这笔交易`
+      : '';
+    if (!confirm('恢复(取消作废)?' + evNote)) return;
     inv.status = 'issued';
+    if (linkedEv && linkedEv.deleted) {
+      delete linkedEv.deleted;
+      delete linkedEv.deletedAt;
+      delete linkedEv.deletedBy;
+      linkedEv._restoredViaInvAt = new Date().toISOString();
+    }
   } else {
-    if (!confirm('作废这张 ' + (inv.type === 'sale-emma' ? 'SINV-Emma' : 'PINV-SSS') + '?(记录保留,可恢复)')) return;
+    // ── CANCEL path: cancel invoice AND soft-delete underlying event ──
+    const evTypeLabel = linkedEv
+      ? (linkedEv.type === 'out-supplier' ? '付 SSS'
+        : linkedEv.type === 'in-emma' ? 'Emma 转账'
+        : linkedEv.type === 'out-hugo' ? '付 Hugo'
+        : '资金流')
+      : null;
+    const evAmount = linkedEv ? (linkedEv.amount || 0) : 0;
+    const evNote = linkedEv
+      ? `\n\n会同时:\n  • 关联 ${evTypeLabel} £${(Math.round(evAmount*100)/100).toLocaleString('en-GB')} 事件 软删除\n  • 资金池 / SSS 份额 / 累计入金 / 累计出金 KPI 立刻回到这笔未发生的状态\n  • 点恢复时全部可逆`
+      : '';
+    if (!confirm('作废这张 ' + (inv.type === 'sale-emma' ? 'SINV-Emma' : 'PINV-SSS') + '?(记录保留,可恢复)' + evNote)) return;
     inv.status = 'cancelled';
+    if (linkedEv && !linkedEv.deleted) {
+      linkedEv.deleted = true;
+      linkedEv.deletedAt = new Date().toISOString();
+      linkedEv.deletedBy = ((currentUser && currentUser.email) || '?') + ' (via INV 作废)';
+    }
   }
   inv.updatedAt = new Date().toISOString();
   save(); renderAll();
+}
+
+// One-time auto-heal for existing data where INVs were cancelled BEFORE the fix
+// above shipped — their underlying events were never soft-deleted, so KPIs are
+// over-counted. This scans for the divergence and brings them in sync. Idempotent.
+let _invCancelHealRan = false;
+function _autoHealCancelledInvEvents() {
+  if (_invCancelHealRan) return;
+  _invCancelHealRan = true;
+  if (!Array.isArray(state.events) || !Array.isArray(state.partnershipInvoices)) return;
+  let healed = 0;
+  for (const inv of state.partnershipInvoices) {
+    if (inv.status !== 'cancelled') continue;
+    if (!inv.linkedEventId) continue;
+    const ev = state.events.find(e => e.id === inv.linkedEventId);
+    if (!ev || ev.deleted) continue;
+    ev.deleted = true;
+    ev.deletedAt = inv.updatedAt || new Date().toISOString();
+    ev.deletedBy = 'auto-heal (via cancelled INV ' + (inv.number || '') + ')';
+    healed++;
+  }
+  if (healed > 0) {
+    save();
+    renderAll();
+    flash(`🧹 自动修复:发现 ${healed} 笔历史作废发票的底层事件未被同步,已修复 · 资金池 / SSS 份额数据已立即回正`);
+  }
 }
 
 // === Partnership invoices list UI ===
@@ -7374,6 +7435,9 @@ function renderAll() {
   // One-time cleanup of stale deleted pickups that never cascaded to personal_data.
   // Idempotent — only runs once per page load. Fires async so render doesn't block.
   if (typeof _cleanupStalePickupDeletes === 'function') _cleanupStalePickupDeletes();
+  // One-time auto-heal for cancelled INVs whose underlying events were never
+  // soft-deleted (bug pre-2026-06-03). Idempotent.
+  if (typeof _autoHealCancelledInvEvents === 'function') _autoHealCancelledInvEvents();
 }
 
 // === Monthly History Cards (partnership dashboard, bottom) ===
