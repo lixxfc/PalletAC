@@ -3343,7 +3343,21 @@ async function saveUserDataNow() {
 
 // ============ COMPUTE ============
 const perPalletProfit = () => (state.params.sellPrice + state.params.myFee - state.params.buyPrice);
-const fmt = v => '£' + Math.round(v).toLocaleString('en-GB');
+// fmt: format any number as a £-prefixed integer string. Defensive against
+// NaN / undefined so a single corrupt amount doesn't render '£NaN'.
+const fmt = v => {
+  const n = +v;
+  if (!isFinite(n)) return '£0';
+  return (n < 0 ? '-£' : '£') + Math.abs(Math.round(n)).toLocaleString('en-GB');
+};
+// Number-only formatter (no £ symbol) — used when the caller adds its own
+// prefix (e.g. "−£" with a Unicode minus). Avoids the "££" double-symbol bug
+// when concatenating with fmt().
+const fmt0 = v => {
+  const n = +v;
+  if (!isFinite(n)) return '0';
+  return Math.abs(Math.round(n)).toLocaleString('en-GB');
+};
 
 // SINGLE SOURCE OF TRUTH — every pickup lives in a customer's ledger.
 // allPickups() flattens pickup-type ledger entries across all customers,
@@ -4130,7 +4144,7 @@ async function saveUnifiedOutHugo() {
     createdBy: (currentUser && currentUser.email) || 'harreds.ceo@gmail.com',
     createdAt: new Date().toISOString()
   };
-  await _ueRunCrossTableSave(ev, null, '已记录付 Hugo £' + fmt(amount));
+  await _ueRunCrossTableSave(ev, null, '已记录付 Hugo ' + fmt(amount));
 }
 async function saveUnifiedInCustomer() {
   const date = document.getElementById('ue-cust-date').value;
@@ -4169,7 +4183,7 @@ async function saveUnifiedInCustomer() {
     save();
     renderAll();
     closeSmartEntry();
-    flash(`✓ ${cust.name} 付款 £${fmt(amount)} · 自动开 REC`);
+    flash(`✓ ${cust.name} 付款 ${fmt(amount)} · 自动开 REC`);
   } catch (e) {
     alert('保存失败:' + (e.message || e));
     btn.disabled = false; btn.style.opacity = ''; txt.textContent = origLbl;

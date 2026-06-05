@@ -2617,7 +2617,13 @@ async function saveUserDataNow() {
 }
 
 // ===== COMPUTE =====
-const fmt = v => (v < 0 ? '-£' : '£') + Math.abs(Math.round(v)).toLocaleString('en-GB');
+// fmt: format any number as a £-prefixed integer string. NaN/undefined fall
+// through to '£0' so a single corrupt event doesn't render '£NaN' anywhere.
+const fmt = v => {
+  const n = +v;
+  if (!isFinite(n)) return '£0';
+  return (n < 0 ? '-£' : '£') + Math.abs(Math.round(n)).toLocaleString('en-GB');
+};
 
 function getTransfers() { return state.events.filter(e => e.type === 'transfer' && !e.deleted); }
 function getPickups() { return state.events.filter(e => e.type === 'pickup' && !e.deleted); }
@@ -3431,7 +3437,7 @@ function renderTransfers() {
       ? `<button class="btn sm warn" onclick="restoreEvent('${r.id}')">恢复</button>`
       : `<button class="btn sm danger" onclick="delEvent('${r.id}')">删</button>`;
     const hugoBadge = r.includesHugoFee && r.hugoFeeAmount > 0
-      ? ` <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;">+ Hugo £${fmt(r.hugoFeeAmount)}</span>`
+      ? ` <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);font-size:9px;">+ Hugo ${fmt(r.hugoFeeAmount)}</span>`
       : '';
     const palletsTag = r.pallets ? ` <span class="dim" style="font-size:11px;">(${r.pallets} 托盘)</span>` : '';
     return `<tr${cls}>
@@ -5365,7 +5371,7 @@ function addTransfer() {
 
   save(); renderAll();
   const totalSent = baseAmount + hugoFee;
-  flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo £' + fmt(hugoFee) + ')' : '') + autoEnabledMsg);
+  flash('已记录转账 ' + fmt(totalSent) + (hugoFee > 0 ? ' (含 Hugo ' + fmt(hugoFee) + ')' : '') + autoEnabledMsg);
 }
 
 // =====================================================
@@ -6335,9 +6341,9 @@ function renderPtInvoices() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const sumActive = arr => arr.filter(i => i.status !== 'cancelled').reduce((s, i) => s + (i.amount || 0), 0);
   set('pt-sinv-count', sinv.length);
-  set('pt-sinv-sum', '总额 £' + fmt(sumActive(sinv)));
+  set('pt-sinv-sum', '总额 ' + fmt(sumActive(sinv)));
   set('pt-pinv-count', pinv.length);
-  set('pt-pinv-sum', '总额 £' + fmt(sumActive(pinv)));
+  set('pt-pinv-sum', '总额 ' + fmt(sumActive(pinv)));
   const ym = new Date().toISOString().slice(0, 7);
   const monthCount = all.filter(i => (i.date || '').startsWith(ym)).length;
   set('pt-month-count', monthCount);
@@ -6379,7 +6385,7 @@ function _renderPtInvRow(inv, color, kind) {
     <td style="font-weight:700;color:${color};font-variant-numeric:tabular-nums;">${escapeHtml(inv.number)}</td>
     <td>${_ptInvDateDisplay(inv.date)}</td>
     <td class="num">${inv.pallets || '—'}</td>
-    <td class="num"><b>£${fmt(inv.amount || 0)}</b></td>
+    <td class="num"><b>${fmt(inv.amount || 0)}</b></td>
     <td>${statusBadge}</td>
     <td>${emailBadge}</td>
     <td style="text-align:right;white-space:nowrap;">
@@ -6952,7 +6958,7 @@ async function reassignPickupOwner(id) {
   const wasMichael = isMichaelPickup(ev);
   const newOwner = wasMichael ? 'Emma' : 'Michael';
   const msg = `把这条取货从 ${wasMichael ? 'Michael' : 'Emma'} 改成 ${newOwner}?\n\n` +
-    `${ev.pallets} 托 · ${ev.palletType || ''} · £${fmt(ev.amount || 0)}\n\n` +
+    `${ev.pallets} 托 · ${ev.palletType || ''} · ${fmt(ev.amount || 0)}\n\n` +
     `会同时更新:\n` +
     `• 合伙账(SSS 池分配 / Hugo 应付 / 月度统计)\n` +
     `• 个人 App(每日供货 / 图表)`;
@@ -7007,7 +7013,7 @@ function openEditPickupModal(id) {
   const owner = isMichaelPickup(ev) ? 'Michael' : 'Emma';
   const ctxEl = document.getElementById('ep-context');
   if (ctxEl) {
-    ctxEl.innerHTML = `<b>归属</b>: ${owner} · <b>当前金额</b>: £${fmt(ev.amount || 0)} · <b>当前托盘</b>: ${ev.pallets} 托 ${ev.palletType || ''}${ev.isSwap ? ' (Swap)' : ''} · 改完保存会同步更新客户账本 / 每日供货 / INV`;
+    ctxEl.innerHTML = `<b>归属</b>: ${owner} · <b>当前金额</b>: ${fmt(ev.amount || 0)} · <b>当前托盘</b>: ${ev.pallets} 托 ${ev.palletType || ''}${ev.isSwap ? ' (Swap)' : ''} · 改完保存会同步更新客户账本 / 每日供货 / INV`;
   }
   document.getElementById('edit-pickup-modal').classList.add('open');
 }
@@ -7038,11 +7044,16 @@ async function saveEditPickup() {
   const linkId = ev._linkSupplyId;
 
   // === 2. Snapshot the OLD partnership event (for rollback + 1:1 matching) ===
+  // Includes Emma-transfer markers so a personal-sync failure can fully revert.
   const oldEvSnapshot = JSON.parse(JSON.stringify({
     date: ev.date, palletType: ev.palletType, pallets: ev.pallets,
     truck: ev.truck, note: ev.note, isSwap: ev.isSwap, amount: ev.amount,
     _pickupUid: ev._pickupUid,           // for strict 1:1 cross-table matching
-    _linkSupplyId: ev._linkSupplyId
+    _linkSupplyId: ev._linkSupplyId,
+    _emmaTransferDay: ev._emmaTransferDay,
+    _emmaTransferTTPallets: ev._emmaTransferTTPallets,
+    _emmaTransferAmount: ev._emmaTransferAmount,
+    _emmaGiftedAmzPallets: ev._emmaGiftedAmzPallets
   }));
 
   // === 3. Apply mutation to partnership event in memory ===
@@ -7056,6 +7067,21 @@ async function saveEditPickup() {
   ev.updatedAt  = new Date().toISOString();
   ev._lastEditedBy = (currentUser && currentUser.email) || '?';
 
+  // ─── EMMA TRANSFER MARKER RECALC (2026-06-05) ───
+  // If this pickup carries the Emma-transfer-trial markers, recompute the
+  // per-truck transfer fields based on the NEW pallet type / pallet count.
+  // Without this, the personal-side surcharge row would diverge from the
+  // partnership accrued total. (Mirrors the same block in saveLedgerEdit.)
+  if (ev._emmaTransferDay) {
+    const ptUpper = (ev.palletType || '').toUpperCase();
+    const ttEligible = ev.isSwap || ptUpper === 'TT';
+    const amzEligible = !ev.isSwap && (ptUpper === 'AMAZON' || ptUpper === 'AMZ');
+    ev._emmaTransferTTPallets = ttEligible ? ev.pallets : 0;
+    ev._emmaTransferAmount    = ttEligible ? ev.pallets * EMMA_TRANSFER_RATE : 0;
+    ev._emmaGiftedAmzPallets  = amzEligible ? ev.pallets : 0;
+    ev._emmaTransferUpdatedAt = new Date().toISOString();
+  }
+
   const btn = document.getElementById('ep-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
 
@@ -7066,7 +7092,7 @@ async function saveEditPickup() {
   }
 
   if (!personalRes.ok) {
-    // Roll back partnership-side mutation
+    // Roll back partnership-side mutation (including Emma-transfer markers)
     ev.date       = oldEvSnapshot.date;
     ev.palletType = oldEvSnapshot.palletType;
     ev.pallets    = oldEvSnapshot.pallets;
@@ -7074,6 +7100,12 @@ async function saveEditPickup() {
     ev.note       = oldEvSnapshot.note;
     ev.isSwap     = oldEvSnapshot.isSwap;
     ev.amount     = oldEvSnapshot.amount;
+    if (oldEvSnapshot._emmaTransferDay !== undefined) {
+      ev._emmaTransferTTPallets = oldEvSnapshot._emmaTransferTTPallets;
+      ev._emmaTransferAmount    = oldEvSnapshot._emmaTransferAmount;
+      ev._emmaGiftedAmzPallets  = oldEvSnapshot._emmaGiftedAmzPallets;
+      delete ev._emmaTransferUpdatedAt;
+    }
     delete ev.updatedAt;
     delete ev._lastEditedBy;
     if (btn) { btn.disabled = false; btn.textContent = '保存修改'; }
@@ -7307,11 +7339,11 @@ function updateOpeningPreview() {
   const mShareOpen = s - e;
   prev.innerHTML = `
     <div style="font-weight:700;color:#c4b5fd;margin-bottom:6px;">预览(切换日的份额分配)</div>
-    <div style="display:flex;justify-content:space-between;"><span>SSS 总池</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">£${fmt(s)}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span>− Emma 切换日预付</span><span style="font-variant-numeric:tabular-nums;color:var(--pink);">−£${fmt(e)}</span></div>
-    <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(139,150,255,0.2);margin-top:4px;padding-top:4px;"><span><b>= 我切换日的份额</b></span><span style="font-variant-numeric:tabular-nums;color:${mShareOpen < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt(mShareOpen)}</span></div>
-    <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--mute-2);font-size:11px;"><span>Hugo 期初欠款</span><span style="font-variant-numeric:tabular-nums;">£${fmt(h)}</span></div>
-    ${mShareOpen < 0 ? '<div style="margin-top:6px;font-size:10.5px;color:var(--amber);">💡 你切换日是负数 — 表示老模式里你"透支"了 £' + fmt(Math.abs(mShareOpen)) + '(都通过 Emma 替你付了)。这正常。</div>' : ''}
+    <div style="display:flex;justify-content:space-between;"><span>SSS 总池</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${fmt(s)}</span></div>
+    <div style="display:flex;justify-content:space-between;"><span>− Emma 切换日预付</span><span style="font-variant-numeric:tabular-nums;color:var(--pink);">−${fmt(e)}</span></div>
+    <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(139,150,255,0.2);margin-top:4px;padding-top:4px;"><span><b>= 我切换日的份额</b></span><span style="font-variant-numeric:tabular-nums;color:${mShareOpen < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(mShareOpen)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--mute-2);font-size:11px;"><span>Hugo 期初欠款</span><span style="font-variant-numeric:tabular-nums;">${fmt(h)}</span></div>
+    ${mShareOpen < 0 ? '<div style="margin-top:6px;font-size:10.5px;color:var(--amber);">💡 你切换日是负数 — 表示老模式里你"透支"了 ' + fmt(Math.abs(mShareOpen)) + '(都通过 Emma 替你付了)。这正常。</div>' : ''}
   `;
 }
 function saveOpeningBalances() {
@@ -7322,7 +7354,7 @@ function saveOpeningBalances() {
   const e = parseFloat(eIn && eIn.value);
   const h = parseFloat(hIn && hIn.value);
   if (isNaN(s) || isNaN(e) || isNaN(h)) { alert('三个值都要填'); return; }
-  if (!confirm(`确认修改期初余额?\n\n• SSS 总池: £${fmt(s)}\n• Emma 预付: £${fmt(e)}\n• Hugo 欠款: £${fmt(h)}\n\n所有相关数字会立即重新计算。`)) return;
+  if (!confirm(`确认修改期初余额?\n\n• SSS 总池: ${fmt(s)}\n• Emma 预付: ${fmt(e)}\n• Hugo 欠款: ${fmt(h)}\n\n所有相关数字会立即重新计算。`)) return;
   state.params.sssOpeningCredit = s;
   state.params.emmaOpeningCredit = e;
   state.params.hugoOpeningOwed = h;
@@ -7817,7 +7849,7 @@ function renderNewModeKpis() {
   set('nm-sss-sub', sss >= 0 ? `够拉 ${Math.floor(sss / buyPrice)} 托` : `透支 ${fmt(Math.abs(sss))}`);
 
   // 2b. SSS pool allocation (Michael vs Emma)
-  set('nm-sss-total', '£' + fmt(sss));
+  set('nm-sss-total', fmt(sss));
   const mShare = michaelSssShare();
   const eShare = emmaSssShare();
   const WARN_THRESH = buyPrice * 5;   // < 5 pallets remaining = warn
@@ -7828,14 +7860,14 @@ function renderNewModeKpis() {
     mValEl.textContent = fmt(mShare.remaining);
     mValEl.style.color = mShare.remaining < 0 ? 'var(--rose)' : (mShare.remaining < WARN_THRESH ? 'var(--amber)' : 'var(--green)');
   }
-  set('nm-sss-michael-sub', mShare.remaining >= 0 ? `够拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt(Math.abs(mShare.remaining))}`);
-  set('nm-sss-michael-in', '£' + fmt(mShare.in));
-  set('nm-sss-michael-used', '−£' + fmt(mShare.used));
+  set('nm-sss-michael-sub', mShare.remaining >= 0 ? `够拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 ${fmt(Math.abs(mShare.remaining))}`);
+  set('nm-sss-michael-in', fmt(mShare.in));
+  set('nm-sss-michael-used', '−£' + fmt0(mShare.used));
   const mWarn = document.getElementById('nm-sss-michael-warn');
   if (mWarn) {
     if (mShare.remaining < 0) {
       mWarn.style.display = ''; mWarn.style.background = 'rgba(244,63,94,0.10)'; mWarn.style.borderColor = 'rgba(244,63,94,0.30)'; mWarn.style.color = 'var(--rose)';
-      mWarn.innerHTML = `🚨 <b>你的份额已透支 £${fmt(Math.abs(mShare.remaining))}</b> — 需要再付 SSS 补充`;
+      mWarn.innerHTML = `🚨 <b>你的份额已透支 ${fmt(Math.abs(mShare.remaining))}</b> — 需要再付 SSS 补充`;
     } else if (mShare.remaining < WARN_THRESH) {
       mWarn.style.display = ''; mWarn.style.background = 'rgba(251,113,133,0.10)'; mWarn.style.borderColor = 'rgba(251,113,133,0.30)'; mWarn.style.color = 'var(--rose)';
       mWarn.innerHTML = `⚠ <b>你的份额不足 5 托</b> — 该续款给 SSS 了`;
@@ -7852,14 +7884,14 @@ function renderNewModeKpis() {
     eValEl.textContent = fmt(eShare.remaining);
     eValEl.style.color = eShare.remaining < 0 ? 'var(--rose)' : (eShare.remaining < WARN_THRESH ? 'var(--amber)' : 'var(--pink)');
   }
-  set('nm-sss-emma-sub', eShare.remaining >= 0 ? `她够拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `她透支 £${fmt(Math.abs(eShare.remaining))}`);
-  set('nm-sss-emma-in', '£' + fmt(eShare.in));
-  set('nm-sss-emma-used', '−£' + fmt(eShare.used));
+  set('nm-sss-emma-sub', eShare.remaining >= 0 ? `她够拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `她透支 ${fmt(Math.abs(eShare.remaining))}`);
+  set('nm-sss-emma-in', fmt(eShare.in));
+  set('nm-sss-emma-used', '−£' + fmt0(eShare.used));
   const eWarn = document.getElementById('nm-sss-emma-warn');
   if (eWarn) {
     if (eShare.remaining < 0) {
       eWarn.style.display = ''; eWarn.style.background = 'rgba(244,63,94,0.10)'; eWarn.style.borderColor = 'rgba(244,63,94,0.30)'; eWarn.style.color = 'var(--rose)';
-      eWarn.innerHTML = `🚨 <b>Emma 份额已透支 £${fmt(Math.abs(eShare.remaining))}</b> — 提醒她再转账`;
+      eWarn.innerHTML = `🚨 <b>Emma 份额已透支 ${fmt(Math.abs(eShare.remaining))}</b> — 提醒她再转账`;
     } else if (eShare.remaining < WARN_THRESH) {
       eWarn.style.display = ''; eWarn.style.background = 'rgba(251,113,133,0.10)'; eWarn.style.borderColor = 'rgba(251,113,133,0.30)'; eWarn.style.color = 'var(--rose)';
       eWarn.innerHTML = `⚠ <b>Emma 份额不足 5 托</b> — 该让她续款了`;
@@ -7912,10 +7944,10 @@ function openModeSwitchModal() {
   if (preview) {
     preview.innerHTML = `
       <div><b>今天日期:</b> ${today}(将作为 partnershipNewModeDate)</div>
-      <div style="margin-top:6px;"><b>Hugo 期初欠款 (auto):</b> <span style="color:var(--rose);font-weight:700;">£${fmt(owedNow)}</span>(从现在 "Michael 待结算" 快照)</div>
-      <div style="margin-top:6px;"><b>Emma 旧账(当前余额):</b> <span style="color:${emmaBalNow < 0 ? 'var(--rose)' : 'var(--green)'};font-weight:700;">£${fmt(emmaBalNow)}</span>${emmaBalNow < 0 ? '(你欠 Emma · 会转成她的 SSS 预付信用)' : ''}</div>
+      <div style="margin-top:6px;"><b>Hugo 期初欠款 (auto):</b> <span style="color:var(--rose);font-weight:700;">${fmt(owedNow)}</span>(从现在 "Michael 待结算" 快照)</div>
+      <div style="margin-top:6px;"><b>Emma 旧账(当前余额):</b> <span style="color:${emmaBalNow < 0 ? 'var(--rose)' : 'var(--green)'};font-weight:700;">${fmt(emmaBalNow)}</span>${emmaBalNow < 0 ? '(你欠 Emma · 会转成她的 SSS 预付信用)' : ''}</div>
       <div style="margin-top:6px;"><b>Hugo 预付池剩余:</b> ${poolBalance >= 0 ? '£' : '−£'}${fmt(Math.abs(poolBalance))}${poolBalance > 0 ? '(Emma 还会还给你)' : (poolBalance < 0 ? '(已亏空,折进 Hugo 欠款)' : '')}</div>
-      ${poolBalance > 0 ? `<div style="margin-top:6px;color:var(--green);">✓ 自动新建 <code style="background:rgba(34,211,165,0.10);padding:1px 5px;border-radius:3px;">in-emma £${fmt(poolBalance)}</code> 事件 — Emma 还你池子剩余</div>` : ''}
+      ${poolBalance > 0 ? `<div style="margin-top:6px;color:var(--green);">✓ 自动新建 <code style="background:rgba(34,211,165,0.10);padding:1px 5px;border-radius:3px;">in-emma ${fmt(poolBalance)}</code> 事件 — Emma 还你池子剩余</div>` : ''}
     `;
   }
   // Prefill the editable opening inputs with sensible defaults
@@ -8002,7 +8034,7 @@ async function executeModeSwitch() {
     try { await fetchPersonalCustomerCache(); } catch (e) {}
     renderAll();
     closeModeSwitchModal();
-    flash('✓ 已切换到新模式 · ' + today + ' · SSS 期初 £' + fmt(sssOpening));
+    flash('✓ 已切换到新模式 · ' + today + ' · SSS 期初 ' + fmt(sssOpening));
   } catch (err) {
     console.error('[mode-switch] failed:', err);
     alert('切换失败: ' + (err.message || err));
