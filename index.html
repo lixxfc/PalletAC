@@ -5899,10 +5899,9 @@ function _autoHealCancelledInvEvents() {
 // ============================================================
 // EMMA TRANSFER CARD — render, settlement, statement, drilldown
 // ============================================================
-// Renders the KPI card on the new-mode dashboard. Visible if:
-//   • Today is inside the trial window, OR
-//   • There is any non-zero accrued or paid amount (so historical data after
-//     trial period stays visible until cleaned up)
+// Always visible on the new-mode dashboard from the moment this feature ships,
+// so Michael can locate it before the trial starts. Status badge tells him the
+// phase: 即将开始 (pre-trial) → 进行中 (trial) → 试行结束·待结算 → 已全部结清.
 function renderEmmaTransferCard() {
   const card = document.getElementById('nm-emma-transfer-card');
   if (!card) return;
@@ -5912,10 +5911,12 @@ function renderEmmaTransferCard() {
   const amzGifted = emmaTransferAmzGifted();
   const today = new Date().toISOString().slice(0, 10);
   const inTrial = isInEmmaTransferTrialPeriod(today);
-  // Show card if in trial period OR there's any data to display
-  const showCard = inTrial || accrued > 0 || paid > 0 || amzGifted > 0;
-  card.style.display = showCard ? '' : 'none';
-  if (!showCard) return;
+  const beforeTrial = today < EMMA_TRANSFER_TRIAL_START;
+  const trialEnd = (state.params && state.params.emmaTransferExtendedEnd) || EMMA_TRANSFER_TRIAL_END;
+  const afterTrial = today > trialEnd;
+  // Always render in new mode — user explicitly asked "where do I see this?"
+  // and a hidden card is more confusing than a card with a "未开始" status.
+  card.style.display = '';
 
   // Count metadata
   let ttPallets = 0, settlementCount = 0;
@@ -5929,18 +5930,29 @@ function renderEmmaTransferCard() {
   set('nm-emma-transfer-outstanding', '£' + (Math.round(outstanding*100)/100).toLocaleString('en-GB'));
   set('nm-emma-transfer-accrued',     '£' + (Math.round(accrued*100)/100).toLocaleString('en-GB'));
   set('nm-emma-transfer-paid',        '£' + (Math.round(paid*100)/100).toLocaleString('en-GB'));
-  set('nm-emma-transfer-amz',         ttPallets > 0 ? (amzGifted + ' 托') : (amzGifted + ' 托'));
+  set('nm-emma-transfer-amz',         amzGifted + ' 托');
   set('nm-emma-transfer-accrued-sub', ttPallets + ' 托 TT × £25');
   set('nm-emma-transfer-paid-sub',    settlementCount + ' 笔结算');
-  set('nm-emma-transfer-amz-sub',     amzGifted > 0 ? 'Emma 让利,零费用' : '试行期未发生');
+  if (amzGifted > 0) set('nm-emma-transfer-amz-sub', 'Emma 让利,零费用');
+  else if (beforeTrial) set('nm-emma-transfer-amz-sub', '试行未开始');
+  else if (inTrial) set('nm-emma-transfer-amz-sub', '本期暂未发生');
+  else set('nm-emma-transfer-amz-sub', '试行已结束');
 
   const statusEl = document.getElementById('nm-emma-transfer-status');
   if (statusEl) {
-    if (inTrial) {
+    if (beforeTrial) {
+      // Days until trial starts
+      const daysLeft = Math.max(0, Math.ceil(
+        (new Date(EMMA_TRANSFER_TRIAL_START + 'T12:00:00') - new Date(today + 'T12:00:00')) / 86400000
+      ));
+      statusEl.textContent = daysLeft === 0 ? '明天启动' : `${daysLeft} 天后启动`;
+      statusEl.style.background = 'rgba(196,181,253,0.18)';
+      statusEl.style.color = '#c4b5fd';
+    } else if (inTrial) {
       statusEl.textContent = '试行期 · 进行中';
       statusEl.style.background = 'rgba(244,114,182,0.18)';
       statusEl.style.color = '#f9a8d4';
-    } else if (outstanding > 0) {
+    } else if (outstanding > 0.01) {
       statusEl.textContent = '试行结束 · 待结算';
       statusEl.style.background = 'rgba(251,191,36,0.18)';
       statusEl.style.color = 'var(--amber)';
@@ -5954,6 +5966,18 @@ function renderEmmaTransferCard() {
   // Outstanding color: red if positive, green if zero
   const outEl = document.getElementById('nm-emma-transfer-outstanding');
   if (outEl) outEl.style.color = outstanding > 0 ? '#f472b6' : (outstanding < 0 ? 'var(--amber)' : 'var(--green)');
+
+  // Update sub-text to reflect phase
+  const subEl = document.getElementById('nm-emma-transfer-sub');
+  if (subEl) {
+    if (beforeTrial) {
+      subEl.innerHTML = `🗓️ 试行将于 <b style="color:#c4b5fd;">${EMMA_TRANSFER_TRIAL_START} (周一)</b> 启动 · Michael 代取 Emma 日 · TT £25/托盘付 Emma · AMZ 让利`;
+    } else if (inTrial) {
+      subEl.innerHTML = `Michael 代取 Emma 日 · TT £25/托盘付 Emma · 试行 ${EMMA_TRANSFER_TRIAL_START} ~ ${trialEnd}`;
+    } else if (afterTrial) {
+      subEl.innerHTML = `🏁 试行已结束 (${EMMA_TRANSFER_TRIAL_START} ~ ${trialEnd}) · 历史数据保留可继续结算`;
+    }
+  }
 }
 
 // Open settlement dialog — user enters amount & note, function creates
