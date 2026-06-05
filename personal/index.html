@@ -669,6 +669,7 @@ select option { background: var(--bg-2); color: var(--text); }
 .badge-pickup { background: rgba(0, 229, 255, 0.12); color: var(--cyan); }
 .badge-refund { background: rgba(251, 113, 133, 0.12); color: var(--rose); }
 .badge-adjust { background: rgba(251, 191, 36, 0.12); color: var(--amber); }
+.badge-emma-transfer { background: rgba(244, 114, 182, 0.15); color: #f472b6; border: 1px solid rgba(244, 114, 182, 0.30); }
 
 .ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 900px) { .ai-grid { grid-template-columns: 1fr; } }
@@ -6047,7 +6048,7 @@ function renderCustomerDetail() {
       pickup: ['取货', 'badge-pickup'],
       refund: ['退款', 'badge-refund'],
       adjust: ['调整', 'badge-adjust'],
-      'emma-transfer-fee': ['Emma 转售费', 'badge-pickup']   // NEW 2026-06-05 (Emma trial)
+      'emma-transfer-fee': ['🤝 Emma 转售费', 'badge-emma-transfer']   // NEW 2026-06-05 (Emma trial)
     };
     const [label, cls] = typeMap[e.type] || ['?', 'badge-adjust'];
     const sign = e.type === 'deposit' ? '+' : '-';
@@ -6089,8 +6090,8 @@ function renderCustomerDetail() {
       <td><div class="ledger-note-cell" contenteditable="true" data-placeholder="点击添加备注…" data-entry-id="${e.id}" onfocus="onNoteFocus(this)" onblur="onNoteBlur(this, '${e.id}')" onkeydown="if (event.key==='Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }">${escapeHtml(e.note || '')}</div></td>
       <td style="white-space:nowrap;">
         ${e.type === 'pickup' ? `<button class="btn sm ghost" title="重复这一笔(填到下面新增表单,日期=今天)" onclick="repeatLedgerEntry('${e.id}')">↻</button> ` : ''}
-        <button class="btn sm warn" title="修改这条流水" onclick="openLedgerEdit('${e.id}')">✎</button>
-        <button class="btn sm danger" title="删除这条流水" onclick="delLedger('${e.id}')">删</button>
+        ${e.type === 'emma-transfer-fee' ? '' : `<button class="btn sm warn" title="修改这条流水" onclick="openLedgerEdit('${e.id}')">✎</button>`}
+        <button class="btn sm danger" title="${e.type === 'emma-transfer-fee' ? '删除 (会自动撤销对应合伙账应付)' : '删除这条流水'}" onclick="delLedger('${e.id}')">删</button>
       </td>
     </tr>`, id: e.id };
   });
@@ -6748,10 +6749,13 @@ function _smartAlertsCompute() {
   }
 
   // ────────── 4. 🚨/💸 Cash pool overdraft / low ──────────
+  // MUST mirror partnership cashPoolBalance() exactly — including out-emma-transfer
+  // (added 2026-06-05), or alerts won't fire when Emma settlements push the pool
+  // into overdraft.
   if (_partnershipCache) {
     const events = _partnershipCache.events || [];
     const sw = (typeof _seNewModeStartDate === 'function') ? _seNewModeStartDate() : null;
-    let inEmma = 0, inCustomerManual = 0, outSupplier = 0, outHugo = 0;
+    let inEmma = 0, inCustomerManual = 0, outSupplier = 0, outHugo = 0, outEmmaTransfer = 0;
     for (const e of events) {
       if (e.deleted || !e.date) continue;
       if (sw && e.date < sw) continue;
@@ -6760,6 +6764,7 @@ function _smartAlertsCompute() {
       else if (e.type === 'in-customer') inCustomerManual += amt;
       else if (e.type === 'out-supplier') outSupplier += amt;
       else if (e.type === 'out-hugo')   outHugo += amt;
+      else if (e.type === 'out-emma-transfer') outEmmaTransfer += amt;
     }
     let customerNet = 0;
     if (sw) {
@@ -6773,7 +6778,7 @@ function _smartAlertsCompute() {
         }
       }
     }
-    const cashPool = inEmma + inCustomerManual + customerNet - outSupplier - outHugo;
+    const cashPool = inEmma + inCustomerManual + customerNet - outSupplier - outHugo - outEmmaTransfer;
     if (cashPool < 0) {
       alerts.push({
         id: 'cash-pool-overdraft',
@@ -7655,6 +7660,13 @@ function openLedgerEdit(entryId) {
   if (!c) return;
   const e = (c.ledger || []).find(x => x.id === entryId);
   if (!e) return;
+  // Defensive guard (2026-06-05): emma-transfer-fee rows are derived from the
+  // source pickup. Editing them directly would diverge from the partnership
+  // accrual total. Route the user to edit the source pickup instead.
+  if (e.type === 'emma-transfer-fee') {
+    alert('Emma 转售费是 TT 取货的衍生记录, 不能单独修改。\n\n要改金额, 请修改对应的 TT 取货 (改托盘数 → £25/托盘 重算)。\n要撤销, 直接删除即可 (合伙账应付会同步撤回)。');
+    return;
+  }
   _editingLedgerId = entryId;
 
   const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === entryId);
