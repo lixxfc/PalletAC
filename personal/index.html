@@ -4209,30 +4209,92 @@ function onSmartEntryOwnerChange() {
   updateSmartEntryPreview();
 }
 
-// Toggle customer column visibility based on pickup owner
+// Toggle customer column visibility based on pickup owner.
+// EXTENDED 2026-06-05 (Emma transfer trial): if owner=Emma AND date is in
+// trial period AND the "Emma 转售模式" checkbox is on, treat the entry as
+// Michael-代取-Emma-day → keep customer column visible + don't clear
+// customerIds. Outside that scenario, behavior is 100% unchanged.
 function applySmartEntryOwnerMode() {
   const owner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
+  const date = (document.getElementById('se-date') || {}).value || '';
   const isEmma = (owner === 'Emma');
+  const isInTrial = isEmma && isInEmmaTransferTrialPeriod(date);
+  const transferToggle = document.getElementById('se-emma-transfer-toggle');
+  const transferOn = isInTrial && (transferToggle ? transferToggle.checked : true);
+  // Effective "should we treat this as a customer-bearing pickup?" answer:
+  // - owner=Michael: yes (existing behavior)
+  // - owner=Emma but not transfer mode: no (existing behavior)
+  // - owner=Emma AND transfer mode: YES (new behavior — Michael 代取 Emma day)
+  const customerEnabled = !isEmma || transferOn;
   // Show/hide default customer wrap and Emma banner
   const wrap = document.getElementById('se-default-customer-wrap');
   const banner = document.getElementById('se-emma-mode-banner');
-  if (wrap) wrap.style.display = isEmma ? 'none' : '';
-  if (banner) banner.style.display = isEmma ? '' : 'none';
-  // When Emma picks up, clear all customer assignments
-  if (isEmma) {
+  if (wrap) wrap.style.display = customerEnabled ? '' : 'none';
+  if (banner) {
+    banner.style.display = isEmma ? '' : 'none';
+    // Inject the transfer-mode UI when in trial; otherwise the legacy text.
+    banner.innerHTML = isInTrial ? _renderEmmaTransferBannerHTML() : _renderEmmaLegacyBannerHTML();
+  }
+  // When NOT customer-enabled (i.e. owner=Emma + not transfer), clear customer
+  // assignments (preserves existing defensive behavior for Emma-自己-取货).
+  if (!customerEnabled) {
     for (const t of _seTrucks) {
       t.customerId = '';
-      t._customerLocked = true;  // don't auto-default again
+      t._customerLocked = true;
     }
   }
   // Show / hide customer column (header + cells + total)
   document.querySelectorAll('.se-col-customer, .se-col-amount').forEach(el => {
-    el.style.display = isEmma ? 'none' : '';
+    el.style.display = customerEnabled ? '' : 'none';
   });
-  // Update footer label
   const lbl = document.querySelector('#se-total-amount');
-  if (lbl) lbl.style.display = isEmma ? 'none' : '';
+  if (lbl) lbl.style.display = customerEnabled ? '' : 'none';
   renderSmartEntryTrucks();
+  // Refresh the transfer preview if in trial mode
+  if (isInTrial) _updateEmmaTransferPreview();
+}
+
+// Pure HTML strings — kept here so the banner area can re-render based on
+// trial/no-trial without touching the structural #se-emma-mode-banner element.
+function _renderEmmaLegacyBannerHTML() {
+  return `<div style="padding:10px 14px;background:rgba(244,114,182,0.10);border:1px solid rgba(244,114,182,0.30);border-radius:10px;font-size:11.5px;color:#f472b6;line-height:1.6;">
+    <b>🔁 Emma 模式</b> — 不分配你的客户,不开 INV。<br>仅记录托盘 → 合伙账,Emma 自己跟 Hugo / V / 她客户结算。
+  </div>`;
+}
+
+function _renderEmmaTransferBannerHTML() {
+  return `<div style="padding:12px 14px;background:linear-gradient(135deg,rgba(244,114,182,0.12),rgba(139,92,246,0.10));border:1px solid rgba(244,114,182,0.45);border-radius:12px;font-size:12px;color:#fce7f3;line-height:1.65;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
+      <span style="font-weight:700;color:#f9a8d4;font-size:13px;">🤝 Emma 转售模式 (试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})</span>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#fbcfe8;cursor:pointer;">
+        <input type="checkbox" id="se-emma-transfer-toggle" checked onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;">
+        <span>启用</span>
+      </label>
+    </div>
+    <div id="se-emma-transfer-preview" style="font-size:11px;color:#fbcfe8;opacity:0.92;">计算中…</div>
+    <div style="font-size:10.5px;color:#fbcfe8;opacity:0.7;margin-top:5px;border-top:1px dashed rgba(244,114,182,0.25);padding-top:5px;">
+      Michael 代取 Emma 日: TT £25/托盘 付 Emma · AMZ 让利无费用 · 客户单据自动加一行 "Emma 转售费"
+    </div>
+  </div>`;
+}
+
+// Live-update preview inside the transfer-mode banner.
+function _updateEmmaTransferPreview() {
+  const previewEl = document.getElementById('se-emma-transfer-preview');
+  if (!previewEl) return;
+  let tt = 0, amz = 0;
+  for (const t of _seTrucks) {
+    const pallets = +(t.pallets || 0);
+    if (!pallets) continue;
+    if (isEmmaTransferTTEligible(t.type, t.isSwap)) tt += pallets;
+    else if (isEmmaTransferAMZEligible(t.type, t.isSwap)) amz += pallets;
+  }
+  const emmaOwed = tt * EMMA_TRANSFER_RATE;
+  const customerExtra = emmaOwed;  // 1:1 pass-through
+  previewEl.innerHTML = `
+    <div>TT <b>${tt}</b> 托 → 付 Emma <b style="color:#fda4af;">£${emmaOwed.toLocaleString('en-GB')}</b>${amz ? ` · AMZ <b>${amz}</b> 托 (Emma 让利,无费用)` : ''}</div>
+    <div>客户多收: <b style="color:#86efac;">£${customerExtra.toLocaleString('en-GB')}</b> (流水中单独一行)</div>
+  `;
 }
 
 // Show banner about existing records on the same date.
@@ -4295,6 +4357,8 @@ function updateSmartEntryTruck(idx, field, val) {
   } else _seTrucks[idx][field] = val;
   renderSmartEntryTrucks();
   updateSmartEntryPreview();
+  // Refresh Emma transfer preview if banner is showing
+  if (typeof _updateEmmaTransferPreview === 'function') _updateEmmaTransferPreview();
 }
 
 function renderSmartEntryTrucks() {
@@ -4656,11 +4720,25 @@ async function saveSmartPickup() {
   const validTrucks = _seTrucks.filter(t => (t.pallets || 0) > 0);
   if (!validTrucks.length) { alert('至少要填一车托盘 > 0'); return; }
 
+  // ============================================================
+  // EMMA TRANSFER MODE DETECTION (Michael 代取 Emma 日, 2026-06-08~)
+  // ============================================================
+  // We must compute this BEFORE the legacy "Emma pickup → clear customerId"
+  // guard, because in transfer mode the customerId is INTENTIONAL.
+  const transferToggle = document.getElementById('se-emma-transfer-toggle');
+  const isEmmaTransferEntry =
+    (formPickupBy === 'Emma') &&
+    isInEmmaTransferTrialPeriod(date) &&
+    (!transferToggle || transferToggle.checked);
+
   // P2 audit fix (2026-05-22): defensive guard. Emma-mode pickups must not be assigned
   // to customers — Emma's customers are her own business, not Michael's. UI clears
   // customerId on owner switch (applySmartEntryOwnerMode), but if a user re-injects it
   // via devtools/race condition, this final scrub prevents creating bogus INVs.
-  if (formPickupBy === 'Emma') {
+  // EXCEPTION (2026-06-05): in Emma transfer mode, customerIds are valid — Michael is
+  // physically picking up on Emma's day and selling to his customers; the £25/TT goes
+  // to Emma via out-emma-transfer settlement. Skip the scrub when transfer mode is on.
+  if (formPickupBy === 'Emma' && !isEmmaTransferEntry) {
     for (const t of validTrucks) {
       if (t.customerId) {
         console.warn('[saveSmartPickup] Emma pickup had customerId — clearing.', t);
@@ -4754,27 +4832,76 @@ async function saveSmartPickup() {
         generateInvoiceForPickup(customer, ledgerEntry, 'auto-smart-pickup');
       }
     } catch (e) { console.warn('[smart-entry] INV gen failed:', e); }
+
+    // ─── EMMA TRANSFER MODE: add separate "Emma 转售费" ledger line ───
+    // Per business arrangement (2026-06-05): on Emma days during trial period,
+    // Michael's customer pays £25/TT pallet extra, which Michael passes to Emma.
+    // This appears as a SEPARATE ledger entry so the customer sees the line
+    // item and the standard pickup math (unitPrice × pallets) stays untouched.
+    // Linked to the source pickup via _emmaTransferLinkUid for sync/delete.
+    if (isEmmaTransferEntry && isEmmaTransferTTEligible(t.type, t.isSwap)) {
+      const surchargeAmount = t.pallets * EMMA_TRANSFER_RATE;
+      const surchargeEntry = {
+        id: crypto.randomUUID(),
+        date,
+        type: EMMA_TRANSFER_FEE_TYPE,                // 'emma-transfer-fee'
+        amount: surchargeAmount,                     // customerBalance treats !deposit as debit ✓
+        pallets: t.pallets,                          // for the statement detail only — does NOT enter customerTotalPallets (filter is 'pickup')
+        palletType: 'TT',
+        truck: t.truckNum || '',
+        note: `Emma 转售费 £${EMMA_TRANSFER_RATE} × ${t.pallets} TT 托盘 (Emma 代取转售试行)`,
+        // NOTE: we do NOT share `_pickupUid` with the source pickup. The existing
+        // 1:1 matcher (_pickupItemMatches) keys on _pickupUid, so duplicating it
+        // would cause sibling-sync ambiguity. Use `_emmaTransferLinkUid` only.
+        _linkSupplyId: linkId,
+        _emmaTransferLinkUid: truckUids[i],          // 1:1 link to source pickup
+        _emmaTransferRate: EMMA_TRANSFER_RATE
+      };
+      customer.ledger.push(surchargeEntry);
+      newCustomerEntries.push({ customer, entry: surchargeEntry });
+    }
   }
 
   // 3) Partnership pickup events (one per truck) — staged for cross-table write
   // IMPORTANT: write `pickedUpBy` explicitly (authoritative field per handoff §6) so
   // downstream consumers don't have to fall back to parsing createdBy email.
-  const newPartEvents = validTrucks.map((t, i) => ({
-    id: crypto.randomUUID(),
-    type: 'pickup',
-    date,
-    pallets: t.pallets,
-    palletType: t.isSwap ? 'TT' : t.type,
-    amount: t.pallets * buyPrice,
-    truck: t.truckNum || '',
-    note: t.note || '智能录入',
-    isSwap: !!t.isSwap,
-    pickedUpBy: usedPickupBy,                                              // 'Michael' | 'Emma'
-    createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
-    createdAt: new Date().toISOString(),
-    _linkSupplyId: linkId,
-    _pickupUid: truckUids[i]                                               // per-truck 1:1 sync key
-  }));
+  // EMMA TRANSFER (2026-06-05): in transfer mode, pickedUpBy STAYS 'Emma' so existing
+  // emmaSssShare / michaelSssShare attribution math is preserved 1:1. The transfer
+  // marker (_emmaTransferDay) is layered on top — it does NOT participate in any
+  // existing formula. New helpers (emmaTransferAccrued / emmaTransferPaid /
+  // emmaTransferOutstanding) read it for the statement and the settlement KPI.
+  const newPartEvents = validTrucks.map((t, i) => {
+    const ev = {
+      id: crypto.randomUUID(),
+      type: 'pickup',
+      date,
+      pallets: t.pallets,
+      palletType: t.isSwap ? 'TT' : t.type,
+      amount: t.pallets * buyPrice,
+      truck: t.truckNum || '',
+      note: t.note || '智能录入',
+      isSwap: !!t.isSwap,
+      pickedUpBy: usedPickupBy,                                              // 'Michael' | 'Emma'
+      createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
+      createdAt: new Date().toISOString(),
+      _linkSupplyId: linkId,
+      _pickupUid: truckUids[i]                                               // per-truck 1:1 sync key
+    };
+    // Layer Emma-transfer markers (additive — existing logic ignores them)
+    if (isEmmaTransferEntry) {
+      ev._emmaTransferDay = true;
+      if (isEmmaTransferTTEligible(t.type, t.isSwap)) {
+        ev._emmaTransferTTPallets = t.pallets;
+        ev._emmaTransferAmount    = t.pallets * EMMA_TRANSFER_RATE;
+      }
+      if (isEmmaTransferAMZEligible(t.type, t.isSwap)) {
+        ev._emmaGiftedAmzPallets = t.pallets;
+      }
+      ev._emmaTransferTrialStart = EMMA_TRANSFER_TRIAL_START;
+      ev._emmaTransferTrialEnd   = EMMA_TRANSFER_TRIAL_END;
+    }
+    return ev;
+  });
 
   // ============================================
   // Cross-table write — partnership_data first
@@ -5915,7 +6042,13 @@ function renderCustomerDetail() {
 
   // Pass 3: build row HTML from page entries (newest first when injected)
   const rowsHtml = pageEntries.map(({ e, running }) => {
-    const typeMap = { deposit: ['预付', 'badge-deposit'], pickup: ['取货', 'badge-pickup'], refund: ['退款', 'badge-refund'], adjust: ['调整', 'badge-adjust'] };
+    const typeMap = {
+      deposit: ['预付', 'badge-deposit'],
+      pickup: ['取货', 'badge-pickup'],
+      refund: ['退款', 'badge-refund'],
+      adjust: ['调整', 'badge-adjust'],
+      'emma-transfer-fee': ['Emma 转售费', 'badge-pickup']   // NEW 2026-06-05 (Emma trial)
+    };
     const [label, cls] = typeMap[e.type] || ['?', 'badge-adjust'];
     const sign = e.type === 'deposit' ? '+' : '-';
     const amtCls = e.type === 'deposit' ? 'pos' : 'neg';
@@ -6869,6 +7002,36 @@ function _smartAlertsCompute() {
     }
   }
 
+  // ────────── 13. 🤝 Emma transfer outstanding balance (2026-06-05) ──────────
+  // Compute from THIS app's customer.ledger emma-transfer-fee entries (since
+  // partnership cache may not be loaded). Each fee row = £25/TT pallet that
+  // Michael's customer has paid Michael → Michael owes Emma. Settlements live
+  // in partnership_data, which we read from the cached _partnershipCache.
+  let _emmaAccrued = 0;
+  for (const c of (state.customers || [])) {
+    for (const e of (c.ledger || [])) {
+      if (e.type === 'emma-transfer-fee') _emmaAccrued += (+(e.amount || 0) || 0);
+    }
+  }
+  let _emmaPaid = 0;
+  const ptEvents = (typeof _partnershipCache !== 'undefined' && _partnershipCache && _partnershipCache.events) || [];
+  for (const ev of ptEvents) {
+    if (!ev || ev.deleted) continue;
+    if (ev.type === 'out-emma-transfer') _emmaPaid += (+(ev.amount || 0) || 0);
+  }
+  const _emmaOutstanding = _emmaAccrued - _emmaPaid;
+  if (_emmaOutstanding > 0.01) {
+    const sev = _emmaOutstanding > 500 ? 'warning' : 'info';
+    const icon = _emmaOutstanding > 500 ? '💰' : '🤝';
+    alerts.push({
+      id: 'emma-transfer-outstanding',
+      severity: sev, tab: 'business', icon: icon,
+      title: `欠 Emma £${_emmaOutstanding.toFixed(2)} TT 转售费`,
+      detail: `累计应付 £${_emmaAccrued.toFixed(2)} · 已付 £${_emmaPaid.toFixed(2)} · 试行期内 Emma 日代取`,
+      action: { label: '看明细 →', fn: () => { try { switchView('dashboard'); } catch (e) {} } }
+    });
+  }
+
   return alerts;
 }
 
@@ -6984,6 +7147,50 @@ function cyclePalletType(entryId) {
 function swapTtPremium() { return (state.params && state.params.swapPremium != null) ? state.params.swapPremium : 30; }
 // Effective unit price for a pickup (factors in swap premium)
 function effectiveUnitPrice(isSwap) { return state.params.sellPrice + (isSwap ? swapTtPremium() : 0); }
+
+// ============================================================
+// EMMA TRANSFER MODE (trial: 2026-06-08 ~ 2026-07-08)
+// ============================================================
+// Business arrangement: during the trial period, Michael physically picks up on
+// Emma's rotation days. For each TT pallet, Michael owes Emma £25 (Emma's resale
+// commission). For AMZ pallets, Emma "gifts" them to Michael (no money owed).
+// The customer pays the £25/TT pass-through as a separate ledger line item.
+//
+// IMPORTANT — preserved invariants (DO NOT touch these in this feature):
+//   • Pickup `pickedUpBy` stays 'Emma' on Emma's day — preserves the existing
+//     emmaSssShare / michaelSssShare attribution math 1:1.
+//   • The £25/TT surcharge enters the partnership pool as in-customer
+//     (existing flow), then exits as a new event type `out-emma-transfer`
+//     when Michael settles with Emma. Net effect on cash pool over time = 0.
+//   • AMZ pallets get a marker `_emmaGiftedAmz` for audit; no money flows.
+// ============================================================
+const EMMA_TRANSFER_TRIAL_START = '2026-06-08';   // Monday 2026-06-08
+const EMMA_TRANSFER_TRIAL_END   = '2026-07-08';   // 1 month trial
+const EMMA_TRANSFER_RATE        = 25;             // £ per TT pallet
+const EMMA_TRANSFER_FEE_TYPE    = 'emma-transfer-fee';  // customer ledger entry type
+
+// True if a given YYYY-MM-DD date falls inside the trial window (inclusive).
+function isInEmmaTransferTrialPeriod(dateStr) {
+  if (!dateStr) return false;
+  // Allow trial extension if user has set state.params.emmaTransferExtendedEnd
+  const end = (state.params && state.params.emmaTransferExtendedEnd) || EMMA_TRANSFER_TRIAL_END;
+  return dateStr >= EMMA_TRANSFER_TRIAL_START && dateStr <= end;
+}
+
+// True if a given truck/entry is eligible for the £25/TT surcharge.
+// Eligibility: pallet type is TT (or swap TT), regardless of customer assignment.
+function isEmmaTransferTTEligible(palletType, isSwap) {
+  if (isSwap) return true;
+  const pt = (palletType || '').toUpperCase();
+  return pt === 'TT';
+}
+
+// True if a given truck/entry is AMZ (gets _emmaGiftedAmz marker, no money).
+function isEmmaTransferAMZEligible(palletType, isSwap) {
+  if (isSwap) return false;
+  const pt = (palletType || '').toUpperCase();
+  return pt === 'AMAZON' || pt === 'AMZ';
+}
 
 function updateLedgerPreview() {
   const box = document.getElementById('lg-preview');
@@ -7377,9 +7584,64 @@ async function delLedger(id) {
     }
   }
 
+  // ─── EMMA TRANSFER CASCADE (2026-06-05) ───
+  // If the entry being deleted is a `pickup` with the _emmaTransferDay flag
+  // (or carries a _pickupUid that an emma-transfer-fee row references),
+  // also remove the matching emma-transfer-fee row from the same customer.
+  // The fee row is linked via _emmaTransferLinkUid === source pickup's _pickupUid.
+  let emmaTransferCascadeMsg = '';
+  if (e.type === 'pickup' && e._pickupUid) {
+    const linkedFees = (c.ledger || []).filter(x =>
+      x.type === EMMA_TRANSFER_FEE_TYPE && x._emmaTransferLinkUid === e._pickupUid
+    );
+    if (linkedFees.length) {
+      const feeIds = new Set(linkedFees.map(x => x.id));
+      c.ledger = (c.ledger || []).filter(x => !feeIds.has(x.id));
+      const totalFee = linkedFees.reduce((s, x) => s + (+(x.amount || 0) || 0), 0);
+      emmaTransferCascadeMsg = ` · 同步删除 Emma 转售费 £${totalFee.toLocaleString('en-GB')}`;
+    }
+  }
+  // If user is deleting an emma-transfer-fee row directly, that's allowed —
+  // the source pickup stays. Net effect: customer balance increases (we removed
+  // a debit). Michael→Emma payable should DECREASE because we're saying this
+  // surcharge doesn't apply. But the source pickup still has _emmaTransferTTPallets
+  // > 0, so the partnership-side emmaTransferAccrued is unchanged. To keep
+  // things consistent, when an emma-transfer-fee row is deleted directly, we
+  // also strip the matching partnership event's _emmaTransferTTPallets so
+  // emmaTransferAccrued recomputes correctly.
+  if (e.type === EMMA_TRANSFER_FEE_TYPE && e._emmaTransferLinkUid) {
+    try {
+      const { data: latestRow, error: readErr } = await db
+        .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
+      if (!readErr) {
+        const latestData = (latestRow && latestRow.data) || { events: [] };
+        let touched = 0;
+        for (const pev of (latestData.events || [])) {
+          if (pev.type === 'pickup' && !pev.deleted && pev._pickupUid === e._emmaTransferLinkUid) {
+            // Strip the TT-transfer markers (keep _emmaTransferDay so the pickup
+            // is still attributable to the trial, but zero out the payable).
+            pev._emmaTransferTTPallets = 0;
+            pev._emmaTransferAmount    = 0;
+            pev._emmaTransferFeeRevokedAt = new Date().toISOString();
+            touched++;
+          }
+        }
+        if (touched > 0) {
+          await db.from('partnership_data')
+            .update({ data: latestData, updated_at: new Date().toISOString() })
+            .eq('workspace_id', 'main');
+          _partnershipCache = latestData;
+          emmaTransferCascadeMsg = ` · 合伙账已撤销对应 Emma 应付`;
+        }
+      }
+    } catch (err) {
+      console.warn('[delLedger] emma-transfer-fee partnership revoke failed:', err);
+    }
+  }
+
   c.ledger = c.ledger.filter(x => x.id !== id);
   save(); renderAll();
-  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : '') + partnershipSyncMsg);
+  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : '') + partnershipSyncMsg + emmaTransferCascadeMsg);
 }
 
 // ============================================================
@@ -7560,6 +7822,7 @@ async function saveLedgerEdit() {
   // STRICT 1:1 match using oldSnap (captured BEFORE local mutation). Previously
   // matched by _linkSupplyId alone, which corrupted sibling trucks.
   let partnershipSyncMsg = '';
+  let emmaTransferEditMsg = '';
   if (isPickup && oldSnap && oldSnap._linkSupplyId) {
     try {
       const { data: latestRow, error: readErr } = await db
@@ -7591,6 +7854,18 @@ async function saveLedgerEdit() {
         pev.amount     = newPallets * buyPrice;
         pev.updatedAt  = new Date().toISOString();
         pev._editedFromPersonal = true;
+        // ─── EMMA TRANSFER MARKER RECALC (2026-06-05) ───
+        // If this pickup carries the trial marker, recompute the per-truck
+        // transfer fields based on the NEW pallet type / pallet count.
+        if (pev._emmaTransferDay) {
+          const ttEligible = (newIsSwap || (newPalletType || '').toUpperCase() === 'TT');
+          const amzEligible = !newIsSwap &&
+            (((newPalletType || '').toUpperCase() === 'AMAZON') || ((newPalletType || '').toUpperCase() === 'AMZ'));
+          pev._emmaTransferTTPallets = ttEligible ? newPallets : 0;
+          pev._emmaTransferAmount    = ttEligible ? newPallets * EMMA_TRANSFER_RATE : 0;
+          pev._emmaGiftedAmzPallets  = amzEligible ? newPallets : 0;
+          pev._emmaTransferUpdatedAt = new Date().toISOString();
+        }
         touched = 1;
       }
       if (touched > 0) {
@@ -7609,9 +7884,39 @@ async function saveLedgerEdit() {
     }
   }
 
+  // ─── EMMA TRANSFER FEE LEDGER LINE SYNC (2026-06-05) ───
+  // If the edited pickup has a linked emma-transfer-fee ledger row, update or
+  // remove that row to match the new pallet count / pallet type.
+  if (isPickup && oldSnap && oldSnap._pickupUid) {
+    const linkedFee = (c.ledger || []).find(x =>
+      x.type === EMMA_TRANSFER_FEE_TYPE && x._emmaTransferLinkUid === oldSnap._pickupUid
+    );
+    const newIsTT = (newIsSwap || (newPalletType || '').toUpperCase() === 'TT');
+    if (linkedFee) {
+      if (!newIsTT) {
+        // No longer TT → remove the fee line
+        c.ledger = (c.ledger || []).filter(x => x.id !== linkedFee.id);
+        emmaTransferEditMsg = ` · 不再 TT,Emma 转售费已撤销 £${(linkedFee.amount || 0).toLocaleString('en-GB')}`;
+      } else if (newPallets !== (linkedFee.pallets || 0)) {
+        // Same TT but pallet count changed → recalc
+        const oldAmt = +(linkedFee.amount || 0);
+        linkedFee.pallets  = newPallets;
+        linkedFee.amount   = newPallets * EMMA_TRANSFER_RATE;
+        linkedFee.date     = newDate;
+        linkedFee.truck    = newTruck;
+        linkedFee.note     = `Emma 转售费 £${EMMA_TRANSFER_RATE} × ${newPallets} TT 托盘 (Emma 代取转售试行)`;
+        emmaTransferEditMsg = ` · Emma 转售费同步 £${oldAmt} → £${linkedFee.amount}`;
+      } else if (linkedFee.date !== newDate || linkedFee.truck !== newTruck) {
+        // Pallet count unchanged but date/truck moved → update those fields
+        linkedFee.date  = newDate;
+        linkedFee.truck = newTruck;
+      }
+    }
+  }
+
   save(); renderAll();
   closeLedgerEdit();
-  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg);
+  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg + emmaTransferEditMsg);
 }
 
 function saveSettings() {

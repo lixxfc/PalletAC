@@ -1127,6 +1127,43 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           </div>
         </div>
 
+        <!-- 1c. Emma 转售试行卡 (2026-06-08 ~ 2026-07-08) — 只在试行期 / 有累计时显示 -->
+        <div class="card mb-4" id="nm-emma-transfer-card" style="display:none;background:linear-gradient(135deg,rgba(244,114,182,0.08),rgba(139,92,246,0.06));border:1px solid rgba(244,114,182,0.32);box-shadow:0 4px 24px rgba(244,114,182,0.08);">
+          <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:22px;">🤝</span>
+                <div style="font-size:13px;font-weight:800;color:#f9a8d4;letter-spacing:0.4px;">Emma 转售试行 · 未付余额</div>
+                <span class="badge" id="nm-emma-transfer-status" style="background:rgba(244,114,182,0.18);color:#f9a8d4;font-size:9px;font-weight:700;">试行期</span>
+              </div>
+              <div id="nm-emma-transfer-outstanding" style="font-size:34px;font-weight:800;color:#f472b6;letter-spacing:-1px;margin-top:8px;font-variant-numeric:tabular-nums;">£0</div>
+              <div id="nm-emma-transfer-sub" style="font-size:11px;color:var(--mute-2);margin-top:4px;">Michael 代取 Emma 日 · TT £25/托盘付 Emma · 试行 2026-06-08 ~ 2026-07-08</div>
+              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="btn sm" onclick="openEmmaTransferSettlement()" style="background:linear-gradient(135deg,#f472b6,#a855f7);font-weight:700;">💸 结算 Emma 转售费</button>
+                <button class="btn sm ghost" onclick="exportEmmaTransferStatement()" title="导出 Emma 对账单 Word 文档">📄 对账单</button>
+                <button class="btn sm ghost" onclick="openEmmaTransferDetail()" title="查看明细">📋 明细</button>
+              </div>
+            </div>
+            <div style="flex:2;min-width:280px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+              <div style="padding:10px 14px;background:rgba(244,114,182,0.05);border:1px solid rgba(244,114,182,0.18);border-radius:8px;">
+                <div style="font-size:9.5px;color:#f9a8d4;letter-spacing:1px;text-transform:uppercase;font-weight:700;">💰 累计应付</div>
+                <div id="nm-emma-transfer-accrued" style="font-size:18px;font-weight:700;color:#f9a8d4;margin-top:3px;font-variant-numeric:tabular-nums;">£0</div>
+                <div id="nm-emma-transfer-accrued-sub" style="font-size:10px;color:var(--mute-2);margin-top:2px;">0 托 TT × £25</div>
+              </div>
+              <div style="padding:10px 14px;background:rgba(34,211,165,0.05);border:1px solid rgba(34,211,165,0.18);border-radius:8px;">
+                <div style="font-size:9.5px;color:var(--green);letter-spacing:1px;text-transform:uppercase;font-weight:700;">✓ 已付</div>
+                <div id="nm-emma-transfer-paid" style="font-size:18px;font-weight:700;color:var(--green);margin-top:3px;font-variant-numeric:tabular-nums;">£0</div>
+                <div id="nm-emma-transfer-paid-sub" style="font-size:10px;color:var(--mute-2);margin-top:2px;">0 笔结算</div>
+              </div>
+              <div style="padding:10px 14px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.18);border-radius:8px;">
+                <div style="font-size:9.5px;color:#a78bfa;letter-spacing:1px;text-transform:uppercase;font-weight:700;">🎁 AMZ 让利</div>
+                <div id="nm-emma-transfer-amz" style="font-size:18px;font-weight:700;color:#a78bfa;margin-top:3px;font-variant-numeric:tabular-nums;">0 托</div>
+                <div id="nm-emma-transfer-amz-sub" style="font-size:10px;color:var(--mute-2);margin-top:2px;">Emma 让利,零费用</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 2-5. 4 KPI cards: SSS / Emma / Hugo / 本月托盘 -->
         <div class="kpi-grid" id="nm-kpi-grid">
           <div class="kpi v3" data-drilldown="nm-sss">
@@ -2150,6 +2187,81 @@ function normalizeState(s) {
 function isNewMode() { return state && state.params && state.params.partnershipMode === 'new'; }
 function newModeStartDate() { return state && state.params && state.params.partnershipNewModeDate; }
 
+// ============================================================
+// EMMA TRANSFER MODE (trial: 2026-06-08 ~ 2026-07-08)
+// ============================================================
+// Business arrangement: during the trial period, Michael physically picks up on
+// Emma's rotation days. For each TT pallet, Michael owes Emma £25 (Emma's
+// resale commission). For AMZ pallets, Emma gifts them to Michael (no money).
+// Michael's customer pays the £25/TT as a separate ledger line item (in personal).
+//
+// CRITICAL invariants — DO NOT touch in this feature:
+//   • Pickup `pickedUpBy` STAYS 'Emma' on Emma's day → existing emmaSssShare
+//     / michaelSssShare attribution math is preserved 1:1.
+//   • The £25/TT surcharge enters partnership pool via in-customer (existing
+//     flow), exits via NEW event type `out-emma-transfer` when Michael settles.
+//     Net long-term effect on cash pool = 0.
+//   • Only ONE existing formula extended: cashPoolBalance() now also subtracts
+//     out-emma-transfer (necessary to keep accounting accurate — see comment
+//     there). All other formulas and event-type handlers are unchanged.
+// ============================================================
+const EMMA_TRANSFER_TRIAL_START = '2026-06-08';
+const EMMA_TRANSFER_TRIAL_END   = '2026-07-08';
+const EMMA_TRANSFER_RATE        = 25;
+const EMMA_TRANSFER_SETTLEMENT_TYPE = 'out-emma-transfer';
+
+function isInEmmaTransferTrialPeriod(dateStr) {
+  if (!dateStr) return false;
+  const end = (state && state.params && state.params.emmaTransferExtendedEnd) || EMMA_TRANSFER_TRIAL_END;
+  return dateStr >= EMMA_TRANSFER_TRIAL_START && dateStr <= end;
+}
+
+// Sum all _emmaTransferDay pickup events' TT-pallet × £25.
+// This is the cumulative amount Michael owes Emma (before settlements).
+function emmaTransferAccrued() {
+  if (!Array.isArray(state.events)) return 0;
+  let total = 0;
+  for (const ev of state.events) {
+    if (!ev || ev.deleted) continue;
+    if (ev.type !== 'pickup') continue;
+    if (!ev._emmaTransferDay) continue;
+    const ttPallets = +(ev._emmaTransferTTPallets || 0);
+    if (isFinite(ttPallets) && ttPallets > 0) total += ttPallets * EMMA_TRANSFER_RATE;
+  }
+  return total;
+}
+
+// Sum all out-emma-transfer events (= amount Michael has actually paid Emma).
+function emmaTransferPaid() {
+  if (!Array.isArray(state.events)) return 0;
+  let total = 0;
+  for (const ev of state.events) {
+    if (!ev || ev.deleted) continue;
+    if (ev.type !== EMMA_TRANSFER_SETTLEMENT_TYPE) continue;
+    const amt = +(ev.amount || 0);
+    if (isFinite(amt)) total += amt;
+  }
+  return total;
+}
+
+function emmaTransferOutstanding() {
+  return emmaTransferAccrued() - emmaTransferPaid();
+}
+
+// Sum all _emmaGiftedAmzPallets across pickup events (for the Emma statement
+// "AMZ gifted" courtesy section). No money flow — purely audit.
+function emmaTransferAmzGifted() {
+  if (!Array.isArray(state.events)) return 0;
+  let total = 0;
+  for (const ev of state.events) {
+    if (!ev || ev.deleted) continue;
+    if (ev.type !== 'pickup') continue;
+    if (!ev._emmaTransferDay) continue;
+    total += +(ev._emmaGiftedAmzPallets || 0);
+  }
+  return total;
+}
+
 // =====================================================
 // NEW MODE CALCULATORS (only meaningful after switch)
 // =====================================================
@@ -2211,15 +2323,23 @@ function _newModeEvents() {
 // 1. Cash pool = (in-emma events + in-customer manual + customer deposits from personal) − (out-supplier + out-hugo)
 function cashPoolBalance() {
   const evs = _newModeEvents();
-  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0;
+  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0, outEmmaTransfer = 0;
   for (const e of evs) {
     if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'in-customer') inCustomerManual += (e.amount || 0);
     else if (e.type === 'out-supplier') outSss += (e.amount || 0);
     else if (e.type === 'out-hugo') outHugo += (e.amount || 0);
+    // Emma transfer settlement (new 2026-06-05): Michael pays Emma her
+    // accumulated TT-resale fee (£25/TT pallet × Emma-day pickups). This is
+    // a real cash outflow from the partnership account, so it MUST be
+    // subtracted from the pool. The matching inflow (customer paying the +£25
+    // surcharge) already enters via in-customer per the existing flow, so net
+    // long-term impact on the pool is zero — but during the gap between
+    // customer payment and Emma settlement, this term matters.
+    else if (e.type === 'out-emma-transfer') outEmmaTransfer += (e.amount || 0);
   }
   const inCustomerFromPersonal = customerDepositsSinceSwitch();
-  return inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo;
+  return inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo - outEmmaTransfer;
 }
 
 // 2. SSS balance = my prepay to SSS − cost of all post-switch pickups
@@ -5768,6 +5888,386 @@ function _autoHealCancelledInvEvents() {
   }
 }
 
+// ============================================================
+// EMMA TRANSFER CARD — render, settlement, statement, drilldown
+// ============================================================
+// Renders the KPI card on the new-mode dashboard. Visible if:
+//   • Today is inside the trial window, OR
+//   • There is any non-zero accrued or paid amount (so historical data after
+//     trial period stays visible until cleaned up)
+function renderEmmaTransferCard() {
+  const card = document.getElementById('nm-emma-transfer-card');
+  if (!card) return;
+  const accrued = emmaTransferAccrued();
+  const paid    = emmaTransferPaid();
+  const outstanding = accrued - paid;
+  const amzGifted = emmaTransferAmzGifted();
+  const today = new Date().toISOString().slice(0, 10);
+  const inTrial = isInEmmaTransferTrialPeriod(today);
+  // Show card if in trial period OR there's any data to display
+  const showCard = inTrial || accrued > 0 || paid > 0 || amzGifted > 0;
+  card.style.display = showCard ? '' : 'none';
+  if (!showCard) return;
+
+  // Count metadata
+  let ttPallets = 0, settlementCount = 0;
+  for (const ev of (state.events || [])) {
+    if (!ev || ev.deleted) continue;
+    if (ev.type === 'pickup' && ev._emmaTransferDay) ttPallets += +(ev._emmaTransferTTPallets || 0);
+    if (ev.type === 'out-emma-transfer') settlementCount++;
+  }
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('nm-emma-transfer-outstanding', '£' + (Math.round(outstanding*100)/100).toLocaleString('en-GB'));
+  set('nm-emma-transfer-accrued',     '£' + (Math.round(accrued*100)/100).toLocaleString('en-GB'));
+  set('nm-emma-transfer-paid',        '£' + (Math.round(paid*100)/100).toLocaleString('en-GB'));
+  set('nm-emma-transfer-amz',         ttPallets > 0 ? (amzGifted + ' 托') : (amzGifted + ' 托'));
+  set('nm-emma-transfer-accrued-sub', ttPallets + ' 托 TT × £25');
+  set('nm-emma-transfer-paid-sub',    settlementCount + ' 笔结算');
+  set('nm-emma-transfer-amz-sub',     amzGifted > 0 ? 'Emma 让利,零费用' : '试行期未发生');
+
+  const statusEl = document.getElementById('nm-emma-transfer-status');
+  if (statusEl) {
+    if (inTrial) {
+      statusEl.textContent = '试行期 · 进行中';
+      statusEl.style.background = 'rgba(244,114,182,0.18)';
+      statusEl.style.color = '#f9a8d4';
+    } else if (outstanding > 0) {
+      statusEl.textContent = '试行结束 · 待结算';
+      statusEl.style.background = 'rgba(251,191,36,0.18)';
+      statusEl.style.color = 'var(--amber)';
+    } else {
+      statusEl.textContent = '已全部结清';
+      statusEl.style.background = 'rgba(34,211,165,0.18)';
+      statusEl.style.color = 'var(--green)';
+    }
+  }
+
+  // Outstanding color: red if positive, green if zero
+  const outEl = document.getElementById('nm-emma-transfer-outstanding');
+  if (outEl) outEl.style.color = outstanding > 0 ? '#f472b6' : (outstanding < 0 ? 'var(--amber)' : 'var(--green)');
+}
+
+// Open settlement dialog — user enters amount & note, function creates
+// out-emma-transfer event. Cash pool auto-recalcs via cashPoolBalance().
+function openEmmaTransferSettlement() {
+  const accrued = emmaTransferAccrued();
+  const paid = emmaTransferPaid();
+  const outstanding = accrued - paid;
+  if (outstanding <= 0) {
+    if (!confirm('当前没有未付 Emma 转售费余额 (' + (outstanding < 0 ? '反而多付了 £' + (-outstanding) : '£0') + ')。\n\n仍要记录一笔结算吗?')) return;
+  }
+  const defaultAmount = outstanding > 0 ? outstanding.toFixed(2) : '0.00';
+  const amountStr = prompt(
+    `💸 结算 Emma 转售费\n\n未付余额: £${outstanding.toFixed(2)}\n累计应付: £${accrued.toFixed(2)}\n已付累计: £${paid.toFixed(2)}\n\n这次付多少给 Emma? (默认 = 未付余额)`,
+    defaultAmount
+  );
+  if (amountStr === null) return;
+  const amount = parseFloat(amountStr);
+  if (!isFinite(amount) || amount <= 0) { alert('金额必须 > 0'); return; }
+  const note = prompt('备注 (可选):\n例如 "6月 TT 转售月结" / 转账编号', '') || '';
+  const today = new Date().toISOString().slice(0, 10);
+
+  const ev = {
+    id: crypto.randomUUID(),
+    type: EMMA_TRANSFER_SETTLEMENT_TYPE,    // 'out-emma-transfer'
+    date: today,
+    amount: amount,
+    note: note,
+    createdBy: (currentUser && currentUser.email) || '?',
+    createdAt: new Date().toISOString(),
+    _emmaTransferSettlement: true,
+    _accruedAtSettlement: accrued,
+    _paidBeforeSettlement: paid
+  };
+  state.events = state.events || [];
+  state.events.push(ev);
+  save();
+  renderAll();
+  const newOutstanding = accrued - (paid + amount);
+  flash(`✓ 已记录 £${amount.toFixed(2)} 付 Emma · 未付余额 £${outstanding.toFixed(2)} → £${newOutstanding.toFixed(2)}`);
+}
+
+// Open a detail modal showing per-pickup accrual records + settlements.
+function openEmmaTransferDetail() {
+  const accrued = emmaTransferAccrued();
+  const paid = emmaTransferPaid();
+  const outstanding = accrued - paid;
+  const amzGifted = emmaTransferAmzGifted();
+
+  // Build accrual table (each Emma-transfer pickup as a row)
+  const accrualRows = (state.events || [])
+    .filter(e => e && !e.deleted && e.type === 'pickup' && e._emmaTransferDay)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .map(e => {
+      const ttN = +(e._emmaTransferTTPallets || 0);
+      const amzN = +(e._emmaGiftedAmzPallets || 0);
+      const subt = ttN * EMMA_TRANSFER_RATE;
+      return `<tr>
+        <td>${e.date || '—'}</td>
+        <td>${e.palletType || '—'}${e.isSwap ? ' SWAP' : ''}</td>
+        <td style="text-align:center;">${e.pallets || 0}</td>
+        <td style="text-align:center;color:${ttN > 0 ? '#f472b6' : 'var(--mute-2)'};">${ttN}</td>
+        <td style="text-align:center;color:${amzN > 0 ? '#a78bfa' : 'var(--mute-2)'};">${amzN}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${subt > 0 ? '#f472b6' : 'var(--mute-2)'};">£${subt.toFixed(2)}</td>
+        <td class="dim" style="font-size:11px;">${escapeHtml((e.note || '').slice(0, 40))}</td>
+      </tr>`;
+    }).join('');
+
+  const settlementRows = (state.events || [])
+    .filter(e => e && !e.deleted && e.type === EMMA_TRANSFER_SETTLEMENT_TYPE)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .map(e => `<tr>
+      <td>${e.date || '—'}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--green);">£${(+(e.amount || 0)).toFixed(2)}</td>
+      <td class="dim" style="font-size:11px;">${escapeHtml(e.note || '')}</td>
+    </tr>`).join('');
+
+  const html = `
+    <div style="max-width:900px;width:90vw;max-height:85vh;overflow:auto;background:var(--bg-2);border-radius:14px;border:1px solid rgba(244,114,182,0.30);padding:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#f9a8d4;">🤝 Emma 转售明细</div>
+          <div style="font-size:11px;color:var(--mute-2);margin-top:2px;">试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END}</div>
+        </div>
+        <button class="btn ghost" onclick="closeEmmaTransferDetail()" style="font-size:18px;">✕</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+        <div style="padding:10px;background:rgba(244,114,182,0.05);border:1px solid rgba(244,114,182,0.20);border-radius:8px;">
+          <div style="font-size:9px;color:#f9a8d4;text-transform:uppercase;font-weight:700;">累计应付</div>
+          <div style="font-size:20px;font-weight:800;color:#f9a8d4;font-variant-numeric:tabular-nums;">£${accrued.toFixed(2)}</div>
+        </div>
+        <div style="padding:10px;background:rgba(34,211,165,0.05);border:1px solid rgba(34,211,165,0.20);border-radius:8px;">
+          <div style="font-size:9px;color:var(--green);text-transform:uppercase;font-weight:700;">已付累计</div>
+          <div style="font-size:20px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;">£${paid.toFixed(2)}</div>
+        </div>
+        <div style="padding:10px;background:rgba(251,113,133,0.05);border:1px solid rgba(251,113,133,0.20);border-radius:8px;">
+          <div style="font-size:9px;color:var(--rose);text-transform:uppercase;font-weight:700;">未付余额</div>
+          <div style="font-size:20px;font-weight:800;color:${outstanding > 0 ? '#f472b6' : 'var(--green)'};font-variant-numeric:tabular-nums;">£${outstanding.toFixed(2)}</div>
+        </div>
+        <div style="padding:10px;background:rgba(139,92,246,0.05);border:1px solid rgba(139,92,246,0.20);border-radius:8px;">
+          <div style="font-size:9px;color:#a78bfa;text-transform:uppercase;font-weight:700;">AMZ 让利</div>
+          <div style="font-size:20px;font-weight:800;color:#a78bfa;font-variant-numeric:tabular-nums;">${amzGifted} 托</div>
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:#f9a8d4;margin-bottom:8px;">📦 TT 应付明细 (Emma 日代取)</div>
+      <table class="table sm" style="margin-bottom:18px;">
+        <thead><tr>
+          <th>日期</th><th>类型</th><th style="text-align:center;">总托</th>
+          <th style="text-align:center;color:#f9a8d4;">TT</th>
+          <th style="text-align:center;color:#a78bfa;">AMZ</th>
+          <th style="text-align:right;">应付</th><th>备注</th>
+        </tr></thead>
+        <tbody>${accrualRows || '<tr><td colspan="7" class="dim" style="text-align:center;padding:20px;">暂无累计</td></tr>'}</tbody>
+      </table>
+
+      <div style="font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px;">💸 已付结算记录</div>
+      <table class="table sm">
+        <thead><tr><th>日期</th><th style="text-align:right;">金额</th><th>备注</th></tr></thead>
+        <tbody>${settlementRows || '<tr><td colspan="3" class="dim" style="text-align:center;padding:20px;">还没有结算过</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+
+  let overlay = document.getElementById('emma-transfer-detail-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'emma-transfer-detail-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9000;display:flex;align-items:center;justify-content:center;';
+    overlay.onclick = (e) => { if (e.target === overlay) closeEmmaTransferDetail(); };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = html;
+  overlay.style.display = 'flex';
+}
+
+function closeEmmaTransferDetail() {
+  const overlay = document.getElementById('emma-transfer-detail-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+// ─── Word doc statement export (3 sections) ───
+function exportEmmaTransferStatement() {
+  const accrued = emmaTransferAccrued();
+  const paid    = emmaTransferPaid();
+  const outstanding = accrued - paid;
+  const amzGifted = emmaTransferAmzGifted();
+
+  const accruals = (state.events || [])
+    .filter(e => e && !e.deleted && e.type === 'pickup' && e._emmaTransferDay && +(e._emmaTransferTTPallets || 0) > 0)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const amzRecords = (state.events || [])
+    .filter(e => e && !e.deleted && e.type === 'pickup' && e._emmaTransferDay && +(e._emmaGiftedAmzPallets || 0) > 0)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const settlements = (state.events || [])
+    .filter(e => e && !e.deleted && e.type === EMMA_TRANSFER_SETTLEMENT_TYPE)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  const accrualRows = accruals.map(e => {
+    const tt = +(e._emmaTransferTTPallets || 0);
+    return `<tr><td>${e.date}</td><td>${e.palletType || ''}${e.isSwap ? ' (SWAP)' : ''}</td><td style="text-align:center;">${tt}</td><td style="text-align:right;">£${EMMA_TRANSFER_RATE}</td><td style="text-align:right;">£${(tt * EMMA_TRANSFER_RATE).toFixed(2)}</td></tr>`;
+  }).join('');
+
+  const settlementRows = settlements.map(e => {
+    return `<tr><td>${e.date}</td><td style="text-align:right;">£${(+(e.amount || 0)).toFixed(2)}</td><td>${escapeHtml(e.note || '')}</td></tr>`;
+  }).join('');
+
+  let runningPaid = 0;
+  const reconRows = settlements.map(e => {
+    const amt = +(e.amount || 0);
+    runningPaid += amt;
+    return `<tr><td>${e.date}</td><td style="text-align:right;">£${amt.toFixed(2)}</td><td style="text-align:right;">£${runningPaid.toFixed(2)}</td><td>${escapeHtml(e.note || '')}</td></tr>`;
+  }).join('');
+
+  const amzRows = amzRecords.map(e => {
+    const n = +(e._emmaGiftedAmzPallets || 0);
+    return `<tr><td>${e.date}</td><td style="text-align:center;">${n}</td><td>${escapeHtml(e.note || '')}</td></tr>`;
+  }).join('');
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Word-friendly HTML — opens cleanly in Word, formatted as proper tables.
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<title>Emma 转售对账单 ${today}</title>
+<style>
+  body { font-family: 'Microsoft YaHei', 'Calibri', sans-serif; padding: 30px 40px; color: #1a1a1a; }
+  h1 { color: #c026d3; font-size: 22pt; margin: 0; }
+  h2 { color: #7c3aed; font-size: 14pt; border-bottom: 2px solid #c026d3; padding-bottom: 4px; margin-top: 28px; }
+  .meta { color: #555; font-size: 10pt; margin-top: 4px; }
+  .summary-grid { display: table; width: 100%; margin: 18px 0; border-collapse: separate; border-spacing: 8px 0; }
+  .summary-cell { display: table-cell; padding: 12px; border: 1px solid #ddd; background: #faf5ff; text-align: center; }
+  .summary-cell .label { font-size: 9pt; color: #777; text-transform: uppercase; letter-spacing: 0.5px; }
+  .summary-cell .value { font-size: 16pt; font-weight: bold; color: #c026d3; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10pt; }
+  th { background: #f3e8ff; color: #6b21a8; text-align: left; padding: 8px; border: 1px solid #d6bcfa; font-weight: bold; }
+  td { padding: 7px 8px; border: 1px solid #e9d5ff; }
+  tfoot td { background: #faf5ff; font-weight: bold; }
+  .note-box { padding: 12px 16px; background: #fef3c7; border-left: 4px solid #f59e0b; font-size: 10pt; margin-top: 20px; }
+  .footer { margin-top: 36px; font-size: 9pt; color: #888; border-top: 1px solid #ddd; padding-top: 12px; }
+</style>
+</head>
+<body>
+
+<h1>🤝 Emma 转售对账单</h1>
+<div class="meta">
+  试行期: ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END}<br>
+  生成日期: ${today}<br>
+  发起方: Michael (CYPP UK LTD)
+</div>
+
+<div class="summary-grid">
+  <div class="summary-cell"><div class="label">累计应付</div><div class="value">£${accrued.toFixed(2)}</div></div>
+  <div class="summary-cell"><div class="label">已付累计</div><div class="value" style="color:#16a34a;">£${paid.toFixed(2)}</div></div>
+  <div class="summary-cell"><div class="label">未付余额</div><div class="value" style="color:${outstanding>0?'#dc2626':'#16a34a'};">£${outstanding.toFixed(2)}</div></div>
+  <div class="summary-cell"><div class="label">AMZ 让利</div><div class="value" style="color:#7c3aed;">${amzGifted} 托</div></div>
+</div>
+
+<h2>第一段 · TT 转售应付明细</h2>
+<p class="meta">每个 Emma 日 Michael 代取的 TT 托盘 × £${EMMA_TRANSFER_RATE} = 应付 Emma 的转售费</p>
+<table>
+  <thead><tr><th>日期</th><th>类型</th><th style="text-align:center;">TT 托盘</th><th style="text-align:right;">单价</th><th style="text-align:right;">小计</th></tr></thead>
+  <tbody>${accrualRows || '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px;">本期暂无 TT 代取记录</td></tr>'}</tbody>
+  <tfoot><tr><td colspan="4" style="text-align:right;">累计应付合计:</td><td style="text-align:right;color:#c026d3;">£${accrued.toFixed(2)}</td></tr></tfoot>
+</table>
+
+<h2>第二段 · 已付 / 未付对账</h2>
+<p class="meta">Michael 实际付给 Emma 的金额, 逐笔列出</p>
+<table>
+  <thead><tr><th>日期</th><th style="text-align:right;">金额</th><th style="text-align:right;">累计已付</th><th>备注</th></tr></thead>
+  <tbody>${reconRows || '<tr><td colspan="4" style="text-align:center;color:#999;padding:20px;">尚未结算</td></tr>'}</tbody>
+</table>
+<table style="margin-top:12px;">
+  <tr><td style="width:60%;background:#faf5ff;"><b>累计应付</b></td><td style="text-align:right;">£${accrued.toFixed(2)}</td></tr>
+  <tr><td style="background:#dcfce7;"><b>已付累计</b></td><td style="text-align:right;color:#16a34a;">£${paid.toFixed(2)}</td></tr>
+  <tr><td style="background:${outstanding>0?'#fee2e2':'#dcfce7'};"><b>未付余额 (Emma 待收)</b></td><td style="text-align:right;color:${outstanding>0?'#dc2626':'#16a34a'};font-weight:bold;font-size:13pt;">£${outstanding.toFixed(2)}</td></tr>
+</table>
+
+<h2>第三段 · AMZ 让利记录 (无金钱)</h2>
+<p class="meta">Emma 日 Michael 代取的 AMZ 托盘, Emma 让利, 无费用. 记录此项仅作礼貌性确认</p>
+<table>
+  <thead><tr><th>日期</th><th style="text-align:center;">AMZ 托盘数</th><th>备注</th></tr></thead>
+  <tbody>${amzRows || '<tr><td colspan="3" style="text-align:center;color:#999;padding:20px;">本期暂无 AMZ 代取记录</td></tr>'}</tbody>
+  <tfoot><tr><td style="text-align:right;">让利总计:</td><td style="text-align:center;color:#7c3aed;">${amzGifted} 托</td><td></td></tr></tfoot>
+</table>
+
+<div class="note-box">
+  <b>📝 说明:</b><br>
+  • 本对账单为试行期内的 Emma 代取转售安排<br>
+  • TT 托盘按 £${EMMA_TRANSFER_RATE}/托盘 由 Michael 付给 Emma (代取转售费)<br>
+  • AMZ 托盘 Emma 让利, 无金钱补偿 (仅记录数量供日后参考)<br>
+  • SSS 费用 (£245/托盘) 仍按现有合伙账规则分配, 不受此安排影响
+</div>
+
+<div class="footer">
+  本对账单由 PalletAC 合伙账系统自动生成 · ${today}
+</div>
+
+</body>
+</html>`;
+
+  // Trigger a Word-friendly download
+  const blob = new Blob(['﻿', html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Emma_转售对账单_${today}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  flash(`✓ 已下载 Emma 转售对账单 (${accruals.length} 条 TT 应付 / ${settlements.length} 条结算 / ${amzRecords.length} 条 AMZ 让利)`);
+}
+
+// ─── Trial expiration prompt ───
+// On the FIRST dashboard load after 2026-07-08, ask Michael to extend or
+// terminate the trial. Persists his choice to state.params so we don't
+// pester him on every load. Idempotent.
+let _emmaTrialExpirationChecked = false;
+function _checkEmmaTransferTrialExpiration() {
+  if (_emmaTrialExpirationChecked) return;
+  _emmaTrialExpirationChecked = true;
+  if (!state || !state.params) return;
+  // If user already responded once, respect their choice.
+  if (state.params.emmaTransferTrialDecidedAt) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const end = state.params.emmaTransferExtendedEnd || EMMA_TRANSFER_TRIAL_END;
+  if (today <= end) return;  // not yet expired
+
+  const outstanding = emmaTransferAccrued() - emmaTransferPaid();
+  setTimeout(() => {
+    const msg = `🤝 Emma 转售试行期已结束 (${EMMA_TRANSFER_TRIAL_START} ~ ${end})\n\n` +
+      `未付余额: £${outstanding.toFixed(2)}\n\n` +
+      `选择:\n` +
+      `  • 确定 = 终止 (停止自动启用转售模式; 历史数据保留, 可结算)\n` +
+      `  • 取消 = 延期 30 天 (继续启用直到 ${_addDays(end, 30)})`;
+    const terminate = confirm(msg);
+    if (terminate) {
+      state.params.emmaTransferTrialDecidedAt = new Date().toISOString();
+      state.params.emmaTransferTrialDecision = 'terminated';
+      save();
+      flash('✓ Emma 转售试行已终止 · 历史数据保留, 可继续结算');
+    } else {
+      const newEnd = _addDays(end, 30);
+      state.params.emmaTransferExtendedEnd = newEnd;
+      state.params.emmaTransferTrialDecidedAt = new Date().toISOString();
+      state.params.emmaTransferTrialDecision = 'extended';
+      save();
+      renderAll();
+      flash(`✓ Emma 转售试行延期 30 天 → ${newEnd}`);
+    }
+  }, 800);
+}
+
+function _addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 // === Partnership invoices list UI ===
 let _ptInvTab = 'sinv';   // 'sinv' | 'pinv'
 function setPtInvTab(t) {
@@ -6075,7 +6575,7 @@ async function _deletePickupFromPersonal(ev) {
 
     // Build snapshot BEFORE we touch anything — so restore can recreate exactly.
     // STRICT 1:1 matching now — only the SPECIFIC pickup's siblings, not the whole linkId group.
-    const snapshot = { ledgerEntries: [], supplyTrucks: [], voidedInvoices: [] };
+    const snapshot = { ledgerEntries: [], supplyTrucks: [], voidedInvoices: [], emmaTransferFees: [] };
     const ledgerIdsToVoid = [];
     let ambiguousLedger = 0, ambiguousTrucks = 0;
 
@@ -6087,6 +6587,17 @@ async function _deletePickupFromPersonal(ev) {
         const e = matched[0];   // only first match if ambiguous
         snapshot.ledgerEntries.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(e)) });
         ledgerIdsToVoid.push(e.id);
+      }
+      // ─── 1.5) EMMA TRANSFER FEE CASCADE (2026-06-05) ───
+      // If this pickup carries the Emma-transfer-trial markers, also remove the
+      // matching 'emma-transfer-fee' ledger row, identified by _emmaTransferLinkUid.
+      if (snap._pickupUid) {
+        const feeMatches = (c.ledger || []).filter(e =>
+          e.type === 'emma-transfer-fee' && e._emmaTransferLinkUid === snap._pickupUid
+        );
+        for (const fe of feeMatches) {
+          snapshot.emmaTransferFees.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(fe)) });
+        }
       }
     }
     // 2) dailySupply trucks — strictly 1:1
@@ -6107,9 +6618,12 @@ async function _deletePickupFromPersonal(ev) {
     }
 
     // Now do the actual removal — only specific matched items, preserve others
-    const ledgerIdsToRemove = snapshot.ledgerEntries.map(x => x.entry.id);
+    const ledgerIdsToRemove = new Set([
+      ...snapshot.ledgerEntries.map(x => x.entry.id),
+      ...snapshot.emmaTransferFees.map(x => x.entry.id)
+    ]);
     for (const c of (pdata.customers || [])) {
-      c.ledger = (c.ledger || []).filter(e => !ledgerIdsToRemove.includes(e.id));
+      c.ledger = (c.ledger || []).filter(e => !ledgerIdsToRemove.has(e.id));
     }
     // For trucks: identify via _pickupUid first, else field match. Remove ONLY one per snap.
     for (const tg of snapshot.supplyTrucks) {
@@ -6145,7 +6659,8 @@ async function _deletePickupFromPersonal(ev) {
       counts: {
         ledgerEntries: snapshot.ledgerEntries.length,
         supplyTrucks: snapshot.supplyTrucks.length,
-        voidedInvoices: snapshot.voidedInvoices.length
+        voidedInvoices: snapshot.voidedInvoices.length,
+        emmaTransferFees: snapshot.emmaTransferFees.length
       },
       warnings: (ambiguousLedger || ambiguousTrucks)
         ? `数据有 ${ambiguousLedger} 个 ledger / ${ambiguousTrucks} 辆车的字段重复 — 只删了第一条匹配。请人工核对。`
@@ -6176,6 +6691,13 @@ async function _restorePickupToPersonal(ev) {
       if (!c) continue;
       if (!Array.isArray(c.ledger)) c.ledger = [];
       // Avoid double-restore if the entry somehow already exists
+      if (!c.ledger.find(e => e.id === entry.id)) c.ledger.push(entry);
+    }
+    // 1.5) Restore Emma transfer fee ledger lines (2026-06-05)
+    for (const { customerId, entry } of (snap.emmaTransferFees || [])) {
+      const c = pdata.customers.find(x => x.id === customerId);
+      if (!c) continue;
+      if (!Array.isArray(c.ledger)) c.ledger = [];
       if (!c.ledger.find(e => e.id === entry.id)) c.ledger.push(entry);
     }
     // 2) Restore dailySupply trucks
@@ -6214,7 +6736,8 @@ async function _restorePickupToPersonal(ev) {
       counts: {
         ledgerEntries: (snap.ledgerEntries || []).length,
         supplyTrucks: (snap.supplyTrucks || []).length,
-        unvoidedInvoices: (snap.voidedInvoices || []).length
+        unvoidedInvoices: (snap.voidedInvoices || []).length,
+        emmaTransferFees: (snap.emmaTransferFees || []).length
       }
     };
   } catch (e) {
@@ -6561,6 +7084,7 @@ async function _editPickupInPersonal(ev, oldSnap) {
     };
 
     // 1. Customer ledger entry — find the ONE matching, update only that
+    let emmaFeesSynced = 0;
     for (const c of (pdata.customers || [])) {
       const matched = (c.ledger || []).filter(e => _pickupItemMatches(e, matchSnap));
       if (matched.length > 1) ambiguousLedger += (matched.length - 1);
@@ -6579,7 +7103,32 @@ async function _editPickupInPersonal(ev, oldSnap) {
         counts.ledger++;
         updatedLedgerIds.push(entry.id);
       }
+      // ─── EMMA TRANSFER FEE SYNC (2026-06-05) ───
+      // If this pickup has a linked emma-transfer-fee row, update its amount /
+      // date / truck — or remove it if the new pallet type is no longer TT.
+      // The link is via _emmaTransferLinkUid === source pickup's _pickupUid.
+      if (matchSnap._pickupUid) {
+        const linkedFee = (c.ledger || []).find(e =>
+          e.type === 'emma-transfer-fee' && e._emmaTransferLinkUid === matchSnap._pickupUid
+        );
+        const newIsTT = !!ev.isSwap || (ev.palletType || '').toUpperCase() === 'TT';
+        if (linkedFee) {
+          if (!newIsTT) {
+            c.ledger = (c.ledger || []).filter(x => x.id !== linkedFee.id);
+            emmaFeesSynced++;
+          } else {
+            linkedFee.pallets = ev.pallets;
+            linkedFee.amount  = ev.pallets * 25;  // EMMA_TRANSFER_RATE
+            linkedFee.date    = ev.date;
+            linkedFee.truck   = ev.truck;
+            linkedFee.note    = `Emma 转售费 £25 × ${ev.pallets} TT 托盘 (Emma 代取转售试行)`;
+            linkedFee.updatedAt = new Date().toISOString();
+            emmaFeesSynced++;
+          }
+        }
+      }
     }
+    counts.emmaTransferFees = emmaFeesSynced;
 
     // 2. dailySupply truck — find the ONE matching, update only that
     for (const dayRec of (pdata.dailySupply || [])) {
@@ -7432,12 +7981,16 @@ function renderAll() {
   if (navInv) navInv.classList.toggle('hide', !isNewMode());
   // Refresh quick quote so balance and unit price stay in sync
   if (typeof updateEmmaQuote === 'function') updateEmmaQuote();
+  // Emma transfer KPI card (2026-06-05) — refresh accrued/paid/outstanding
+  if (typeof renderEmmaTransferCard === 'function') renderEmmaTransferCard();
   // One-time cleanup of stale deleted pickups that never cascaded to personal_data.
   // Idempotent — only runs once per page load. Fires async so render doesn't block.
   if (typeof _cleanupStalePickupDeletes === 'function') _cleanupStalePickupDeletes();
   // One-time auto-heal for cancelled INVs whose underlying events were never
   // soft-deleted (bug pre-2026-06-03). Idempotent.
   if (typeof _autoHealCancelledInvEvents === 'function') _autoHealCancelledInvEvents();
+  // Trial expiration check (2026-07-08) — prompt extend/terminate once.
+  if (typeof _checkEmmaTransferTrialExpiration === 'function') _checkEmmaTransferTrialExpiration();
 }
 
 // === Monthly History Cards (partnership dashboard, bottom) ===
