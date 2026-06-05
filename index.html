@@ -1107,8 +1107,10 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
               <div id="nm-sss-michael-detail" style="font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.7;padding-top:8px;border-top:1px dashed rgba(34,211,165,0.18);">
                 <div style="display:flex;justify-content:space-between;"><span>转入(我出资)</span><span style="font-variant-numeric:tabular-nums;color:var(--green);" id="nm-sss-michael-in">£0</span></div>
                 <div style="display:flex;justify-content:space-between;"><span>已取(我的取货)</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-michael-used">£0</span></div>
+                <div id="nm-sss-michael-refunded-row" style="display:none;justify-content:space-between;"><span>SSS 退款给我</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-michael-refunded">£0</span></div>
               </div>
               <div id="nm-sss-michael-warn" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);border-radius:6px;font-size:10.5px;color:var(--amber);"></div>
+              <button class="btn sm ghost" onclick="event.stopPropagation();recordSssRefund('michael')" style="margin-top:8px;font-size:10.5px;width:100%;border:1px dashed rgba(34,211,165,0.30);">📥 录入 SSS 退款给我</button>
             </div>
             <!-- Emma's share -->
             <div id="nm-sss-emma-card" style="padding:14px 16px;background:rgba(244,114,182,0.04);border:1px solid rgba(244,114,182,0.22);border-radius:10px;position:relative;cursor:pointer;" onclick="openDrilldown('nm-sss-emma')">
@@ -1121,8 +1123,10 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
               <div id="nm-sss-emma-detail" style="font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.7;padding-top:8px;border-top:1px dashed rgba(244,114,182,0.18);">
                 <div style="display:flex;justify-content:space-between;"><span>转入(Emma 转给我)</span><span style="font-variant-numeric:tabular-nums;color:var(--green);" id="nm-sss-emma-in">£0</span></div>
                 <div style="display:flex;justify-content:space-between;"><span>已取(Emma 取货)</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-emma-used">£0</span></div>
+                <div id="nm-sss-emma-refunded-row" style="display:none;justify-content:space-between;"><span>SSS 退款给 Emma</span><span style="font-variant-numeric:tabular-nums;color:var(--rose);" id="nm-sss-emma-refunded">£0</span></div>
               </div>
               <div id="nm-sss-emma-warn" style="display:none;margin-top:8px;padding:6px 10px;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.30);border-radius:6px;font-size:10.5px;color:var(--amber);"></div>
+              <button class="btn sm ghost" onclick="event.stopPropagation();recordSssRefund('emma')" style="margin-top:8px;font-size:10.5px;width:100%;border:1px dashed rgba(244,114,182,0.30);">📥 录入 SSS 退款给 Emma</button>
             </div>
           </div>
         </div>
@@ -2346,17 +2350,22 @@ function cashPoolBalance() {
   return inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo - outEmmaTransfer;
 }
 
-// 2. SSS balance = my prepay to SSS − cost of all post-switch pickups
+// 2. SSS balance = my prepay to SSS − cost of all post-switch pickups − refunds
+// `sss-refund` events (2026-06-06): when SSS refunds money out of the partnership
+// SSS pool (e.g. SSS hands £3,000 back to Emma's bank), the pool drops by that
+// amount regardless of who the refund goes to. The per-party split is tracked
+// in emmaSssShare / michaelSssShare via the `to` field.
 function sssBalance() {
   const evs = _newModeEvents();
   const buyPrice = state.params.buyPrice || 245;
-  let paid = 0, used = 0;
+  let paid = 0, used = 0, refunded = 0;
   for (const e of evs) {
     if (e.type === 'out-supplier') paid += (e.amount || 0);
     else if (e.type === 'pickup') used += (e.pallets || 0) * buyPrice;
+    else if (e.type === 'sss-refund') refunded += (e.amount || 0);
   }
   const opening = state.params.sssOpeningCredit || 0;
-  return opening + paid - used;
+  return opening + paid - used - refunded;
 }
 
 // === Per-party SSS allocation (new mode) ===
@@ -2369,32 +2378,36 @@ function sssBalance() {
 //   Michael SSS share = (sssOpening − emmaOpening) + (Σ out-supplier − Σ in-emma) − Σ Michael pickups × £245
 //   Sum of both = sssBalance() always.
 function emmaSssShare() {
-  if (!isNewMode()) return { in: 0, used: 0, remaining: 0 };
+  if (!isNewMode()) return { in: 0, used: 0, remaining: 0, refunded: 0 };
   const buyPrice = state.params.buyPrice || 245;
   const opening = state.params.emmaOpeningCredit || 0;   // POSITIVE = Emma's prepay credit at switch
-  let inAmt = 0, usedAmt = 0;
+  let inAmt = 0, usedAmt = 0, refundedToEmma = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'in-emma') inAmt += (e.amount || 0);
     else if (e.type === 'pickup' && !isMichaelPickup(e)) usedAmt += (e.pallets || 0) * buyPrice;
+    // sss-refund (2026-06-06): SSS refunded part of the pool BACK to a partner.
+    // If to='emma' it drains Emma's share. If to='michael' it doesn't touch her.
+    else if (e.type === 'sss-refund' && e.to === 'emma') refundedToEmma += (e.amount || 0);
   }
   const totalIn = opening + inAmt;
-  return { opening, in: totalIn, inFresh: inAmt, used: usedAmt, remaining: totalIn - usedAmt };
+  return { opening, in: totalIn, inFresh: inAmt, used: usedAmt, refunded: refundedToEmma, remaining: totalIn - usedAmt - refundedToEmma };
 }
 function michaelSssShare() {
-  if (!isNewMode()) return { in: 0, used: 0, remaining: 0 };
+  if (!isNewMode()) return { in: 0, used: 0, remaining: 0, refunded: 0 };
   const buyPrice = state.params.buyPrice || 245;
   const sssOpening = state.params.sssOpeningCredit || 0;
   const emmaOpening = state.params.emmaOpeningCredit || 0;
   const michaelOpening = sssOpening - emmaOpening;        // Michael's share of the £3,170 SSS pot
-  let outSupplier = 0, inEmma = 0, michaelUsed = 0;
+  let outSupplier = 0, inEmma = 0, michaelUsed = 0, refundedToMichael = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
     else if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'pickup' && isMichaelPickup(e)) michaelUsed += (e.pallets || 0) * buyPrice;
+    else if (e.type === 'sss-refund' && e.to === 'michael') refundedToMichael += (e.amount || 0);
   }
   // Michael's in = his portion of opening + (out-supplier − Emma's contribution flowing through)
   const inAmt = michaelOpening + outSupplier - inEmma;
-  return { opening: michaelOpening, in: inAmt, used: michaelUsed, remaining: inAmt - michaelUsed };
+  return { opening: michaelOpening, in: inAmt, used: michaelUsed, refunded: refundedToMichael, remaining: inAmt - michaelUsed - refundedToMichael };
 }
 
 // 3. Emma balance at Michael = her total SSS pool position
@@ -3567,6 +3580,7 @@ function renderLog() {
     if (e.type === 'out-supplier')      return `付 SSS <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
     if (e.type === 'out-hugo')          return `付 Hugo 现金 <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
     if (e.type === 'out-emma-transfer') return `付 Emma TT 转售费 <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
+    if (e.type === 'sss-refund')        return `SSS 退款给 ${e.to === 'emma' ? 'Emma' : 'Michael'} <b class="neg">-${fmt(e.amount || 0)}</b>${noteSuffix}`;
     if (e.type === 'pickup') {
       const who = (e.pickedUpBy === 'Emma' || (e.createdBy || '').toLowerCase() === 'emma@maomail.uk') ? 'Emma' : 'Michael';
       return `${who} 取货 <b>${e.pallets || 0}</b> 托${e.truck ? ' <span class="dim">· ' + escapeHtml(e.truck) + '</span>' : ''} <span class="dim">(${fmt(e.amount || 0)})</span>`;
@@ -6042,6 +6056,65 @@ function renderEmmaTransferCard() {
 
 // Open settlement dialog — user enters amount & note, function creates
 // out-emma-transfer event. Cash pool auto-recalcs via cashPoolBalance().
+// ─── SSS REFUND ENTRY (2026-06-06) ──────────────────────────
+// Records the event: SSS hands money back to Michael or Emma. Bypasses the
+// partnership bank account (cash pool unchanged) — only the SSS pool moves.
+// Used e.g. when SSS reconciles and refunds an over-prepayment, or when a
+// failed transfer comes back from SSS to a partner's personal account.
+function recordSssRefund(to) {
+  if (!isNewMode()) { alert('请先切换到新模式'); return; }
+  if (to !== 'emma' && to !== 'michael') { alert('参数错误: to 必须是 emma 或 michael'); return; }
+  const partyLabel = (to === 'emma') ? 'Emma' : 'Michael';
+  const shareInfo = (to === 'emma') ? emmaSssShare() : michaelSssShare();
+  const currentShare = shareInfo.remaining || 0;
+  const currentPool = sssBalance();
+  const amountStr = prompt(
+    `📥 SSS 退款给 ${partyLabel}\n\n` +
+    `场景: SSS 把池子里的钱退回给 ${partyLabel} 的银行账户\n` +
+    `(不经过合伙账银行, 资金池不动; 只是 SSS 池减少)\n\n` +
+    `${partyLabel} 当前 SSS 份额: £${currentShare.toLocaleString('en-GB')}\n` +
+    `SSS 总池: £${currentPool.toLocaleString('en-GB')}\n\n` +
+    `退多少钱? (英镑)`,
+    ''
+  );
+  if (amountStr === null) return;
+  const amount = parseFloat(amountStr);
+  if (!isFinite(amount) || amount <= 0) { alert('金额必须 > 0'); return; }
+  const dateStr = prompt('退款日期 (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+  if (dateStr === null) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('日期格式必须 YYYY-MM-DD'); return; }
+  const note = prompt('备注 (可选, 例如 "SSS 对账退回 Emma 的预付")', '') || '';
+
+  const newShare = currentShare - amount;
+  const newPool = currentPool - amount;
+  const confirmMsg =
+    `确认录入?\n\n` +
+    `SSS 退款给 ${partyLabel}: £${amount.toLocaleString('en-GB')}\n` +
+    `日期: ${dateStr}\n` +
+    (note ? `备注: ${note}\n` : '') +
+    `\n变化后:\n` +
+    `  • ${partyLabel} SSS 份额: £${currentShare.toLocaleString('en-GB')} → £${newShare.toLocaleString('en-GB')}\n` +
+    `  • SSS 总池: £${currentPool.toLocaleString('en-GB')} → £${newPool.toLocaleString('en-GB')}\n` +
+    `  • 资金池: 不变 (这笔钱没经过合伙账银行)`;
+  if (!confirm(confirmMsg)) return;
+
+  const ev = {
+    id: crypto.randomUUID(),
+    type: 'sss-refund',
+    date: dateStr,
+    amount: amount,
+    to: to,                                      // 'emma' | 'michael'
+    note: note,
+    createdBy: (currentUser && currentUser.email) || '?',
+    createdAt: new Date().toISOString()
+  };
+  state.events = state.events || [];
+  state.events.push(ev);
+  save();
+  renderAll();
+  flash(`✓ 已录入 SSS 退款给 ${partyLabel} £${amount.toLocaleString('en-GB')} · ${partyLabel} 份额 -£${amount.toLocaleString('en-GB')} · 总池 -£${amount.toLocaleString('en-GB')}`);
+}
+
 function openEmmaTransferSettlement() {
   const accrued = emmaTransferAccrued();
   const paid = emmaTransferPaid();
@@ -7940,6 +8013,16 @@ function renderNewModeKpis() {
   set('nm-sss-michael-sub', mShare.remaining >= 0 ? `够拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 ${fmt(Math.abs(mShare.remaining))}`);
   set('nm-sss-michael-in', fmt(mShare.in));
   set('nm-sss-michael-used', '−£' + fmt0(mShare.used));
+  // Show SSS refund row only if there's a positive refund amount
+  const mRefRow = document.getElementById('nm-sss-michael-refunded-row');
+  if (mRefRow) {
+    if ((mShare.refunded || 0) > 0) {
+      mRefRow.style.display = 'flex';
+      set('nm-sss-michael-refunded', '−£' + fmt0(mShare.refunded));
+    } else {
+      mRefRow.style.display = 'none';
+    }
+  }
   const mWarn = document.getElementById('nm-sss-michael-warn');
   if (mWarn) {
     if (mShare.remaining < 0) {
@@ -7964,6 +8047,15 @@ function renderNewModeKpis() {
   set('nm-sss-emma-sub', eShare.remaining >= 0 ? `她够拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `她透支 ${fmt(Math.abs(eShare.remaining))}`);
   set('nm-sss-emma-in', fmt(eShare.in));
   set('nm-sss-emma-used', '−£' + fmt0(eShare.used));
+  const eRefRow = document.getElementById('nm-sss-emma-refunded-row');
+  if (eRefRow) {
+    if ((eShare.refunded || 0) > 0) {
+      eRefRow.style.display = 'flex';
+      set('nm-sss-emma-refunded', '−£' + fmt0(eShare.refunded));
+    } else {
+      eRefRow.style.display = 'none';
+    }
+  }
   const eWarn = document.getElementById('nm-sss-emma-warn');
   if (eWarn) {
     if (eShare.remaining < 0) {
