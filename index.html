@@ -7283,13 +7283,36 @@ async function _editPickupInPersonal(ev, oldSnap) {
       inv.invoiceDate = ev.date;
       // Update line items: take the first pallet line item and refresh qty/unitPrice/total
       if (Array.isArray(inv.lineItems) && inv.lineItems.length > 0) {
-        // Find the pallet-related line (heuristic: largest line, or first one with "pallet" / "托" in description)
-        let palletLine = inv.lineItems.find(li => /托|pallet|amz|amazon|tt|swap/i.test(li.description || ''));
-        if (!palletLine) palletLine = inv.lineItems[0];
+        // Find the pallet-related line (heuristic: first non-emma-transfer line)
+        let palletLine = inv.lineItems.find(li => !li._emmaTransferFee && /托|pallet|amz|amazon|tt|swap/i.test(li.description || ''));
+        if (!palletLine) palletLine = inv.lineItems.find(li => !li._emmaTransferFee) || inv.lineItems[0];
         palletLine.qty = ev.pallets;
         palletLine.unitPrice = unitPrice;
         palletLine.description = (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets;
       }
+      // ─── EMMA TRANSFER FEE LINE SYNC (2026-06-05) ───
+      // Find the Emma-transfer-fee line on this INV (if any) and recompute it
+      // from the partnership event's marker. Add a missing line if the pickup
+      // just became Emma-transfer-eligible. Remove if no longer eligible.
+      const feeLineIdx = (inv.lineItems || []).findIndex(li => li._emmaTransferFee);
+      const ttPallets = +(ev._emmaTransferTTPallets || 0);
+      if (ttPallets > 0 && ev._emmaTransferDay) {
+        const feeLine = {
+          description: `Emma transfer fee (TT pickup on Emma's day)`,
+          qty: ttPallets,
+          unitPrice: 25,                                                  // EMMA_TRANSFER_RATE
+          _emmaTransferFee: true
+        };
+        if (feeLineIdx >= 0) inv.lineItems[feeLineIdx] = feeLine;
+        else                 inv.lineItems.push(feeLine);
+      } else if (feeLineIdx >= 0) {
+        // No longer eligible (e.g. pallet type changed to AMZ) — strip the line
+        inv.lineItems.splice(feeLineIdx, 1);
+      }
+      // Rebuild subtotal/total from all line items
+      const newSubtotal = (inv.lineItems || []).reduce((s, li) => s + (+(li.qty || 0)) * (+(li.unitPrice || 0)), 0);
+      inv.subtotal = newSubtotal;
+      inv.total    = newSubtotal;
       inv.updatedAt = new Date().toISOString();
       counts.invoices++;
     }
