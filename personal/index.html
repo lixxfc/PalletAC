@@ -4482,6 +4482,14 @@ function _seIsMichaelPickup(e) {
   if (cb === 'emma@maomail.uk') return false;
   return true;  // default = Michael
 }
+
+// Mirror of partnership index.html:isHugoAccruedToMichael — true when Hugo's
+// commission for this pickup should accrue to MICHAEL (his own days + Emma
+// transfer trial 代取). Used by the personal-side Hugo accrual helper.
+function _seIsHugoAccruedToMichael(e) {
+  if (!e || e.type !== 'pickup') return false;
+  return _seIsMichaelPickup(e) || !!e._emmaTransferDay;
+}
 // Returns { michael:{opening,in,used,remaining}, emma:{opening,in,used,remaining} } or null
 function _seGetSssShares() {
   if (!_partnershipCache) return null;
@@ -4519,7 +4527,10 @@ function _seGetHugoOwed() {
   const opening = +(params.hugoOpeningOwed || 0) || 0;   // pre-switch debt snapshot
   let accrued = 0, paid = 0;
   for (const e of _seNewModeEvents()) {
-    if (e.type === 'pickup' && _seIsMichaelPickup(e)) accrued += (e.pallets || 0) * rate;
+    // Emma transfer trial (2026-06-08~): _emmaTransferDay pickups also accrue
+    // to Michael — he 代取 Emma 日 and runs the customer sale, so the £7/托
+    // Hugo commission is on his head. Mirrors partnership isHugoAccruedToMichael.
+    if (e.type === 'pickup' && _seIsHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * rate;
     else if (e.type === 'out-hugo') paid += (+(e.amount || 0) || 0);
   }
   return { opening, accrued, paid, owed: opening + accrued - paid, rate };
@@ -4621,11 +4632,16 @@ function updateSmartEntryPreview() {
 
   // === Hugo card (owner-aware) ===
   // Michael picks up:  customer hands cash → Michael owes Hugo more → Michael pays cash
-  // Emma picks up:     entirely off Michael's books (Emma settles with Hugo herself)
+  // Emma transfer mode: Michael 代取, Hugo £7/托 also on Michael (trial 2026-06-08~)
+  // Emma own day:      entirely off Michael's books (Emma settles with Hugo herself)
+  const _ueTransferToggle = document.getElementById('se-emma-transfer-toggle');
+  const _ueIsTransferDay = !isMichaelPick && isInEmmaTransferTrialPeriod(date) &&
+    (!_ueTransferToggle || _ueTransferToggle.checked);
   let hugoSection;
-  if (isMichaelPick) {
+  if (isMichaelPick || _ueIsTransferDay) {
     const owedAfter = hugoOwedBefore ? (hugoOwedBefore.owed + hugoCommission) : null;
-    hugoSection = sec('💰', '合伙账 — Hugo 提成 (你欠 Hugo)', `
+    const transferTag = _ueIsTransferDay ? ' <span style="color:#f9a8d4;font-size:11px;">(Emma 转售试行: 代取应付归你)</span>' : '';
+    hugoSection = sec('💰', '合伙账 — Hugo 提成 (你欠 Hugo)' + transferTag, `
       本次应付:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b><br>
       <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCommission)} 现金 → 你转给 Hugo (cash, 不进系统)</span>
       ${owedAfter != null ? `<br>Hugo 累计应付 <b>${fmt(hugoOwedBefore.owed)}</b> → 取货后 <b style="color:var(--amber);">${fmt(owedAfter)}</b>` : ''}

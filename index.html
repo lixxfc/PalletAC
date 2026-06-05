@@ -2429,14 +2429,31 @@ function isMichaelPickup(e) {
   return true;
 }
 
-// 4. Hugo owed (new mode) = opening + Michael's post-switch pickups × £7 − cash paid
-// NOTE: Emma's pickups DO NOT count — she settles with Hugo herself.
+// True if Hugo's £7/pallet commission should accrue to MICHAEL for this pickup.
+// Two cases:
+//   (a) Michael's own pickup day (pickedUpBy = Michael)
+//   (b) Emma's pickup day during Michael-代取-Emma transfer trial
+//       (pickedUpBy stays 'Emma' to preserve SSS share math, but
+//       `_emmaTransferDay: true` marks Michael's physical pickup → Michael
+//       bears the Hugo cost since he ran the customer sale.)
+// IMPORTANT: authoritative function for Hugo-accrual side. `isMichaelPickup`
+// is still used for SSS share / monthly pallet attribution where the
+// behavior is unchanged.
+function isHugoAccruedToMichael(e) {
+  if (!e || e.type !== 'pickup') return false;
+  return isMichaelPickup(e) || !!e._emmaTransferDay;
+}
+
+// 4. Hugo owed (new mode) = opening + Hugo-accrued pickups × £7 − cash paid
+// During Emma transfer trial (2026-06-08~), Emma-day pickups that Michael 代取
+// also accrue to Michael (via isHugoAccruedToMichael). Pure-Emma own-day
+// pickups still don't count — she settles those with Hugo herself.
 function hugoOwedNew() {
   const evs = _newModeEvents();
   const rate = state.params.hugoCommission || 7;
   let accrued = 0, paid = 0;
   for (const e of evs) {
-    if (e.type === 'pickup' && isMichaelPickup(e)) accrued += (e.pallets || 0) * rate;
+    if (e.type === 'pickup' && isHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * rate;
     else if (e.type === 'out-hugo') paid += (e.amount || 0);
   }
   const opening = state.params.hugoOpeningOwed || 0;
@@ -2663,7 +2680,7 @@ function hugoMath() {
   // (`hugoOwedNew()` is the proper new-mode function and is preferred when available,
   // but hugoMath() is still used by the legacy KPI grid + a few drilldowns.)
   const pickupsAll = isNewMode()
-    ? getPickups().filter(e => isMichaelPickup(e))
+    ? getPickups().filter(e => isHugoAccruedToMichael(e))
     : getPickups();
   const transfersHugoAll = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
 
@@ -3113,19 +3130,31 @@ function buildDrilldownData(key) {
   if (key === 'nm-hugo' && isNewMode()) {
     const rate = state.params.hugoCommission || 7;
     const opening = state.params.hugoOpeningOwed || 0;
-    // ONLY Michael's pickups accrue Hugo on Michael's side (Emma settles her own)
+    // Hugo accrues to Michael for:
+    //   (a) Michael's own pickup days
+    //   (b) Emma's pickup days where Michael 代取 (Emma transfer trial)
+    // Pure-Emma own-day pickups still go on Emma's own settlement.
     const allPickups = _newModeEvents().filter(e => e.type === 'pickup');
-    const michaelPickups = allPickups.filter(e => isMichaelPickup(e));
-    const emmaPickups = allPickups.filter(e => !isMichaelPickup(e));
+    const michaelAccrued = allPickups.filter(e => isHugoAccruedToMichael(e));
+    const ownDayMichael  = michaelAccrued.filter(e => isMichaelPickup(e));
+    const transferDay    = michaelAccrued.filter(e => !isMichaelPickup(e) && e._emmaTransferDay);
+    const pureEmma       = allPickups.filter(e => !isHugoAccruedToMichael(e));
     const payRows = _newModeEvents().filter(e => e.type === 'out-hugo');
-    const accrued = michaelPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const accrued = michaelAccrued.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const accruedOwn   = ownDayMichael.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const accruedTrans = transferDay.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
     const paid = payRows.reduce((s, e) => s + (e.amount || 0), 0);
     const owed = hugoOwedNew();
     const rows = [
       { date: '—', desc: `<b>📌 期初欠款</b>(切换日快照)`, amount: opening },
-      ...michaelPickups.map(e => ({
+      ...ownDayMichael.map(e => ({
         date: e.date,
         desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)}`,
+        amount: (e.pallets || 0) * rate
+      })),
+      ...transferDay.map(e => ({
+        date: e.date,
+        desc: `<b style="color:#f9a8d4;">+ 代取 Emma 日应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)} <span style="color:var(--mute-2);font-size:10.5px;">(Emma 转售试行,Hugo 归你)</span>`,
         amount: (e.pallets || 0) * rate
       })),
       ...payRows.map(e => ({
@@ -3133,22 +3162,26 @@ function buildDrilldownData(key) {
         desc: `<b style="color:var(--green);">− 付 Hugo 现金</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`,
         amount: -(e.amount || 0)
       })),
-      // Show Emma pickups for context (not counted) — at bottom, greyed
-      ...emmaPickups.map(e => ({
+      // Show pure-Emma pickups for context (not counted) — at bottom, greyed
+      ...pureEmma.map(e => ({
         date: e.date,
-        desc: `<span style="color:var(--mute-2);opacity:0.7;"><b>· Emma 取货</b> ${e.pallets} 托(她自己付 Hugo,不计你账上)</span>`,
+        desc: `<span style="color:var(--mute-2);opacity:0.7;"><b>· Emma 自取</b> ${e.pallets} 托(她自己付 Hugo,不计你账上)</span>`,
         amount: 0
       }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const transferLine = transferDay.length
+      ? `<div><span class="k">+ Emma 日代取应付</span><span class="v" style="float:right;color:#f9a8d4;">+£${fmt0(accruedTrans)}</span><div style="font-size:11px;color:var(--text-dim);">${transferDay.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate} (转售试行)</div></div>`
+      : '';
     return {
       title: '🧑 Hugo 应付 · 数据来源',
-      sub: `期初 £${fmt0(opening)} + 我取 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
+      sub: `期初 £${fmt0(opening)} + 我取/代取 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
       formula: `<div><span class="k">期初(切换日快照)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
-                <div><span class="k">+ 切换后我取货应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accrued)}</span><div style="font-size:11px;color:var(--text-dim);">${michaelPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate}</div></div>
+                <div><span class="k">+ 我自己取货应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accruedOwn)}</span><div style="font-size:11px;color:var(--text-dim);">${ownDayMichael.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate}</div></div>
+                ${transferLine}
                 <div><span class="k">− 已付 Hugo 现金</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paid)}</span></div>
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>还欠 Hugo</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(owed)}</span></div>
                 <div style="margin-top:8px;font-size:11px;color:var(--text-dim);line-height:1.7;background:rgba(244,114,182,0.06);padding:8px 10px;border-radius:6px;">
-                  <b>注:</b>Emma 取的 ${emmaPickups.reduce((s,e)=>s+(e.pallets||0),0)} 托(共应付 Hugo £${fmt0(emmaPickups.reduce((s,e)=>s+(e.pallets||0)*rate,0))})Emma 自己结,<b>不算</b>你账上。
+                  <b>注:</b>Emma 自己取的 ${pureEmma.reduce((s,e)=>s+(e.pallets||0),0)} 托(共应付 Hugo £${fmt0(pureEmma.reduce((s,e)=>s+(e.pallets||0)*rate,0))})Emma 自己结,<b>不算</b>你账上。代取 Emma 日的 Hugo 提成归你(转售试行机制)。
                 </div>`,
       rows
     };
@@ -3169,6 +3202,12 @@ function buildDrilldownData(key) {
         const ownerBadge = mp
           ? '<b style="color:#67e8f9;">Michael</b>'
           : '<b style="color:var(--pink);">Emma</b>';
+        // Emma 转售日 Michael 代取: show a small badge so the row tells the
+        // full story (owner stays Emma for SSS share math, but Hugo £7
+        // accrues to Michael).
+        const transferBadge = e._emmaTransferDay
+          ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:#f9a8d4;font-weight:700;font-size:9px;" title="Emma 转售试行: Michael 代取, Hugo 提成归你">🤝 代取</span>'
+          : '';
         const typeBadge = e.palletType === 'TT'
           ? '<span class="badge" style="background:rgba(99,102,241,0.30);color:#a5b4fc;font-weight:700;font-size:10px;">TT</span>'
           : e.palletType === 'AMAZON'
@@ -3181,7 +3220,7 @@ function buildDrilldownData(key) {
         const noteTxt  = e.note  ? ` <span style="color:var(--text-dim);font-size:11px;">· ${escapeHtml(e.note)}</span>` : '';
         return {
           date: e.date,
-          desc: `${typeBadge}${swapBadge} <b>${e.pallets} 托</b> · ${ownerBadge}${truckTxt}${noteTxt}`,
+          desc: `${typeBadge}${swapBadge} <b>${e.pallets} 托</b> · ${ownerBadge}${transferBadge}${truckTxt}${noteTxt}`,
           amount: -((e.pallets || 0) * buyPrice)  // SSS-side cost (negative = consumed share)
         };
       });
@@ -3477,9 +3516,22 @@ function renderPickups() {
     // in new mode. Emma settles with Hugo herself, so showing a £ amount on her rows
     // was misleading and could lead to double-paying Hugo.
     const commission = (r.pallets || 0) * rate;
-    const commissionCell = (isNewMode() && !isMpick)
-      ? '<td class="dim" style="color:var(--text-dim);font-size:11px;">— <span style="font-size:10px;">(Emma 自结)</span></td>'
-      : `<td class="dim">${fmt(commission)}</td>`;
+    // Hugo commission display:
+    //   • Michael's own pickup → show £ amount (he owes Hugo)
+    //   • Emma 转售试行 代取 (_emmaTransferDay) → show £ amount with badge (he owes Hugo too)
+    //   • Pure Emma own-day pickup in new mode → Emma 自结, no amount
+    const hugoOnMichael = (typeof isHugoAccruedToMichael === 'function')
+      ? isHugoAccruedToMichael(r)
+      : isMpick;
+    let commissionCell;
+    if (isNewMode() && !hugoOnMichael) {
+      commissionCell = '<td class="dim" style="color:var(--text-dim);font-size:11px;">— <span style="font-size:10px;">(Emma 自结)</span></td>';
+    } else if (isNewMode() && !isMpick && r._emmaTransferDay) {
+      // Emma's day + Michael 代取 → amount + small 转售 badge
+      commissionCell = `<td class="dim">${fmt(commission)} <span style="font-size:9px;color:#f9a8d4;">🤝代取</span></td>`;
+    } else {
+      commissionCell = `<td class="dim">${fmt(commission)}</td>`;
+    }
     const tp = r.palletType || 'Mixed';
     const typeBadge = tp === 'TT'
       ? '<span class="badge" style="background:rgba(67,56,202,0.30);color:#a5b4fc;font-weight:700;border:1px solid rgba(99,102,241,0.5);">TT</span>'
@@ -3803,9 +3855,11 @@ function computeHugoStatementData(from, to) {
   for (const e of sorted) {
     if (e.date < from || e.date > to) continue;
     if (e.type === 'pickup') {
-      // NEW MODE: only Michael's pickups count toward Hugo's commission.
-      // Emma's pickups are her own business with Hugo — don't appear on Michael's statement.
-      if (inNewMode && !isMichaelPickup(e)) {
+      // NEW MODE: pickups whose Hugo commission is on Michael count toward
+      // his statement. That includes (a) Michael's own days AND (b) Emma 日
+      // 代取 during the Emma transfer trial. Pure-Emma own-day pickups are
+      // her business with Hugo and stay excluded.
+      if (inNewMode && !isHugoAccruedToMichael(e)) {
         emmaPalletsExcluded += (e.pallets || 0);
         continue;
       }
