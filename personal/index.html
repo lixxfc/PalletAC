@@ -4251,12 +4251,17 @@ function applySmartEntryOwnerMode() {
   const date = (document.getElementById('se-date') || {}).value || '';
   const isEmma = (owner === 'Emma');
   const isInTrial = isEmma && isInEmmaTransferTrialPeriod(date);
-  const transferToggle = document.getElementById('se-emma-transfer-toggle');
-  const transferOn = isInTrial && (transferToggle ? transferToggle.checked : true);
+  // CRITICAL FIX (2026-06-08): capture the toggle's CURRENT state BEFORE we
+  // re-render the banner. Previously _renderEmmaTransferBannerHTML hardcoded
+  // `checked` in the input, so each banner re-render silently reverted the
+  // user's uncheck. Now we read the existing state and pass it through.
+  const existingToggle = document.getElementById('se-emma-transfer-toggle');
+  const wasChecked = existingToggle ? existingToggle.checked : true;  // default ON for first paint
+  const transferOn = isInTrial && wasChecked;
   // Effective "should we treat this as a customer-bearing pickup?" answer:
   // - owner=Michael: yes (existing behavior)
-  // - owner=Emma but not transfer mode: no (existing behavior)
-  // - owner=Emma AND transfer mode: YES (new behavior — Michael 代取 Emma day)
+  // - owner=Emma but not transfer mode: no (existing Emma-自取 behavior)
+  // - owner=Emma AND transfer mode ON: YES (Michael 代取 Emma day)
   const customerEnabled = !isEmma || transferOn;
   // Show/hide default customer wrap and Emma banner
   const wrap = document.getElementById('se-default-customer-wrap');
@@ -4265,7 +4270,8 @@ function applySmartEntryOwnerMode() {
   if (banner) {
     banner.style.display = isEmma ? '' : 'none';
     // Inject the transfer-mode UI when in trial; otherwise the legacy text.
-    banner.innerHTML = isInTrial ? _renderEmmaTransferBannerHTML() : _renderEmmaLegacyBannerHTML();
+    // Pass wasChecked so the banner re-renders with the same toggle state.
+    banner.innerHTML = isInTrial ? _renderEmmaTransferBannerHTML(wasChecked) : _renderEmmaLegacyBannerHTML();
   }
   // When NOT customer-enabled (i.e. owner=Emma + not transfer), clear customer
   // assignments (preserves existing defensive behavior for Emma-自己-取货).
@@ -4276,9 +4282,8 @@ function applySmartEntryOwnerMode() {
     }
   }
   // When transfer mode is ACTIVE: auto-flag Swap=true on all TT trucks
-  // (Emma's day TT pallets are Swap by business definition — see savePickup
-  // for full rationale). User can still manually uncheck if they have a
-  // special case.
+  // (Emma's day TT pallets are Swap by business definition). When transfer
+  // mode is OFF (Emma-自取 mode), do NOT auto-Swap — let user control freely.
   if (customerEnabled && isEmma && transferOn) {
     for (const t of _seTrucks) {
       const ptUpper = (t.type || '').toUpperCase();
@@ -4292,8 +4297,8 @@ function applySmartEntryOwnerMode() {
   const lbl = document.querySelector('#se-total-amount');
   if (lbl) lbl.style.display = customerEnabled ? '' : 'none';
   renderSmartEntryTrucks();
-  // Refresh the transfer preview if in trial mode
-  if (isInTrial) _updateEmmaTransferPreview();
+  // Refresh the transfer preview only when transfer mode is active
+  if (isInTrial && wasChecked) _updateEmmaTransferPreview();
 }
 
 // Pure HTML strings — kept here so the banner area can re-render based on
@@ -4304,19 +4309,36 @@ function _renderEmmaLegacyBannerHTML() {
   </div>`;
 }
 
-function _renderEmmaTransferBannerHTML() {
-  return `<div style="padding:12px 14px;background:linear-gradient(135deg,rgba(244,114,182,0.12),rgba(139,92,246,0.10));border:1px solid rgba(244,114,182,0.45);border-radius:12px;font-size:12px;color:#fce7f3;line-height:1.65;">
+// _renderEmmaTransferBannerHTML(isChecked):
+// isChecked === true  → 转售模式 (Michael 代取 Emma 日, 收 £25 转售费)
+// isChecked === false → Emma 自取 (她自己拿自己卖, 不分配你客户, 不收转售费)
+function _renderEmmaTransferBannerHTML(isChecked) {
+  const checkedAttr = isChecked === false ? '' : 'checked';
+  const titleColor = isChecked === false ? '#94a3b8' : '#f9a8d4';
+  const bgGradient = isChecked === false
+    ? 'background:rgba(148,163,196,0.08);border:1px dashed rgba(148,163,196,0.30);'
+    : 'background:linear-gradient(135deg,rgba(244,114,182,0.12),rgba(139,92,246,0.10));border:1px solid rgba(244,114,182,0.45);';
+  const titleText = isChecked === false
+    ? '🔁 Emma 自取模式 (转售模式已停用)'
+    : `🤝 Emma 转售模式 (试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})`;
+  const previewBlock = isChecked === false
+    ? `<div style="font-size:11px;color:#94a3b8;line-height:1.7;">
+         <b>Emma 自己取货</b> · 这单不分配你的客户, 不开 INV, 不收 £25 转售费<br>
+         适用于: Emma 取的是她自己的 / 她拿去卖给她自己的客户
+       </div>`
+    : `<div id="se-emma-transfer-preview" style="font-size:11px;color:#fbcfe8;opacity:0.92;">计算中…</div>
+       <div style="font-size:10.5px;color:#fbcfe8;opacity:0.7;margin-top:5px;border-top:1px dashed rgba(244,114,182,0.25);padding-top:5px;">
+         Michael 代取 Emma 日: TT £25/托盘 付 Emma · AMZ 让利无费用 · 客户单据自动加一行 "Emma 转售费"
+       </div>`;
+  return `<div style="padding:12px 14px;${bgGradient}border-radius:12px;font-size:12px;color:#fce7f3;line-height:1.65;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
-      <span style="font-weight:700;color:#f9a8d4;font-size:13px;">🤝 Emma 转售模式 (试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})</span>
-      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#fbcfe8;cursor:pointer;">
-        <input type="checkbox" id="se-emma-transfer-toggle" checked onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;">
-        <span>启用</span>
+      <span style="font-weight:700;color:${titleColor};font-size:13px;">${titleText}</span>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#fbcfe8;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="se-emma-transfer-toggle" ${checkedAttr} onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;cursor:pointer;">
+        <span>${isChecked === false ? '点这里启用转售模式' : '启用'}</span>
       </label>
     </div>
-    <div id="se-emma-transfer-preview" style="font-size:11px;color:#fbcfe8;opacity:0.92;">计算中…</div>
-    <div style="font-size:10.5px;color:#fbcfe8;opacity:0.7;margin-top:5px;border-top:1px dashed rgba(244,114,182,0.25);padding-top:5px;">
-      Michael 代取 Emma 日: TT £25/托盘 付 Emma · AMZ 让利无费用 · 客户单据自动加一行 "Emma 转售费"
-    </div>
+    ${previewBlock}
   </div>`;
 }
 
