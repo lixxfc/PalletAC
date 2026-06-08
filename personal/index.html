@@ -2283,7 +2283,7 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
           </div>
           <div id="breakdown-pane-client">
-            <div class="page-sub mt-2" style="font-size:11px;">客人版 · 显示客人本周需要另外付给我的钱:每托 <b>£30 我</b> + <b>£10 Hugo</b> + Swap TT 额外 <b>£30</b>。点最右边 🖨 导出某一周给客人。</div>
+            <div class="page-sub mt-2" style="font-size:11px;">客人版 · 显示客人本周需要另外付给我的钱:每托 <b>£30 我</b> + <b>£10 Hugo</b> + Swap TT 额外 <b>£30</b> + <b style="color:#db2777;">🤝 Emma 转售日代取 TT +£25/托</b>。点最右边 🖨 导出某一周给客人。</div>
             <div class="table-wrap mt-4 breakdown-table">
               <table>
                 <thead>
@@ -2301,7 +2301,7 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
           </div>
           <div id="breakdown-pane-self" class="hide">
-            <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托</div>
+            <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托 + <span style="color:#db2777;">🤝 Emma 转售: 客户 +£25 入 / 给 Emma -£25 出 (净 0)</span> · 点 <b>📋 每笔明细</b> 看每一车展开</div>
             <div class="table-wrap mt-4 breakdown-table">
               <table>
                 <thead>
@@ -12523,6 +12523,10 @@ function customerWeeklyBreakdown(customer) {
       swapPallets: 0, swapTrucks: 0,
       totalPallets: 0, totalTrucks: 0,
       totalAmount: 0,                  // sum of customer balance deductions for the week
+      // Emma transfer (Model B) — TT pallets Michael picked on Emma's day
+      // Customer pays an extra £25/托 (passed to Emma as commission)
+      emmaTransferTTPallets: 0,
+      emmaTransferFee: 0,
       entries: []
     };
     const tp = e.palletType || (e.isSwap ? 'TT' : 'Mixed');
@@ -12535,17 +12539,30 @@ function customerWeeklyBreakdown(customer) {
     if (tp === 'TT') { map[wk].ttPallets += pallets; map[wk].ttTrucks++; }
     else if (tp === 'AMAZON') { map[wk].amzPallets += pallets; map[wk].amzTrucks++; }
     else { map[wk].mixPallets += pallets; map[wk].mixTrucks++; }
-    map[wk].entries.push({ id: e.id, date: e.date, pallets, palletType: tp, isSwap, amount: e.amount });
+    // Emma transfer surcharge — only TT pallets count (AMZ free per spec)
+    const _trxTT = (e._emmaTransferDay && e._emmaTransferTTPallets) ? (+e._emmaTransferTTPallets || 0) : 0;
+    if (_trxTT > 0) {
+      map[wk].emmaTransferTTPallets += _trxTT;
+      map[wk].emmaTransferFee += _trxTT * EMMA_TRANSFER_RATE;
+    }
+    map[wk].entries.push({
+      id: e.id, date: e.date, pallets, palletType: tp, isSwap, amount: e.amount,
+      emmaTransferTTPallets: _trxTT,
+      emmaTransferFee: _trxTT * EMMA_TRANSFER_RATE,
+      _emmaTransferDay: !!e._emmaTransferDay
+    });
   }
   return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
 }
 
 // Compute what the customer owes me FOR THIS WEEK (separate from prepay-for-pallets).
 // = pallets × £30 (my fee) + pallets × £10 (Hugo) + swap_pallets × current swapPremium
+//   + emmaTransferTTPallets × £25 (Emma 转售费, Model B 试行期)
 function clientWeekTotal(w) {
   return w.totalPallets * CLIENT_PROFIT_PER_PALLET
        + w.totalPallets * CLIENT_HUGO_PER_PALLET
-       + w.swapPallets * swapTtPremium();
+       + w.swapPallets * swapTtPremium()
+       + (w.emmaTransferFee || 0);
 }
 
 // Render the client-facing breakdown (public markup story)
@@ -12578,10 +12595,13 @@ function renderClientBreakdown(customer) {
     if (!palletRows.length) palletRows.push(`<div class="dim">—</div>`);
 
     // Charge breakdown
+    const _trxTT = w.emmaTransferTTPallets || 0;
+    const _trxFee = w.emmaTransferFee || 0;
     const chargeRows = [
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} (我)</span><span class="v">${fmt(baseProfit)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} (Hugo)</span><span class="v">${fmt(hugoTotal)}</span></div>`,
-      w.swapPallets > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapPrem} (Swap)</span><span class="v">${fmt(swapSurchargeTotal)}</span></div>` : ''
+      w.swapPallets > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapPrem} (Swap)</span><span class="v">${fmt(swapSurchargeTotal)}</span></div>` : '',
+      _trxTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${_trxTT} × £${EMMA_TRANSFER_RATE} <span style="font-size:10px;opacity:0.85;">🤝 Emma 转售 TT</span></span><span class="v">${fmt(_trxFee)}</span></div>` : ''
     ].filter(Boolean).join('');
 
     return `<tr class="${isCurrent ? 'is-current' : ''}">
@@ -12612,6 +12632,7 @@ function renderSelfBreakdown(customer) {
 
   // Aggregate totals across ALL weeks for footer
   let totProfit = 0, totHugo = 0, totV = 0, totSwap = 0, totNet = 0, totPallets = 0, totSwapPallets = 0;
+  let totEmmaTransferTT = 0, totEmmaTransferFee = 0;
 
   tb.innerHTML = reversed.map(w => {
     const wkNum = isoWeekNum(w.week);
@@ -12620,9 +12641,14 @@ function renderSelfBreakdown(customer) {
     const hugo7    = w.totalPallets * selfHugoPerPallet();
     const v2       = w.totalPallets * selfVPerPallet();
     const swapBonus = w.swapPallets * swapTtPremium();
-    const weekNet  = profit51 + swapBonus;
+    // Emma 转售费 — 入: 客户付来 £25 × TT, 出: 给 Emma £25 × TT, 净 0 (Michael 不赚不赔)
+    const _trxTT = w.emmaTransferTTPallets || 0;
+    const _trxFeeIn = w.emmaTransferFee || 0;
+    const _trxFeeOut = _trxFeeIn;
+    const weekNet  = profit51 + swapBonus + _trxFeeIn - _trxFeeOut; // = profit51 + swapBonus (net 0 from transfer)
     totProfit += profit51; totHugo += hugo7; totV += v2; totSwap += swapBonus; totNet += weekNet;
     totPallets += w.totalPallets; totSwapPallets += w.swapPallets;
+    totEmmaTransferTT += _trxTT; totEmmaTransferFee += _trxFeeIn;
 
     // Pallet breakdown — multi-line with colored dots
     const palletRows = [];
@@ -12631,21 +12657,84 @@ function renderSelfBreakdown(customer) {
     if (w.swapPallets > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot swap"></span><span class="label swap">🔁</span><span class="val">${w.swapTrucks} 车 / ${w.swapPallets} 托 Swap</span></div>`);
     if (w.mixTrucks > 0) palletRows.push(`<div class="bd-pallet-row"><span class="dot mix"></span><span class="label mix">未分类</span><span class="val">${w.mixTrucks} 车 / ${w.mixPallets} 托</span></div>`);
     if (!palletRows.length) palletRows.push(`<div class="dim">—</div>`);
+    if (_trxTT > 0) {
+      palletRows.push(`<div class="bd-pallet-row" style="background:rgba(244,114,182,0.10);border-radius:6px;padding:2px 6px;margin-top:4px;"><span class="label" style="color:#db2777;">🤝</span><span class="val" style="color:#9d174d;font-weight:600;">${_trxTT} 托 Emma 转售 (代取)</span></div>`);
+    }
 
-    // Income breakdown — base profit, Hugo, V, Swap bonus
+    // Income breakdown — base profit, Hugo, V, Swap bonus, Emma transfer (in & out)
     const chargeRows = [
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(profit51)}</span></div>`,
       `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(hugo7)}</span></div>`,
       `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V</span><span class="v">${fmt(v2)}</span></div>`,
-      swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : ''
+      swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : '',
+      _trxTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${_trxTT} × £${EMMA_TRANSFER_RATE} 🤝 客户转售费 (入)</span><span class="v">+${fmt(_trxFeeIn)}</span></div>` : '',
+      _trxTT > 0 ? `<div class="bd-charge-row" style="color:#9333ea;"><span class="k">− ${_trxTT} × £${EMMA_TRANSFER_RATE} 给 Emma 转售提成 (出)</span><span class="v">−${fmt(_trxFeeOut)}</span></div>` : '',
+      _trxTT > 0 ? `<div class="bd-charge-row" style="color:#64748b;font-size:10.5px;font-style:italic;padding-left:8px;"><span class="k">↳ Emma 转售净影响</span><span class="v">£0</span></div>` : ''
     ].filter(Boolean).join('');
 
+    // Per-pickup expandable detail
+    const expandId = `bd-self-detail-${w.week.replace(/-/g,'')}`;
+    const entries = (w.entries || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    const detailRows = entries.map((en, idx) => {
+      const enProfit = (en.pallets || 0) * selfProfitPerPallet();
+      const enHugo = (en.pallets || 0) * selfHugoPerPallet();
+      const enV = (en.pallets || 0) * selfVPerPallet();
+      const enSwap = (en.isSwap ? (en.pallets || 0) : 0) * swapTtPremium();
+      const enTrxTT = en.emmaTransferTTPallets || 0;
+      const enTrxFee = en.emmaTransferFee || 0;
+      const enNet = enProfit + enSwap; // Emma transfer nets to 0
+      const dt = (en.date || '').slice(5); // MM-DD
+      const typeTag = en.isSwap
+        ? `<span style="background:rgba(244,114,182,0.20);color:#db2777;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;">🔁 Swap TT</span>`
+        : en.palletType === 'TT' ? `<span style="background:rgba(99,102,241,0.18);color:#4338ca;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;">TT</span>`
+        : en.palletType === 'AMAZON' ? `<span style="background:rgba(14,165,233,0.18);color:#0e7490;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;">AMZ</span>`
+        : `<span style="background:rgba(100,116,139,0.18);color:#64748b;padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700;">混合</span>`;
+      const trxBadge = enTrxTT > 0
+        ? ` <span style="background:rgba(244,114,182,0.18);color:#9d174d;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;">🤝 代取 ${enTrxTT} TT</span>`
+        : '';
+      return `<tr style="border-top:1px dashed rgba(255,255,255,0.08);">
+        <td style="padding:6px 8px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;">${dt}</td>
+        <td style="padding:6px 8px;">${typeTag}${trxBadge}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);">${en.pallets} 托</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);">${fmt(enProfit)}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);">${fmt(enHugo)}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);">${fmt(enV)}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:${enSwap > 0 ? 'var(--pink)' : 'var(--dim)'};">${enSwap > 0 ? fmt(enSwap) : '—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;color:${enTrxFee > 0 ? '#db2777' : 'var(--dim)'};">${enTrxFee > 0 ? fmt(enTrxFee) + ' / -' + fmt(enTrxFee) : '—'}</td>
+        <td style="padding:6px 8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--cyan);">${fmt(enNet)}</td>
+      </tr>`;
+    }).join('');
+
     return `<tr class="${isCurrent ? 'is-current' : ''}">
-      <td><div class="bd-week-tag">W${wkNum}${isCurrent ? ' <span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">本周</span>' : ''}</div></td>
+      <td>
+        <div class="bd-week-tag">W${wkNum}${isCurrent ? ' <span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">本周</span>' : ''}</div>
+        <button class="btn ghost sm" style="margin-top:6px;padding:2px 8px;font-size:10.5px;" onclick="toggleSelfDetail('${expandId}', this)">📋 每笔明细</button>
+      </td>
       <td><div class="bd-date">${weekLabelShort(w.week)}</div></td>
       <td>${palletRows.join('')}</td>
       <td>${chargeRows}</td>
       <td style="text-align:right;"><div class="bd-total">${fmt(weekNet)}</div></td>
+    </tr>
+    <tr id="${expandId}" class="hide" style="background:rgba(15,23,42,0.55);">
+      <td colspan="5" style="padding:14px 18px;">
+        <div style="font-size:11px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;">本周每笔取货 · ${entries.length} 笔</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.12);">
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:left;">日期</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:left;">类型</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">托盘</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">净利 £${selfProfitPerPallet()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Hugo £${selfHugoPerPallet()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">V £${selfVPerPallet()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Swap £${swapTtPremium()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">🤝 入/出</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">当笔净</th>
+            </tr>
+          </thead>
+          <tbody>${detailRows}</tbody>
+        </table>
+      </td>
     </tr>`;
   }).join('');
 
@@ -12654,14 +12743,29 @@ function renderSelfBreakdown(customer) {
       `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(totProfit)}</span></div>`,
       `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(totHugo)}</span></div>`,
       `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V</span><span class="v">${fmt(totV)}</span></div>`,
-      totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : ''
+      totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : '',
+      totEmmaTransferTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${totEmmaTransferTT} 托 × £${EMMA_TRANSFER_RATE} 🤝 转售费 (入/出抵销)</span><span class="v">+${fmt(totEmmaTransferFee)} / -${fmt(totEmmaTransferFee)}</span></div>` : ''
     ].filter(Boolean).join('');
     tf.innerHTML = `<tr>
       <td colspan="2"><div class="bd-week-tag">合计</div><div class="bd-date">该客户全部历史</div></td>
-      <td><div class="bd-pallet-row" style="font-weight:700;color:var(--text);">${totPallets} 托 · ${weeks.length} 周</div></td>
+      <td><div class="bd-pallet-row" style="font-weight:700;color:var(--text);">${totPallets} 托 · ${weeks.length} 周${totEmmaTransferTT > 0 ? ' · 🤝 ' + totEmmaTransferTT + ' 托代取' : ''}</div></td>
       <td>${totalRows}</td>
       <td style="text-align:right;"><div class="bd-total-foot">${fmt(totNet)}</div></td>
     </tr>`;
+  }
+}
+
+// Toggle the per-pickup detail row in 我的版 周度明细
+function toggleSelfDetail(rowId, btn) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const isHidden = row.classList.contains('hide');
+  if (isHidden) {
+    row.classList.remove('hide');
+    if (btn) btn.innerHTML = '📋 收起明细';
+  } else {
+    row.classList.add('hide');
+    if (btn) btn.innerHTML = '📋 每笔明细';
   }
 }
 
@@ -12687,6 +12791,7 @@ function exportClientBreakdown(weekMon) {
 
   // Compute grand totals — use FEE-ONLY math (separate from prepay)
   let grandTotal = 0, grandPallets = 0, grandTT = 0, grandAMZ = 0, grandMix = 0, grandSwap = 0, grandTrucks = 0;
+  let grandEmmaTransferTT = 0, grandEmmaTransferFee = 0;
   weeks.forEach(w => {
     grandTotal += clientWeekTotal(w);
     grandPallets += w.totalPallets;
@@ -12695,6 +12800,8 @@ function exportClientBreakdown(weekMon) {
     grandAMZ += w.amzPallets;
     grandMix += w.mixPallets;
     grandSwap += w.swapPallets;
+    grandEmmaTransferTT += (w.emmaTransferTTPallets || 0);
+    grandEmmaTransferFee += (w.emmaTransferFee || 0);
   });
 
   const reversed = [...weeks].reverse();
@@ -12708,11 +12815,14 @@ function exportClientBreakdown(weekMon) {
     const hugoTotal  = w.totalPallets * CLIENT_HUGO_PER_PALLET;
     const swapPrem   = swapTtPremium();
     const swapSurcharge = w.swapPallets * swapPrem;
+    const trxTTw = w.emmaTransferTTPallets || 0;
+    const trxFeeW = w.emmaTransferFee || 0;
 
     const ttLine = w.ttTrucks > 0 ? `<div><span style="color:#3730a3;font-weight:700;">TT:</span> ${w.ttTrucks} truck${w.ttTrucks===1?'':'s'} &middot; ${w.ttPallets} pallets</div>` : '';
     const amzLine = w.amzTrucks > 0 ? `<div><span style="color:#0e7490;font-weight:700;">AMAZON:</span> ${w.amzTrucks} truck${w.amzTrucks===1?'':'s'} &middot; ${w.amzPallets} pallets</div>` : '';
     const mixLine = w.mixTrucks > 0 ? `<div><span style="color:#64748b;">Other:</span> ${w.mixTrucks} truck${w.mixTrucks===1?'':'s'} &middot; ${w.mixPallets} pallets</div>` : '';
     const swapLine = w.swapPallets > 0 ? `<div style="color:#b91c1c;font-weight:700;margin-top:4px;">🔁 Swap TT: ${w.swapTrucks} truck${w.swapTrucks===1?'':'s'} &middot; ${w.swapPallets} pallets (+£${swapPrem} each)</div>` : '';
+    const trxLine = trxTTw > 0 ? `<div style="color:#be185d;font-weight:700;margin-top:4px;">🤝 Emma transfer: ${trxTTw} TT pallets (+£${EMMA_TRANSFER_RATE} each)</div>` : '';
 
     const weekTotal = clientWeekTotal(w);
     return `<tr>
@@ -12720,11 +12830,12 @@ function exportClientBreakdown(weekMon) {
         <div class="period-range">${wkRange}</div>
         <div class="period-meta">${w.totalTrucks} truck${w.totalTrucks===1?'':'s'} &middot; ${w.totalPallets} pallets</div>
       </td>
-      <td class="breakdown-col">${ttLine}${amzLine}${mixLine}${swapLine}</td>
+      <td class="breakdown-col">${ttLine}${amzLine}${mixLine}${swapLine}${trxLine}</td>
       <td class="num">
         <div class="line">${w.totalPallets} × £${CLIENT_PROFIT_PER_PALLET} <span class="muted">(my fee)</span> = ${money(baseProfit)}</div>
         <div class="line">${w.totalPallets} × £${CLIENT_HUGO_PER_PALLET} <span class="muted">(Hugo)</span> = ${money(hugoTotal)}</div>
         ${w.swapPallets > 0 ? `<div class="line" style="color:#b91c1c;">${w.swapPallets} × £${swapPrem} <span class="muted">(swap surcharge)</span> = ${money(swapSurcharge)}</div>` : ''}
+        ${trxTTw > 0 ? `<div class="line" style="color:#be185d;">${trxTTw} × £${EMMA_TRANSFER_RATE} <span class="muted">(Emma transfer fee)</span> = ${money(trxFeeW)}</div>` : ''}
       </td>
       <td class="num total"><b>${money(weekTotal)}</b></td>
     </tr>`;
@@ -12758,7 +12869,7 @@ function exportClientBreakdown(weekMon) {
   .meta-block .primary { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 6px; line-height: 1.3; }
   .meta-block .lines { font-size: 12px; color: var(--ink-2); line-height: 1.75; }
 
-  .summary { margin: 36px 64px 0; padding: 28px 32px; background: var(--accent-soft); border-radius: 12px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr; gap: 28px; align-items: center; }
+  .summary { margin: 36px 64px 0; padding: 28px 32px; background: var(--accent-soft); border-radius: 12px; border-left: 4px solid var(--accent); display: grid; grid-template-columns: ${grandEmmaTransferTT > 0 ? '1fr 1fr 1fr 1fr 1.4fr' : '1fr 1fr 1fr 1.4fr'}; gap: 28px; align-items: center; }
   .sum-item .label { font-size: 9.5px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
   .sum-item .value { font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: -0.2px; }
   .sum-item.due { text-align: right; padding-left: 28px; border-left: 1px solid rgba(15,76,117,0.18); }
@@ -12895,13 +13006,17 @@ function exportClientBreakdown(weekMon) {
       <div class="label">Swap TT Surcharge</div>
       <div class="value">+£${swapTtPremium()} / pallet</div>
     </div>
+    ${grandEmmaTransferTT > 0 ? `<div class="sum-item" style="background:rgba(244,114,182,0.10);margin:-12px;padding:12px;border-radius:8px;">
+      <div class="label" style="color:#9d174d;">🤝 Emma Transfer</div>
+      <div class="value" style="color:#9d174d;">+£${EMMA_TRANSFER_RATE} / TT pallet</div>
+    </div>` : ''}
     <div class="sum-item due">
       <div class="label">Grand Total</div>
       <div class="value">${money(grandTotal)}</div>
     </div>
   </div>
 
-  <div class="pricing-note"><b>📌 Note:</b> This statement covers <b>my fee, Hugo's fee${grandSwap > 0 ? ', and a £30/pallet surcharge for ' + grandSwap + ' Swap TT pallet' + (grandSwap===1?'':'s') : ''}</b> for this week. The pallets themselves were already prepaid — this is a separate weekly bill.</div>
+  <div class="pricing-note"><b>📌 Note:</b> This statement covers <b>my fee, Hugo's fee${grandSwap > 0 ? ', a £' + swapTtPremium() + '/pallet surcharge for ' + grandSwap + ' Swap TT pallet' + (grandSwap===1?'':'s') : ''}${grandEmmaTransferTT > 0 ? ', and a £' + EMMA_TRANSFER_RATE + '/pallet Emma transfer fee for ' + grandEmmaTransferTT + ' TT pallet' + (grandEmmaTransferTT===1?'':'s') + ' (Michael covered Emma rotation day)' : ''}</b> for this week. The pallets themselves were already prepaid — this is a separate weekly bill.</div>
 
   <div class="tx-wrap">
     <div class="tx-title">This Week's Breakdown</div>
