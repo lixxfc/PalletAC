@@ -2455,6 +2455,23 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
+      <!-- Backup / restore — JSON export/import (2026-06-06) -->
+      <div class="card mt-6">
+        <div class="card-title">💾 数据备份 / 恢复</div>
+        <div class="page-sub mb-4">导出全部数据为 JSON 文件 (含所有客户 / 流水 / 发票 / 收据 / 每日供货 / 参数 / Emma 转售记录)。可以作为定期备份, 或发给 Claude 审计用。</div>
+        <div class="row" style="gap:10px;flex-wrap:wrap;">
+          <button class="btn primary" onclick="exportPersonalJson()" style="background:linear-gradient(135deg,var(--cyan),var(--violet));font-weight:700;">⇣ 导出 JSON 备份</button>
+          <label class="btn ghost" style="cursor:pointer;display:inline-flex;align-items:center;">
+            ⇡ 导入 JSON
+            <input type="file" accept=".json,application/json" id="personal-json-import-input" style="display:none;" onchange="importPersonalJson(event)">
+          </label>
+        </div>
+        <div class="mt-4" style="font-size:11.5px;color:var(--text-dim);line-height:1.7;padding:10px 12px;background:rgba(0,229,255,0.05);border-left:3px solid var(--cyan);border-radius:6px;">
+          <div><b style="color:var(--cyan);">导出</b>: 下载一个 .json 文件包含**全部**个人 App 数据 — 客户列表 / 流水 / 发票 / 收据 / 每日供货 / 参数。</div>
+          <div style="margin-top:4px;"><b style="color:var(--violet);">导入</b>: 用之前导出的 JSON 文件覆盖当前数据 (会先 confirm 一遍)。<b style="color:var(--rose);">谨慎操作 — 不可撤销</b>。</div>
+        </div>
+      </div>
+
       <div class="card mt-6">
         <div class="card-title">轮次配置 <span class="page-sub" style="font-size:11px;font-weight:400;">(每日供货自动算谁取货,可单天手动改)</span></div>
         <div class="form-grid mt-4">
@@ -8123,6 +8140,86 @@ function resetAll() {
   if (!confirm('清空你的全部数据？此操作不可撤销')) return;
   state = emptyState();
   save(); renderAll();
+}
+
+// ============================================================
+// JSON EXPORT / IMPORT (2026-06-06)
+// ============================================================
+// Export the full personal_data state as a downloadable JSON file. Mirror of
+// the partnership-side export — useful for backups, sharing with Claude for
+// audit, or migrating between accounts.
+function exportPersonalJson() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const payload = {
+      _meta: {
+        app: 'PalletAC Personal',
+        exportedAt: new Date().toISOString(),
+        exportedBy: (currentUser && currentUser.email) || 'unknown',
+        version: '2026-06-06',
+        userId: (currentUser && currentUser.id) || null
+      },
+      data: state
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `palletac-personal-${today}.json`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    const customerCount = (state.customers || []).length;
+    const ledgerCount = (state.customers || []).reduce((s, c) => s + (c.ledger || []).length, 0);
+    const invCount = (state.invoices || []).length;
+    const recCount = (state.receipts || []).length;
+    const supplyCount = (state.dailySupply || []).length;
+    flash(`✓ 已导出 JSON: ${customerCount} 客户 / ${ledgerCount} 条流水 / ${invCount} 张 INV / ${recCount} 张收据 / ${supplyCount} 天供货`);
+  } catch (e) {
+    console.error('[export-json] failed:', e);
+    alert('导出失败:' + (e.message || e));
+  }
+}
+
+function importPersonalJson(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      // Two valid shapes: full export { _meta, data: {...} } OR raw state {...}
+      const newState = (parsed && parsed.data && parsed.data.customers) ? parsed.data : parsed;
+      if (!newState || typeof newState !== 'object' || !('customers' in newState)) {
+        alert('JSON 格式不对 — 必须包含 customers 字段');
+        return;
+      }
+      const customerCount = (newState.customers || []).length;
+      const ledgerCount = (newState.customers || []).reduce((s, c) => s + (c.ledger || []).length, 0);
+      const msg = `准备导入 JSON:\n\n` +
+        `客户: ${customerCount} 个\n` +
+        `流水: ${ledgerCount} 条\n` +
+        `发票: ${(newState.invoices || []).length} 张\n` +
+        `收据: ${(newState.receipts || []).length} 张\n` +
+        `供货: ${(newState.dailySupply || []).length} 天\n` +
+        `\n⚠ 当前数据会被完全覆盖, 不可撤销!\n` +
+        `当前是: ${(state.customers || []).length} 客户 / ${(state.customers || []).reduce((s,c)=>s+(c.ledger||[]).length,0)} 流水\n\n` +
+        `继续吗?`;
+      if (!confirm(msg)) return;
+      state = newState;
+      save();
+      renderAll();
+      flash(`✓ 已导入 JSON: ${customerCount} 客户 / ${ledgerCount} 流水`);
+    } catch (err) {
+      console.error('[import-json] parse failed:', err);
+      alert('导入失败 — JSON 解析错:\n' + (err.message || err));
+    } finally {
+      // Reset the input so re-selecting the same file fires onchange again
+      if (event && event.target) event.target.value = '';
+    }
+  };
+  reader.readAsText(file);
 }
 
 // ============ CUSTOMER PROFILE ============
