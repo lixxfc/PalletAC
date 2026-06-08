@@ -4415,26 +4415,38 @@ function _updateEmmaTransferPreview() {
 // AFTER BUG FIX: different pickup-by = separate record. Same pickup-by = merge.
 function checkSmartEntryDayCollision() {
   const date = document.getElementById('se-date').value;
-  const owner = document.getElementById('se-pickup-by').value;
+  const formOwner = document.getElementById('se-pickup-by').value;
+  // FIX (2026-06-08, Model B): when transfer mode is on, the actual pickupBy
+  // saved to dailySupply is 'Michael' (not the form value 'Emma'). Use the
+  // effective owner so collision detection matches what saveSmartPickup will
+  // actually merge/split against.
+  const _ccTrxToggle = document.getElementById('se-emma-transfer-toggle');
+  const _ccTransferMode = (formOwner === 'Emma') &&
+    isInEmmaTransferTrialPeriod(date) &&
+    (!_ccTrxToggle || _ccTrxToggle.checked);
+  const effectiveOwner = _ccTransferMode ? 'Michael' : formOwner;
   const warnEl = document.getElementById('se-warning');
   const supply = Array.isArray(state.dailySupply) ? state.dailySupply : [];
-  const same = supply.find(d => d.date === date && (d.pickupBy || 'Michael') === owner);
-  const other = supply.filter(d => d.date === date && (d.pickupBy || 'Michael') !== owner);
+  const same = supply.find(d => d.date === date && (d.pickupBy || 'Michael') === effectiveOwner);
+  const other = supply.filter(d => d.date === date && (d.pickupBy || 'Michael') !== effectiveOwner);
+  const ownerLabel = _ccTransferMode
+    ? `<b>Michael</b> <span style="color:#f9a8d4;font-size:11px;">(代取 Emma 日)</span>`
+    : `<b>${escapeHtml(effectiveOwner)}</b>`;
   if (same) {
-    // Same owner — will merge
+    // Same effective owner — will merge
     warnEl.style.display = '';
     warnEl.style.background = 'rgba(34,211,165,0.08)';
     warnEl.style.borderColor = 'rgba(34,211,165,0.3)';
     warnEl.style.color = 'var(--green)';
-    warnEl.innerHTML = `✓ <b>${escapeHtml(date)}</b> 已有 <b>${escapeHtml(owner)}</b> 的记录(${(same.trucks || []).length} 车),这次的新车会<b>合并</b>进那条。${other.length ? '另有 ' + other.map(d => escapeHtml(d.pickupBy || '?')).join('/') + ' 的独立记录。' : ''}`;
+    warnEl.innerHTML = `✓ <b>${escapeHtml(date)}</b> 已有 ${ownerLabel} 的记录(${(same.trucks || []).length} 车),这次的新车会<b>合并</b>进那条。${other.length ? '另有 ' + other.map(d => escapeHtml(d.pickupBy || '?')).join('/') + ' 的独立记录。' : ''}`;
   } else if (other.length) {
-    // Different owner — will create new separate record
+    // Different effective owner — will create new separate record
     warnEl.style.display = '';
     warnEl.style.background = 'rgba(0,229,255,0.08)';
     warnEl.style.borderColor = 'rgba(0,229,255,0.30)';
     warnEl.style.color = 'var(--cyan)';
     const otherInfo = other.map(d => `<b>${escapeHtml(d.pickupBy || '?')}</b>(${(d.trucks || []).length} 车)`).join(' · ');
-    warnEl.innerHTML = `ℹ <b>${escapeHtml(date)}</b> 当天已有 ${otherInfo} 的记录。这次会<b>独立</b>新建一条 <b>${escapeHtml(owner)}</b> 的记录(<b>不合并</b>,各自计算)。`;
+    warnEl.innerHTML = `ℹ <b>${escapeHtml(date)}</b> 当天已有 ${otherInfo} 的记录。这次会<b>独立</b>新建一条 ${ownerLabel} 的记录(<b>不合并</b>,各自计算)。`;
   } else {
     warnEl.style.display = 'none';
   }
@@ -4793,9 +4805,16 @@ function updateSmartEntryPreview() {
     : '';
 
   // Build sections
+  // FIX (2026-06-08): in Model B Emma transfer mode, even though the form
+  // says owner=Emma, the actual physical picker is Michael — so the SSS 取货总览
+  // banner should attribute the pallets to Michael's side, not Emma's.
+  const _supplyAttribUser = isMichaelPick ? 'Michael' : 'Emma';
+  const _supplyAttribNote = _previewTransferModeOn
+    ? ` <span style="color:#f9a8d4;font-size:10.5px;">(代取 Emma 日 → 算你)</span>`
+    : '';
   const supplySection = sec('📦', '每日供货 + SSS 取货总览', `
     加 <b>${_seTrucks.length}</b> 车 / <b>${totalPallets}</b> 托${swapHint}<br>
-    黄卡"SSS 取货总览":${document.getElementById('se-pickup-by').value} 这边 +${totalPallets} 托
+    黄卡"SSS 取货总览":<b>${_supplyAttribUser}</b> 这边 +${totalPallets} 托${_supplyAttribNote}
   `, 'var(--green)');
 
   // === SSS Share card (owner-aware) ===
