@@ -4500,10 +4500,29 @@ function renderSmartEntryTrucks() {
   // UI v3 (2026-06-08): redesigned for clarity — Swap toggle is now a clear
   // pill button "Swap ON / OFF", customer dropdown labelled "→ 客户", per-truck
   // amount block aligned right with type-tag, X delete button repositioned.
+  //
+  // FIX (2026-06-08, user-reported): when Emma transfer mode is active, the
+  // per-truck amount and total must include the £25/TT Emma transfer fee so
+  // the customer sees what they ACTUALLY owe (matches what gets saved to
+  // their ledger). Previously the row showed only pallets × £295 (Swap TT),
+  // missing the £25/托 surcharge → users saw confusing "保存后扣 £6,490"
+  // when the actual deduction was £7,040.
+  const _trxToggle = document.getElementById('se-emma-transfer-toggle');
+  const _trxOwner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
+  const _trxDate = (document.getElementById('se-date') || {}).value || '';
+  const _transferModeOn = (_trxOwner === 'Emma') &&
+    isInEmmaTransferTrialPeriod(_trxDate) &&
+    (!_trxToggle || _trxToggle.checked);
   let totalPallets = 0, totalAmount = 0;
   tb.innerHTML = _seTrucks.map((t, idx) => {
     const unitPrice = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    const amount = (t.pallets || 0) * unitPrice;
+    const baseAmount = (t.pallets || 0) * unitPrice;
+    // Emma transfer fee (£25/TT pallet) — added to customer's bill on TT
+    // trucks during transfer mode. Goes into a SEPARATE ledger entry at save
+    // time, but shown together in the per-truck total for clarity.
+    const _ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
+    const transferFee = (_transferModeOn && _ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
+    const amount = baseAmount + transferFee;
     if (t.customerId) totalAmount += amount;
     totalPallets += (t.pallets || 0);
     // Type pill style — TT = indigo, AMZ = cyan
@@ -4537,8 +4556,12 @@ function renderSmartEntryTrucks() {
         <div style="font-size:15px;font-weight:800;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};line-height:1.2;">
           ${t.customerId ? fmt(amount) : '—'}
         </div>
-        <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-top:3px;line-height:1.2;letter-spacing:0.2px;">
-          ${t.customerId ? `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''}` : '进库存'}
+        <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-top:3px;line-height:1.3;letter-spacing:0.2px;">
+          ${t.customerId
+            ? (transferFee > 0
+                ? `${t.pallets || 0} × £${unitPrice} (Swap)<br><span style="color:#f9a8d4;">+ ${t.pallets || 0} × £${EMMA_TRANSFER_RATE} Emma 转售</span>`
+                : `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''}`)
+            : '进库存'}
         </div>
       </td>
       <td style="padding:12px 8px;text-align:center;vertical-align:middle;">
@@ -4691,10 +4714,21 @@ function updateSmartEntryPreview() {
 
   // Cost & customer payment
   const totalSssCost = totalPallets * buyPrice;        // SSS-side cost: pallets × £245
+  // FIX (2026-06-08): include Emma transfer fee (£25/TT) in customer charge
+  // when transfer mode is active — otherwise the preview misleads users by
+  // hiding the £25/托 surcharge that gets saved as a separate ledger entry.
+  const _previewTrxToggle = document.getElementById('se-emma-transfer-toggle');
+  const _previewTrxOwner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
+  const _previewTransferModeOn = (_previewTrxOwner === 'Emma') &&
+    isInEmmaTransferTrialPeriod(date) &&
+    (!_previewTrxToggle || _previewTrxToggle.checked);
   const customerLedgerCharge = _seTrucks.reduce((s, t) => {
     if (!t.customerId) return s;
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    return s + (t.pallets || 0) * unit;
+    const base = (t.pallets || 0) * unit;
+    const ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
+    const emmaTransferFee = (_previewTransferModeOn && ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
+    return s + base + emmaTransferFee;
   }, 0);
 
   // Hugo / V cash flows (only meaningful when Michael picks up)
@@ -4726,19 +4760,26 @@ function updateSmartEntryPreview() {
   const hugoOwedBefore = _seGetHugoOwed();
 
   // Customer balances before/after (per customer)
+  // FIX (2026-06-08): include Emma transfer fee (£25/TT) in per-customer
+  // deduction so '客户账本扣 -£X' matches what's actually saved.
   const byCust = {};
   for (const t of trucksWithCustomer) {
     const c = state.customers.find(x => x.id === t.customerId);
     if (!c) continue;
     if (!byCust[c.id]) {
       const balBefore = customerBalance(c);
-      byCust[c.id] = { name: c.name, pallets: 0, amount: 0, trucks: 0, balBefore, swapPallets: 0 };
+      byCust[c.id] = { name: c.name, pallets: 0, amount: 0, trucks: 0, balBefore, swapPallets: 0, emmaTransferFee: 0 };
     }
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    byCust[c.id].pallets += (t.pallets || 0);
-    byCust[c.id].amount += (t.pallets || 0) * unit;
+    const palletsN = (t.pallets || 0);
+    const baseAmt = palletsN * unit;
+    const ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
+    const transferFee = (_previewTransferModeOn && ttEligible) ? palletsN * EMMA_TRANSFER_RATE : 0;
+    byCust[c.id].pallets += palletsN;
+    byCust[c.id].amount += baseAmt + transferFee;     // total customer balance debit (incl Emma fee)
+    byCust[c.id].emmaTransferFee += transferFee;       // breakdown for display
     byCust[c.id].trucks += 1;
-    if (t.isSwap) byCust[c.id].swapPallets += (t.pallets || 0);
+    if (t.isSwap) byCust[c.id].swapPallets += palletsN;
   }
 
   const sec = (icon, title, inner, accentColor) => `
@@ -4796,9 +4837,10 @@ function updateSmartEntryPreview() {
     custInner += `
       <div style="margin-bottom:8px;${Object.values(byCust).length > 1 ? 'padding-bottom:8px;border-bottom:1px dashed rgba(139,150,255,0.18);' : ''}">
         <div><b style="color:var(--violet);">${escapeHtml(cd.name)}</b> · ${cd.pallets} 托(${cd.trucks} 车${cd.swapPallets > 0 ? ` · ${cd.swapPallets} 托 Swap` : ''})</div>
-        <div>客户账本扣 <b style="color:var(--rose);">-${fmt(cd.amount)}</b>(单价 £${sellPrice}${cd.swapPallets > 0 ? '/£' + (sellPrice + swapPrem) + ' Swap' : ''})</div>
+        <div>客户账本扣 <b style="color:var(--rose);">-${fmt(cd.amount)}</b>(单价 £${sellPrice}${cd.swapPallets > 0 ? '/£' + (sellPrice + swapPrem) + ' Swap' : ''}${cd.emmaTransferFee > 0 ? ' + £' + EMMA_TRANSFER_RATE + ' Emma 转售 × ' + Math.round(cd.emmaTransferFee / EMMA_TRANSFER_RATE) + ' 托' : ''})</div>
+        ${cd.emmaTransferFee > 0 ? `<div style="font-size:11px;color:#f9a8d4;padding-left:6px;border-left:2px solid rgba(244,114,182,0.40);margin:3px 0 3px 0;">🤝 含 Emma 转售费 £${cd.emmaTransferFee.toLocaleString('en-GB')} (客户单独一行)</div>` : ''}
         <div>当前余额 <b>${fmt(cd.balBefore)}</b> → 取货后 <b style="color:${after < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(after)}</b> (够拉 ${canLift} 托)</div>
-        <div style="color:var(--green);">✓ 自动开 <b>INV-${date.split('-').reverse().join('')}-NNN</b>(7 天到期)</div>
+        <div style="color:var(--green);">✓ 自动开 <b>INV-${date.split('-').reverse().join('')}-NNN</b>(7 天到期${cd.emmaTransferFee > 0 ? ' · 含 2 行明细' : ''})</div>
       </div>`;
   }
   if (trucksToInventory.length > 0) {
