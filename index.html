@@ -2338,35 +2338,32 @@ function _newModeEvents() {
 }
 
 // 1. Cash pool = OPENING + (in-emma events + in-customer manual + customer
-//                deposits from personal) − (out-supplier + out-hugo + out-emma-transfer)
+//                deposits from personal) − (out-supplier + out-hugo)
 //
 // `cashPoolOpeningBalance` (2026-06-08 fix): partnership bank balance at the
 // switch date. Without this, the formula silently assumes the bank was £0 on
 // switch day — wrong, because customers who pre-paid before switch left a
-// surplus sitting in the account. That surplus was then used to top up SSS
-// post-switch, making the pool look like Michael "fronted" his own money
-// when in reality he was just spending customer pre-pays that the system
-// didn't carry forward. Settable in partnership settings.
+// surplus sitting in the account. Settable in partnership settings.
+//
+// `out-emma-transfer` (2026-06-08 v2 P0 #11 fix): EXCLUDED from cash pool.
+// Reason: the £25 Emma transfer fee is OFF-POOL (customer transfers it
+// separately to Michael's personal account, NOT into the partnership pool).
+// If we still subtracted out-emma-transfer here, the pool would show a fake
+// negative (matching Michael's earlier "我没垫一分钱" complaint). Pass-through
+// economically nets to zero outside the pool — neither side touches it.
 function cashPoolBalance() {
   const evs = _newModeEvents();
-  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0, outEmmaTransfer = 0;
+  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0;
   for (const e of evs) {
     if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'in-customer') inCustomerManual += (e.amount || 0);
     else if (e.type === 'out-supplier') outSss += (e.amount || 0);
     else if (e.type === 'out-hugo') outHugo += (e.amount || 0);
-    // Emma transfer settlement (new 2026-06-05): Michael pays Emma her
-    // accumulated TT-resale fee (£25/TT pallet × Emma-day pickups). This is
-    // a real cash outflow from the partnership account, so it MUST be
-    // subtracted from the pool. The matching inflow (customer paying the +£25
-    // surcharge) already enters via in-customer per the existing flow, so net
-    // long-term impact on the pool is zero — but during the gap between
-    // customer payment and Emma settlement, this term matters.
-    else if (e.type === 'out-emma-transfer') outEmmaTransfer += (e.amount || 0);
+    // out-emma-transfer intentionally EXCLUDED — off-pool flow (see comment above)
   }
   const inCustomerFromPersonal = customerDepositsSinceSwitch();
   const opening = +(state.params && state.params.cashPoolOpeningBalance) || 0;
-  return opening + inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo - outEmmaTransfer;
+  return opening + inEmma + inCustomerManual + inCustomerFromPersonal - outSss - outHugo;
 }
 
 // 2. SSS balance = my prepay to SSS − cost of all post-switch pickups − refunds
@@ -3029,9 +3026,10 @@ function buildDrilldownData(key) {
       running += inCustFromPersonal;
       rows.push({ date: '—', desc: `<b>📥 客户预付汇总</b>(从个人账客户账本)<br><span class="dim" style="font-size:11px;">所有客户切换后的 deposit 总和</span>`, amount: inCustFromPersonal });
     }
-    // All in-emma / in-customer / out-supplier / out-hugo / out-emma-transfer events, chronological
-    // (out-emma-transfer added 2026-06-05 — must mirror cashPoolBalance() formula)
-    const cashFlow = evs.filter(e => ['in-emma','in-customer','out-supplier','out-hugo','out-emma-transfer'].includes(e.type))
+    // All in-emma / in-customer / out-supplier / out-hugo events, chronological.
+    // P0 #11 (2026-06-08): out-emma-transfer intentionally EXCLUDED — off-pool
+    // flow (£25 customer→Michael direct, Michael→Emma direct, never touches pool).
+    const cashFlow = evs.filter(e => ['in-emma','in-customer','out-supplier','out-hugo'].includes(e.type))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     for (const e of cashFlow) {
       const sign = (e.type === 'in-emma' || e.type === 'in-customer') ? 1 : -1;
@@ -3040,13 +3038,21 @@ function buildDrilldownData(key) {
         'in-emma': '👩 Emma 转入',
         'in-customer': '👥 客户手动转入',
         'out-supplier': '🏭 付 SSS',
-        'out-hugo': '🧑 付 Hugo 现金',
-        'out-emma-transfer': '🤝 付 Emma TT 转售费'
+        'out-hugo': '🧑 付 Hugo 现金'
       };
       rows.push({
         date: e.date,
         desc: `<b>${labels[e.type] || e.type}</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}<br><span class="dim" style="font-size:11px;">池余 → £${fmt0(running)}</span>`,
         amount: sign * (e.amount || 0)
+      });
+    }
+    // Show informational row noting Emma transfer settlements are off-pool
+    const offPoolEmma = evs.filter(e => e.type === 'out-emma-transfer').reduce((s,e) => s + (e.amount || 0), 0);
+    if (offPoolEmma > 0) {
+      rows.push({
+        date: '—',
+        desc: `<b style="color:#db2777;">🤝 Emma 转售结算(off-pool · 不进资金池)</b><br><span class="dim" style="font-size:11px;">累计已付 Emma £${fmt0(offPoolEmma)} — 客户直接转你, 你直接转 Emma</span>`,
+        amount: 0
       });
     }
     const totalOut = cashFlow.filter(e=>e.type.startsWith('out')).reduce((s,e)=>s+(e.amount||0),0);
@@ -7371,7 +7377,6 @@ async function _editPickupInPersonal(ev, oldSnap) {
     };
 
     // 1. Customer ledger entry — find the ONE matching, update only that
-    let emmaFeesSynced = 0;
     for (const c of (pdata.customers || [])) {
       const matched = (c.ledger || []).filter(e => _pickupItemMatches(e, matchSnap));
       if (matched.length > 1) ambiguousLedger += (matched.length - 1);
@@ -7387,35 +7392,29 @@ async function _editPickupInPersonal(ev, oldSnap) {
         entry.swapPremium = ev.isSwap ? swapPrem : 0;
         entry.amount      = customerAmount;
         entry.updatedAt   = new Date().toISOString();
+        // P0 #10 fix (2026-06-08): sync Emma-transfer markers to the customer
+        // ledger entry so the weekly statement (customerWeeklyBreakdown reads
+        // entry._emmaTransferTTPallets) stays in sync after a合伙账 edit.
+        if (ev._emmaTransferDay) {
+          const newIsTT = !!ev.isSwap || (ev.palletType || '').toUpperCase() === 'TT';
+          entry._emmaTransferDay = true;
+          entry._emmaDayRotation = ev._emmaDayRotation || 'Emma';
+          entry._emmaTransferTTPallets = newIsTT ? ev.pallets : 0;
+        } else {
+          // If marker was cleared on partnership side, mirror it
+          delete entry._emmaTransferDay;
+          delete entry._emmaTransferTTPallets;
+          delete entry._emmaDayRotation;
+        }
         counts.ledger++;
         updatedLedgerIds.push(entry.id);
       }
-      // ─── EMMA TRANSFER FEE SYNC (2026-06-05) ───
-      // If this pickup has a linked emma-transfer-fee row, update its amount /
-      // date / truck — or remove it if the new pallet type is no longer TT.
-      // The link is via _emmaTransferLinkUid === source pickup's _pickupUid.
-      if (matchSnap._pickupUid) {
-        const linkedFee = (c.ledger || []).find(e =>
-          e.type === 'emma-transfer-fee' && e._emmaTransferLinkUid === matchSnap._pickupUid
-        );
-        const newIsTT = !!ev.isSwap || (ev.palletType || '').toUpperCase() === 'TT';
-        if (linkedFee) {
-          if (!newIsTT) {
-            c.ledger = (c.ledger || []).filter(x => x.id !== linkedFee.id);
-            emmaFeesSynced++;
-          } else {
-            linkedFee.pallets = ev.pallets;
-            linkedFee.amount  = ev.pallets * 25;  // EMMA_TRANSFER_RATE
-            linkedFee.date    = ev.date;
-            linkedFee.truck   = ev.truck;
-            linkedFee.note    = `Emma 转售费 £25 × ${ev.pallets} TT 托盘 (Emma 代取转售试行)`;
-            linkedFee.updatedAt = new Date().toISOString();
-            emmaFeesSynced++;
-          }
-        }
-      }
+      // NOTE (2026-06-08): old emma-transfer-fee LEDGER SYNC block removed.
+      // After commit 7868103, £25 is off-pool — no emma-transfer-fee ledger
+      // rows exist (migration removes them). entry._emmaTransferTTPallets
+      // above is the single source of truth for the weekly bill.
     }
-    counts.emmaTransferFees = emmaFeesSynced;
+    counts.emmaTransferFees = 0;
 
     // 2. dailySupply truck — find the ONE matching, update only that
     for (const dayRec of (pdata.dailySupply || [])) {
@@ -7439,39 +7438,31 @@ async function _editPickupInPersonal(ev, oldSnap) {
     }
 
     // 3. Linked invoices — update amount + line items + date
+    // P0 #8 fix (2026-06-08): INV ONLY reflects pool charge (pallet line).
+    // £25 Emma transfer fee is OFF-POOL → never on INV. Strip any legacy
+    // _emmaTransferFee line that pre-migration data may still carry.
     for (const inv of (pdata.invoices || [])) {
       if (!inv.linkedPickupId || !updatedLedgerIds.includes(inv.linkedPickupId)) continue;
       inv.amount = customerAmount;
       inv.invoiceDate = ev.date;
-      // Update line items: take the first pallet line item and refresh qty/unitPrice/total
+      // Strip any pre-migration Emma fee line items first
+      if (Array.isArray(inv.lineItems)) {
+        inv.lineItems = inv.lineItems.filter(li => !(li && li._emmaTransferFee));
+      }
+      // Update / create the pallet line
       if (Array.isArray(inv.lineItems) && inv.lineItems.length > 0) {
-        // Find the pallet-related line (heuristic: first non-emma-transfer line)
-        let palletLine = inv.lineItems.find(li => !li._emmaTransferFee && /托|pallet|amz|amazon|tt|swap/i.test(li.description || ''));
-        if (!palletLine) palletLine = inv.lineItems.find(li => !li._emmaTransferFee) || inv.lineItems[0];
+        let palletLine = inv.lineItems.find(li => /托|pallet|amz|amazon|tt|swap/i.test(li.description || '')) || inv.lineItems[0];
         palletLine.qty = ev.pallets;
         palletLine.unitPrice = unitPrice;
         palletLine.description = (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets;
+      } else {
+        inv.lineItems = [{
+          description: (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets,
+          qty: ev.pallets,
+          unitPrice: unitPrice
+        }];
       }
-      // ─── EMMA TRANSFER FEE LINE SYNC (2026-06-05) ───
-      // Find the Emma-transfer-fee line on this INV (if any) and recompute it
-      // from the partnership event's marker. Add a missing line if the pickup
-      // just became Emma-transfer-eligible. Remove if no longer eligible.
-      const feeLineIdx = (inv.lineItems || []).findIndex(li => li._emmaTransferFee);
-      const ttPallets = +(ev._emmaTransferTTPallets || 0);
-      if (ttPallets > 0 && ev._emmaTransferDay) {
-        const feeLine = {
-          description: `Emma transfer fee (TT pickup on Emma's day)`,
-          qty: ttPallets,
-          unitPrice: 25,                                                  // EMMA_TRANSFER_RATE
-          _emmaTransferFee: true
-        };
-        if (feeLineIdx >= 0) inv.lineItems[feeLineIdx] = feeLine;
-        else                 inv.lineItems.push(feeLine);
-      } else if (feeLineIdx >= 0) {
-        // No longer eligible (e.g. pallet type changed to AMZ) — strip the line
-        inv.lineItems.splice(feeLineIdx, 1);
-      }
-      // Rebuild subtotal/total from all line items
+      // Rebuild subtotal/total from pallet line(s) only — INVARIANT qty × unitPrice === subtotal
       const newSubtotal = (inv.lineItems || []).reduce((s, li) => s + (+(li.qty || 0)) * (+(li.unitPrice || 0)), 0);
       inv.subtotal = newSubtotal;
       inv.total    = newSubtotal;
@@ -8047,22 +8038,22 @@ function renderNewModeKpis() {
   const rate = state.params.hugoCommission || 7;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
-  // 1. Cash pool — MUST mirror cashPoolBalance() formula exactly, otherwise the
-  // KPI card value diverges from the drilldown total. Both must include
-  // out-emma-transfer (added 2026-06-05) and cashPoolOpeningBalance (2026-06-08).
-  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0, outEmmaTransfer = 0;
+  // 1. Cash pool — MUST mirror cashPoolBalance() formula exactly.
+  // P0 #11 fix (2026-06-08): out-emma-transfer EXCLUDED (off-pool flow,
+  // matches cashPoolBalance change). Stays in sync with the formula above.
+  let inEmma = 0, inCustomerManual = 0, outSss = 0, outHugo = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'in-customer') inCustomerManual += (e.amount || 0);
     else if (e.type === 'out-supplier') outSss += (e.amount || 0);
     else if (e.type === 'out-hugo') outHugo += (e.amount || 0);
-    else if (e.type === 'out-emma-transfer') outEmmaTransfer += (e.amount || 0);
+    // out-emma-transfer intentionally EXCLUDED (off-pool flow)
   }
   const inCustomerFromPersonal = customerDepositsSinceSwitch();
   const inCustTotal = inCustomerFromPersonal + inCustomerManual;
   const cashOpening = +(state.params && state.params.cashPoolOpeningBalance) || 0;
   const inflow = inEmma + inCustTotal + cashOpening;
-  const outflow = outSss + outHugo + outEmmaTransfer;
+  const outflow = outSss + outHugo;
   const pool = inflow - outflow;   // === cashPoolBalance() by construction
   set('nm-pool-value', fmt(pool));
   set('nm-pool-inflow', fmt(inflow));
@@ -8071,11 +8062,7 @@ function renderNewModeKpis() {
     ? `期初 ${fmt(cashOpening)} + 客户 ${fmt(inCustTotal)} + Emma ${fmt(inEmma)}`
     : `客户 ${fmt(inCustTotal)} + Emma ${fmt(inEmma)}`;
   set('nm-pool-inflow-sub', inflowSub);
-  // Show Emma transfer only if there is any (don't clutter the legacy display)
-  const outflowSub = outEmmaTransfer > 0
-    ? `SSS ${fmt(outSss)} + Hugo ${fmt(outHugo)} + Emma转售 ${fmt(outEmmaTransfer)}`
-    : `SSS ${fmt(outSss)} + Hugo ${fmt(outHugo)}`;
-  set('nm-pool-outflow-sub', outflowSub);
+  set('nm-pool-outflow-sub', `SSS ${fmt(outSss)} + Hugo ${fmt(outHugo)}`);
   // Dynamic sub-text: when pool < 0, label it correctly as Michael's bridging
   // capital (he fronted money from his own pocket) — NOT a bank overdraft.
   // Pure cosmetic text change, no value computation altered.

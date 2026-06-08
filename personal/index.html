@@ -6807,11 +6807,66 @@ function closeCustomerDetail() {
   if (btn) btn.classList.remove('hide');
   document.getElementById('customer-detail').classList.add('hide');
 }
-function deleteCustomer() {
+// P0 #3 fix (2026-06-08): deleteCustomer now cascades — without this, deleting
+// a customer leaves orphan合伙账 events + INVs + Receipts, and silently shrinks
+// the partnership cash pool (customerDepositsSinceSwitch loses the deposits).
+async function deleteCustomer() {
   if (!currentCustomer) return;
-  if (!confirm('删除客户及其全部流水？')) return;
-  state.customers = state.customers.filter(c => c.id !== currentCustomer);
-  closeCustomerDetail(); save(); renderAll();
+  const c = state.customers.find(x => x.id === currentCustomer);
+  if (!c) return;
+
+  // Tally what's about to vanish
+  const pickups = (c.ledger || []).filter(e => e.type === 'pickup');
+  const deposits = (c.ledger || []).filter(e => e.type === 'deposit');
+  const refunds = (c.ledger || []).filter(e => e.type === 'refund');
+  const depositTotal = deposits.reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
+  const refundTotal = refunds.reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
+  const netInflow = depositTotal - refundTotal;
+  const invs = (state.invoices || []).filter(i => i.customerId === currentCustomer && i.status !== 'void');
+  const recs = (state.receipts || []).filter(r => r.customerId === currentCustomer && r.status !== 'cancelled');
+
+  const msg =
+    `删除客户「${c.name}」?\n\n这将:\n` +
+    `· 撤销 ${pickups.length} 条取货流水 (合伙账 SSS / Hugo 自动重算)\n` +
+    `· 作废 ${invs.length} 张未作废 INV\n` +
+    `· 作废 ${recs.length} 张未作废 REC\n` +
+    `· 退回 ${deposits.length} 条 deposit (合伙账资金池 ${netInflow >= 0 ? '减少' : '增加'} ${fmt(Math.abs(netInflow))})\n` +
+    `· 清除 dailySupply 中所有相关卡车\n\n` +
+    `此操作不可撤销。`;
+  if (!confirm(msg)) return;
+
+  // Cascade-delete each pickup via delLedger (handles partnership + dailySupply + INV)
+  const pickupIds = pickups.map(e => e.id);
+  for (const pid of pickupIds) {
+    try { await delLedger(pid, { skipConfirm: true }); } catch (e) { console.warn('[deleteCustomer] pickup cascade failed:', e); }
+  }
+
+  // Void all remaining INVs (deposits / refunds have no cascading INV but those flow types
+  // can be removed simply by removing the customer at the end)
+  for (const inv of (state.invoices || [])) {
+    if (inv.customerId === currentCustomer && inv.status !== 'void') {
+      inv.status = 'void';
+      inv.voidedAt = new Date().toISOString();
+      inv.voidReason = '客户已删除';
+      inv.updatedAt = new Date().toISOString();
+    }
+  }
+  for (const rec of (state.receipts || [])) {
+    if (rec.customerId === currentCustomer && rec.status !== 'cancelled') {
+      rec.status = 'cancelled';
+      rec.cancelledAt = new Date().toISOString();
+      rec.cancelReason = '客户已删除';
+      rec.updatedAt = new Date().toISOString();
+    }
+  }
+
+  // Finally remove the customer (also drops remaining deposit/refund ledger rows,
+  // which shrinks customerDepositsSinceSwitch — already warned in the dialog)
+  state.customers = state.customers.filter(x => x.id !== currentCustomer);
+  closeCustomerDetail();
+  save();
+  renderAll();
+  flash(`已删除「${c.name}」 · ${pickups.length} 取货撤销 · ${invs.length} INV + ${recs.length} REC 作废`);
 }
 // Show/hide fields based on selected ledger type
 function updateLedgerForm() {
@@ -7138,7 +7193,12 @@ function _smartAlertsCompute() {
     const sw = (typeof _seNewModeStartDate === 'function') ? _seNewModeStartDate() : null;
     const params = _partnershipCache.params || {};
     const cashOpening = +(params.cashPoolOpeningBalance) || 0;
-    let inEmma = 0, inCustomerManual = 0, outSupplier = 0, outHugo = 0, outEmmaTransfer = 0;
+    // P0 #11 fix (2026-06-08): out-emma-transfer EXCLUDED from cash pool.
+    // Reason: £25 Emma transfer fee is OFF-POOL — customer transfers it
+    // separately to Michael's personal account, never into the partnership
+    // pool. If we still subtracted out-emma-transfer here, the pool would
+    // show a fake negative. Must stay in sync with main app's cashPoolBalance().
+    let inEmma = 0, inCustomerManual = 0, outSupplier = 0, outHugo = 0;
     for (const e of events) {
       if (e.deleted || !e.date) continue;
       if (sw && e.date < sw) continue;
@@ -7147,7 +7207,7 @@ function _smartAlertsCompute() {
       else if (e.type === 'in-customer') inCustomerManual += amt;
       else if (e.type === 'out-supplier') outSupplier += amt;
       else if (e.type === 'out-hugo')   outHugo += amt;
-      else if (e.type === 'out-emma-transfer') outEmmaTransfer += amt;
+      // out-emma-transfer intentionally EXCLUDED (off-pool flow)
     }
     let customerNet = 0;
     if (sw) {
@@ -7161,7 +7221,7 @@ function _smartAlertsCompute() {
         }
       }
     }
-    const cashPool = cashOpening + inEmma + inCustomerManual + customerNet - outSupplier - outHugo - outEmmaTransfer;
+    const cashPool = cashOpening + inEmma + inCustomerManual + customerNet - outSupplier - outHugo;
     if (cashPool < 0) {
       alerts.push({
         id: 'cash-pool-overdraft',
@@ -7870,12 +7930,13 @@ function onNoteBlur(el, entryId) {
 // ============================================================
 // DELETE LEDGER ENTRY (with cascade-cancel of linked INV/REC)
 // ============================================================
-async function delLedger(id) {
+async function delLedger(id, opts) {
   if (!currentCustomer) return;
   const c = state.customers.find(x => x.id === currentCustomer);
   if (!c) return;
   const e = (c.ledger || []).find(x => x.id === id);
   if (!e) return;
+  const skipConfirm = !!(opts && opts.skipConfirm);
 
   const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === id);
   const linkedRec = (state.receipts || []).find(r => r.linkedDepositId === id);
@@ -7901,23 +7962,60 @@ async function delLedger(id) {
       ${linkedRec ? `· 收据 <b>${escapeHtml(linkedRec.number)}</b>(${fmt(linkedRec.amount)})将被作废 — 可在收款历史里恢复` : ''}
     </div>` : '';
 
-  const ok = await appConfirm({
-    title: '删除这条流水?',
-    body: `要删除这条 <b style="color:var(--rose);">${typeLbl}</b> 记录吗?<br>原始数据会从客户账本里移除,<b style="color:var(--rose);">不可撤销</b>。${summary}${linkedHtml}`,
-    okText: '删除',
-    cancelText: '保留',
-    danger: true
-  });
-  if (!ok) return;
+  if (!skipConfirm) {
+    const ok = await appConfirm({
+      title: '删除这条流水?',
+      body: `要删除这条 <b style="color:var(--rose);">${typeLbl}</b> 记录吗?<br>原始数据会从客户账本里移除,<b style="color:var(--rose);">不可撤销</b>。${summary}${linkedHtml}`,
+      okText: '删除',
+      cancelText: '保留',
+      danger: true
+    });
+    if (!ok) return;
+  }
+
+  // === BUILD _cascadeSnapshot (P0 #6 fix, 2026-06-08) ============
+  // Capture all linked data BEFORE we destroy anything, so partnership-side
+  // restoreEvent can recreate. Stored on the partnership event as
+  // pev._cascadeSnapshot (matches the shape _restorePickupToPersonal expects).
+  const _cascadeSnapshot = { ledgerEntries: [], supplyTrucks: [], voidedInvoices: [], emmaTransferFees: [] };
+  if (e.type === 'pickup') {
+    _cascadeSnapshot.ledgerEntries.push({ customerId: c.id, entry: JSON.parse(JSON.stringify(e)) });
+    // Find matching dailySupply truck (1:1 via _pickupUid, fallback to field match)
+    if (Array.isArray(state.dailySupply)) {
+      for (const dayRec of state.dailySupply) {
+        if (!Array.isArray(dayRec.trucks)) continue;
+        const idx = dayRec.trucks.findIndex(t =>
+          (e._pickupUid && t._pickupUid && t._pickupUid === e._pickupUid) ||
+          (!e._pickupUid && e._linkSupplyId &&
+           t._linkSupplyId === e._linkSupplyId &&
+           (t.type || '') === (e.palletType || '') &&
+           (t.pallets || 0) === (e.pallets || 0) &&
+           !!t.swapped === !!e.isSwap)
+        );
+        if (idx >= 0) {
+          _cascadeSnapshot.supplyTrucks.push({
+            dayId: dayRec.id, dayDate: dayRec.date, dayPickupBy: dayRec.pickupBy,
+            truck: JSON.parse(JSON.stringify(dayRec.trucks[idx]))
+          });
+          break;
+        }
+      }
+    }
+    if (linkedInv) _cascadeSnapshot.voidedInvoices.push({ id: linkedInv.id, previousStatus: linkedInv.status || 'issued' });
+  }
 
   if (linkedInv) {
     linkedInv.status = 'void';
     linkedInv.updatedAt = new Date().toISOString();
+    linkedInv.voidedAt = new Date().toISOString();
+    linkedInv.voidReason = '关联流水已删除';
     linkedInv.linkedPickupId = null;
   }
   if (linkedRec) {
     linkedRec.status = 'cancelled';
     linkedRec.updatedAt = new Date().toISOString();
+    linkedRec.cancelledAt = new Date().toISOString();
+    linkedRec.cancelReason = '关联流水已删除';
     linkedRec.linkedDepositId = null;
   }
 
@@ -7957,6 +8055,8 @@ async function delLedger(id) {
         pev.deleted = true;
         pev.deletedAt = new Date().toISOString();
         pev.deletedBy = ((currentUser && currentUser.email) || 'personal-app') + ' (via delLedger)';
+        // P0 #6 (2026-06-08): attach snapshot so partnership restoreEvent works
+        pev._cascadeSnapshot = _cascadeSnapshot;
         touched = 1;
       }
       if (touched > 0) {
@@ -8052,8 +8152,34 @@ async function delLedger(id) {
   }
 
   c.ledger = c.ledger.filter(x => x.id !== id);
+
+  // P0 #4 fix (2026-06-08): also remove the matching dailySupply truck so
+  // monthly stats / Hugo / SSS recalc don't see a ghost truck. Use 1:1 match
+  // (snapshot already captured above to allow restore).
+  let supplyTruckMsg = '';
+  if (e.type === 'pickup' && Array.isArray(state.dailySupply)) {
+    for (const dayRec of state.dailySupply) {
+      if (!Array.isArray(dayRec.trucks)) continue;
+      const idx = dayRec.trucks.findIndex(t =>
+        (e._pickupUid && t._pickupUid && t._pickupUid === e._pickupUid) ||
+        (!e._pickupUid && e._linkSupplyId &&
+         t._linkSupplyId === e._linkSupplyId &&
+         (t.type || '') === (e.palletType || '') &&
+         (t.pallets || 0) === (e.pallets || 0) &&
+         !!t.swapped === !!e.isSwap)
+      );
+      if (idx >= 0) {
+        dayRec.trucks.splice(idx, 1);
+        supplyTruckMsg = ' · 已清供货卡车';
+        break;
+      }
+    }
+    // Remove empty day records
+    state.dailySupply = state.dailySupply.filter(d => (d.trucks || []).length > 0);
+  }
+
   save(); renderAll();
-  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : '') + partnershipSyncMsg + emmaTransferCascadeMsg);
+  flash('已删除流水' + ((linkedInv || linkedRec) ? ' · 关联单据已作废' : '') + partnershipSyncMsg + emmaTransferCascadeMsg + supplyTruckMsg);
 }
 
 // ============================================================
@@ -8133,8 +8259,15 @@ function updateLedgerEditPreview() {
 
   let newAmount;
   if (isPickup) {
+    // P1 #17 fix (2026-06-08): preserve historical unitPrice unless the user
+    // changed isSwap. Otherwise editing date/note/truck silently rewrites
+    // historical pricing to today's sellPrice.
     const isSwap = !!document.getElementById('le-swap').checked;
-    const unitPrice = isSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265);
+    const oldUnitPrice = +(orig.unitPrice || 0);
+    const sellLive = state.params.sellPrice || 265;
+    const swapLive = swapTtPremium();
+    const liveUnitPrice = isSwap ? (sellLive + swapLive) : sellLive;
+    const unitPrice = (!!orig.isSwap === isSwap && oldUnitPrice > 0) ? oldUnitPrice : liveUnitPrice;
     const palletsN = parseInt(document.getElementById('le-pallets').value, 10) || 0;
     newAmount = palletsN * unitPrice;
   } else {
@@ -8176,8 +8309,20 @@ async function saveLedgerEdit() {
     newTruck = (document.getElementById('le-truck').value || '').trim();
     newPalletType = document.getElementById('le-pallet-type').value || 'Mixed';
     newIsSwap = !!document.getElementById('le-swap').checked;
-    newUnitPrice = newIsSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265);
-    newSwapPremium = newIsSwap ? swapTtPremium() : 0;
+    // P1 #17 fix (2026-06-08): preserve historical unitPrice unless the user
+    // actually changed isSwap. Otherwise just editing the date/note/truck
+    // silently rewrites the historical sell price (broke old INV totals).
+    const oldUnitPrice = +(e.unitPrice || 0);
+    const sellLive = state.params.sellPrice || 265;
+    const swapLive = swapTtPremium();
+    const liveUnitPrice = newIsSwap ? (sellLive + swapLive) : sellLive;
+    if (!!e.isSwap === newIsSwap && oldUnitPrice > 0) {
+      newUnitPrice = oldUnitPrice;
+      newSwapPremium = (+e.swapPremium || 0);
+    } else {
+      newUnitPrice = liveUnitPrice;
+      newSwapPremium = newIsSwap ? swapLive : 0;
+    }
     newAmount = newPallets * newUnitPrice;
   } else {
     newAmount = parseFloat(document.getElementById('le-amount').value);
@@ -8192,8 +8337,12 @@ async function saveLedgerEdit() {
     _linkSupplyId: e._linkSupplyId,
     palletType: e.palletType,
     pallets: e.pallets,
-    isSwap: !!e.isSwap
-  } : null;
+    isSwap: !!e.isSwap,
+    // P1 #15 fix: also snapshot mutable fields so we can rollback on DB write failure
+    date: e.date, amount: e.amount, truck: e.truck, note: e.note,
+    unitPrice: e.unitPrice, swapPremium: e.swapPremium,
+    _emmaTransferTTPallets: e._emmaTransferTTPallets
+  } : { date: e.date, amount: e.amount, note: e.note };
 
   e.date = newDate;
   e.amount = newAmount;
@@ -8205,45 +8354,34 @@ async function saveLedgerEdit() {
     e.isSwap = newIsSwap;
     e.unitPrice = newUnitPrice;
     e.swapPremium = newSwapPremium;
+    // P0 #9 fix (2026-06-08): recompute Emma-transfer marker on the customer
+    // ledger entry so the weekly statement (customerWeeklyBreakdown reads
+    // e._emmaTransferTTPallets) is in sync. Mirror what's done to the
+    // partnership event further down.
+    if (e._emmaTransferDay) {
+      const ttEligible = newIsSwap || (newPalletType || '').toUpperCase() === 'TT';
+      e._emmaTransferTTPallets = ttEligible ? newPallets : 0;
+    }
   }
 
-  // Sync linked invoice
+  // Sync linked invoice — pallet line ONLY (off-pool 之后, £25 不进 INV)
   const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === _editingLedgerId);
   if (linkedInv && isPickup) {
     linkedInv.issueDate = newDate;
     linkedInv.dueDate = computeDueDate(newDate, linkedInv.paymentTerms || '7', linkedInv.customDays || 0);
-    // Build line items: main pallet line + optional Emma transfer fee line.
-    // We rebuild from scratch (not in-place) so we don't carry stale entries
-    // from a previous version of the pickup.
-    const newLineItems = [{
+    // P0 #8/#18 fix (2026-06-08): INV reflects POOL deduction only. £25 Emma
+    // transfer fee is OFF-POOL — it lives on the weekly statement, NOT here.
+    // Always rebuild line items from scratch and strip any legacy _emmaTransferFee
+    // line that might have been re-added before this fix.
+    linkedInv.lineItems = [{
       description: (newIsSwap ? 'Pallets (Swap TT)' : 'Pallets')
                    + (newPalletType && !newIsSwap ? ' (' + newPalletType + ')' : '')
                    + (newTruck ? ' [Vehicle ' + newTruck + ']' : ''),
       qty: newPallets,
       unitPrice: newUnitPrice
     }];
-    // If there's a linked emma-transfer-fee row AND the new pallet type is
-    // still TT-eligible, include the £25 line. Use the NEW pallet count so the
-    // INV matches the post-edit ledger state. Skip if the type changed to AMZ
-    // (the fee row will be removed in the cascade block below).
-    const linkedFee = (c.ledger || []).find(x =>
-      x.type === EMMA_TRANSFER_FEE_TYPE && x._emmaTransferLinkUid === e._pickupUid
-    );
-    const newIsTTAfterEdit = newIsSwap || (newPalletType || '').toUpperCase() === 'TT';
-    let invTotal = newAmount;
-    if (linkedFee && newIsTTAfterEdit) {
-      const newFeeAmount = newPallets * EMMA_TRANSFER_RATE;
-      newLineItems.push({
-        description: `Emma transfer fee (TT pickup on Emma's day · ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})`,
-        qty: newPallets,
-        unitPrice: EMMA_TRANSFER_RATE,
-        _emmaTransferFee: true
-      });
-      invTotal += newFeeAmount;
-    }
-    linkedInv.lineItems = newLineItems;
-    linkedInv.subtotal = invTotal;
-    linkedInv.total    = invTotal;
+    linkedInv.subtotal = newAmount;
+    linkedInv.total    = newAmount;          // INVARIANT: qty × unitPrice === subtotal === total
     if (newNote) linkedInv.notes = newNote;
     linkedInv.updatedAt = new Date().toISOString();
   }
@@ -8326,39 +8464,62 @@ async function saveLedgerEdit() {
     }
   }
 
-  // ─── EMMA TRANSFER FEE LEDGER LINE SYNC (2026-06-05) ───
-  // If the edited pickup has a linked emma-transfer-fee ledger row, update or
-  // remove that row to match the new pallet count / pallet type.
-  if (isPickup && oldSnap && oldSnap._pickupUid) {
-    const linkedFee = (c.ledger || []).find(x =>
-      x.type === EMMA_TRANSFER_FEE_TYPE && x._emmaTransferLinkUid === oldSnap._pickupUid
-    );
-    const newIsTT = (newIsSwap || (newPalletType || '').toUpperCase() === 'TT');
-    if (linkedFee) {
-      if (!newIsTT) {
-        // No longer TT → remove the fee line
-        c.ledger = (c.ledger || []).filter(x => x.id !== linkedFee.id);
-        emmaTransferEditMsg = ` · 不再 TT,Emma 转售费已撤销 £${(linkedFee.amount || 0).toLocaleString('en-GB')}`;
-      } else if (newPallets !== (linkedFee.pallets || 0)) {
-        // Same TT but pallet count changed → recalc
-        const oldAmt = +(linkedFee.amount || 0);
-        linkedFee.pallets  = newPallets;
-        linkedFee.amount   = newPallets * EMMA_TRANSFER_RATE;
-        linkedFee.date     = newDate;
-        linkedFee.truck    = newTruck;
-        linkedFee.note     = `Emma 转售费 £${EMMA_TRANSFER_RATE} × ${newPallets} TT 托盘 (Emma 代取转售试行)`;
-        emmaTransferEditMsg = ` · Emma 转售费同步 £${oldAmt} → £${linkedFee.amount}`;
-      } else if (linkedFee.date !== newDate || linkedFee.truck !== newTruck) {
-        // Pallet count unchanged but date/truck moved → update those fields
-        linkedFee.date  = newDate;
-        linkedFee.truck = newTruck;
+  // P0 #5 fix (2026-06-08): also update the matching dailySupply truck so
+  // monthly KPI / Hugo / SSS recalc reads the new values, not stale ones.
+  let supplyTruckMsg = '';
+  if (isPickup && oldSnap && Array.isArray(state.dailySupply)) {
+    for (const dayRec of state.dailySupply) {
+      if (!Array.isArray(dayRec.trucks)) continue;
+      const idx = dayRec.trucks.findIndex(t =>
+        (oldSnap._pickupUid && t._pickupUid && t._pickupUid === oldSnap._pickupUid) ||
+        (!oldSnap._pickupUid && oldSnap._linkSupplyId &&
+         t._linkSupplyId === oldSnap._linkSupplyId &&
+         (t.type || '') === (oldSnap.palletType || '') &&
+         (t.pallets || 0) === (oldSnap.pallets || 0) &&
+         !!t.swapped === !!oldSnap.isSwap)
+      );
+      if (idx >= 0) {
+        const tr = dayRec.trucks[idx];
+        tr.type      = newIsSwap ? 'TT' : newPalletType;
+        tr.pallets   = newPallets;
+        tr.swapped   = newIsSwap;
+        tr.truckNum  = newTruck;
+        tr.note      = newNote || tr.note;
+        // Move truck between day records if date changed
+        if (dayRec.date !== newDate) {
+          dayRec.trucks.splice(idx, 1);
+          let targetDay = state.dailySupply.find(d => d.date === newDate && (d.pickupBy || 'Michael') === (dayRec.pickupBy || 'Michael'));
+          if (!targetDay) {
+            targetDay = {
+              id: crypto.randomUUID(),
+              date: newDate,
+              pickupBy: dayRec.pickupBy || 'Michael',
+              manualOverride: false,
+              trucks: [],
+              note: ''
+            };
+            state.dailySupply.push(targetDay);
+          }
+          targetDay.trucks.push(tr);
+          supplyTruckMsg = ' · 卡车已迁日';
+        } else {
+          supplyTruckMsg = ' · 卡车已同步';
+        }
+        break;
       }
     }
+    // Remove empty day records (e.g., if last truck moved out)
+    state.dailySupply = state.dailySupply.filter(d => (d.trucks || []).length > 0);
   }
+
+  // NOTE (2026-06-08): old emma-transfer-fee LEDGER LINE SYNC block removed.
+  // After commit 7868103, £25 is off-pool — no emma-transfer-fee ledger rows
+  // exist (migration removes them). The pickup row's _emmaTransferTTPallets
+  // marker (updated above) is the only source of truth for the weekly bill.
 
   save(); renderAll();
   closeLedgerEdit();
-  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg + emmaTransferEditMsg);
+  flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg + supplyTruckMsg);
 }
 
 function saveSettings() {
@@ -9453,18 +9614,57 @@ function markInvoicePaid(id) {
   flash(inv.status === 'paid' ? '已标记为 Paid' : '已标记为 Unpaid');
 }
 
-function voidInvoice(id) {
+// P0 #1 fix (2026-06-08): voidInvoice now cascades — voiding INV also soft-deletes
+// the underlying pickup (and refunds the customer pool, syncs合伙账, clears
+// dailySupply). Without this, the customer was charged but you said "won't bill"
+// → silent overcharge. To "just hide" the INV without touching the pickup, use
+// deleteInvoiceForever after the cascade.
+async function voidInvoice(id) {
   const inv = (state.invoices || []).find(i => i.id === id);
   if (!inv) return;
   if (inv.status === 'void') {
-    if (!confirm('恢复发票(取消作废)?')) return;
+    // Restore path: only flip status — the linked pickup may or may not have
+    // been deleted by the previous void. If user wants to recreate the pickup,
+    // they should re-record it manually.
+    if (!confirm('恢复发票状态(取消 Void)?\n\n注:作废时如果连带删除了取货流水,此处只恢复 INV 状态,取货流水需要重新录入。')) return;
     inv.status = 'unpaid';
-  } else {
-    if (!confirm('作废这张发票?(记录会保留,但状态变为 Void)')) return;
-    inv.status = 'void';
+    inv.updatedAt = new Date().toISOString();
+    delete inv.voidedAt;
+    delete inv.voidReason;
+    save(); renderAll();
+    flash('已恢复 INV ' + (inv.number || '') + ' 状态');
+    return;
   }
+  // Find linked pickup
+  const linkedPickupId = inv.linkedPickupId;
+  let linkedEntry = null, linkedCustomerId = null;
+  if (linkedPickupId) {
+    for (const c of (state.customers || [])) {
+      const hit = (c.ledger || []).find(e => e.id === linkedPickupId);
+      if (hit) { linkedEntry = hit; linkedCustomerId = c.id; break; }
+    }
+  }
+  const msg = linkedEntry
+    ? `作废这张发票?\n\n· INV ${inv.number || ''} 标记为 Void\n· 关联取货流水(${linkedEntry.pallets || 0} 托 / ${fmt(linkedEntry.amount || 0)})将被一并撤销\n· 客户资金池退回 ${fmt(linkedEntry.amount || 0)}\n· 合伙账 SSS / Hugo 自动重算\n\n此操作不可一键撤销 — 如需恢复需重新录入取货。`
+    : `作废这张发票?(无关联取货 — 仅 INV 状态变为 Void)`;
+  if (!confirm(msg)) return;
+
+  inv.status = 'void';
+  inv.voidedAt = new Date().toISOString();
+  inv.voidReason = '用户作废';
   inv.updatedAt = new Date().toISOString();
-  save(); renderAll();
+
+  // Cascade-delete the linked pickup (handles partnership sync + dailySupply + snapshot)
+  if (linkedEntry && linkedCustomerId) {
+    const _savedCurrent = currentCustomer;
+    currentCustomer = linkedCustomerId;
+    try { await delLedger(linkedEntry.id, { skipConfirm: true }); }
+    catch (e) { console.warn('[voidInvoice] cascade delLedger failed:', e); }
+    currentCustomer = _savedCurrent;
+  } else {
+    save(); renderAll();
+  }
+  flash('INV ' + (inv.number || '') + ' 已作废' + (linkedEntry ? ' · 取货流水已撤销 · 资金池已退回' : ''));
 }
 
 function deleteInvoiceForever(id) {
@@ -10583,18 +10783,52 @@ function migrateInvoicesAndReceiptsToNewFormat() {
   };
 }
 
-function cancelReceipt(id) {
+// P0 #2 fix (2026-06-08): cancelReceipt now cascades — cancelling also removes
+// the underlying deposit (so customer pool reflects that the £X was never
+// received). Without this, the customer's prepaid balance kept the £X but
+// you knew they hadn't actually paid → fake pool inflow.
+async function cancelReceipt(id) {
   const rec = (state.receipts || []).find(r => r.id === id);
   if (!rec) return;
   if (rec.status === 'cancelled') {
-    if (!confirm('恢复收据(取消作废)?')) return;
+    if (!confirm('恢复收据状态(取消 Cancelled)?\n\n注:作废时如果连带删除了 deposit 流水,此处只恢复 REC 状态,deposit 需要重新录入。')) return;
     rec.status = 'issued';
-  } else {
-    if (!confirm('作废这张收据?(记录会保留,但状态变为 Cancelled)')) return;
-    rec.status = 'cancelled';
+    rec.updatedAt = new Date().toISOString();
+    delete rec.cancelledAt;
+    delete rec.cancelReason;
+    save(); renderAll();
+    flash('已恢复 REC ' + (rec.number || '') + ' 状态');
+    return;
   }
+  // Find linked deposit
+  const linkedDepositId = rec.linkedDepositId;
+  let linkedEntry = null, linkedCustomerId = null;
+  if (linkedDepositId) {
+    for (const c of (state.customers || [])) {
+      const hit = (c.ledger || []).find(e => e.id === linkedDepositId);
+      if (hit) { linkedEntry = hit; linkedCustomerId = c.id; break; }
+    }
+  }
+  const msg = linkedEntry
+    ? `作废这张收据?\n\n· REC ${rec.number || ''} 标记为 Cancelled\n· 关联预付流水 ${fmt(linkedEntry.amount || 0)} 将被撤销\n· 客户资金池回退 ${fmt(linkedEntry.amount || 0)}\n\n此操作不可一键撤销 — 如客户后来真的付款, 重新录入 deposit。`
+    : `作废这张收据?(无关联 deposit — 仅 REC 状态变为 Cancelled)`;
+  if (!confirm(msg)) return;
+
+  rec.status = 'cancelled';
+  rec.cancelledAt = new Date().toISOString();
+  rec.cancelReason = '用户作废';
   rec.updatedAt = new Date().toISOString();
-  save(); renderAll();
+
+  if (linkedEntry && linkedCustomerId) {
+    const _savedCurrent = currentCustomer;
+    currentCustomer = linkedCustomerId;
+    try { await delLedger(linkedEntry.id, { skipConfirm: true }); }
+    catch (e) { console.warn('[cancelReceipt] cascade delLedger failed:', e); }
+    currentCustomer = _savedCurrent;
+  } else {
+    save(); renderAll();
+  }
+  flash('REC ' + (rec.number || '') + ' 已作废' + (linkedEntry ? ' · 预付流水已撤销 · 资金池已退回' : ''));
 }
 
 function editReceiptNote(id) {
@@ -11905,10 +12139,50 @@ async function pushTruckOwnersToPartnership(trucks) {
   }
 }
 
-function deleteSupply(id) {
-  if (!confirm('删除这条供货记录?(此操作不可撤销)')) return;
+// P0 #7 fix (2026-06-08): cascade delete — delete each pickup ledger row +
+// partnership event + INV that's linked via the trucks' _pickupUid. Without
+// this, deleting a day's supply leaves orphan customer charges / SSS
+// deductions / Hugo accruals.
+async function deleteSupply(id) {
+  const dayRec = (state.dailySupply || []).find(d => d.id === id);
+  if (!dayRec) return;
+  const truckCount = (dayRec.trucks || []).length;
+  // Collect linked customer ledger entries
+  const linkedLedger = [];
+  for (const tr of (dayRec.trucks || [])) {
+    if (!tr._pickupUid && !tr._linkSupplyId) continue;
+    for (const c of (state.customers || [])) {
+      const hit = (c.ledger || []).find(e =>
+        e.type === 'pickup' &&
+        ((tr._pickupUid && e._pickupUid === tr._pickupUid) ||
+         (!tr._pickupUid && e._linkSupplyId === tr._linkSupplyId &&
+          (e.palletType || '') === (tr.type || '') &&
+          (e.pallets || 0) === (tr.pallets || 0) &&
+          !!e.isSwap === !!tr.swapped))
+      );
+      if (hit) linkedLedger.push({ customerId: c.id, entryId: hit.id, customerName: c.name });
+    }
+  }
+  const msg = `确认删除 ${dayRec.date} 供货记录?\n\n` +
+    `· ${truckCount} 辆卡车将被移除\n` +
+    `· ${linkedLedger.length} 条关联客户取货流水将被一并删除\n` +
+    `· 关联 INV 自动作废, 合伙账 SSS / Hugo 自动重算\n\n此操作不可撤销。`;
+  if (!confirm(msg)) return;
+
+  // Use delLedger to delete each linked customer entry (handles all cascade:
+  // INV void, partnership soft-delete with snapshot, dailySupply truck cleanup).
+  // We save the original currentCustomer to restore after.
+  const _savedCurrent = currentCustomer;
+  for (const lk of linkedLedger) {
+    currentCustomer = lk.customerId;
+    try { await delLedger(lk.entryId, { skipConfirm: true }); } catch (e) { console.warn('[deleteSupply] delLedger failed:', e); }
+  }
+  currentCustomer = _savedCurrent;
+
+  // Finally remove any leftover trucks / the dayRec itself
   state.dailySupply = (state.dailySupply || []).filter(d => d.id !== id);
   save(); renderAll();
+  flash(`已删除 ${dayRec.date} 供货 · ${truckCount} 卡车 + ${linkedLedger.length} 条客户流水`);
 }
 
 // === Rotation settings save / load / preview ===
