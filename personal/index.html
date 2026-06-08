@@ -8059,15 +8059,17 @@ async function delLedger(id, opts) {
   if (linkedInv) {
     linkedInv.status = 'void';
     linkedInv.updatedAt = new Date().toISOString();
-    linkedInv.voidedAt = new Date().toISOString();
-    linkedInv.voidReason = '关联流水已删除';
+    if (!linkedInv.voidedAt)   linkedInv.voidedAt = new Date().toISOString();
+    // P2 (batch 5 re-audit): don't overwrite voidReason if caller already set
+    // it (e.g. voidInvoice → "用户作废" should not become "关联流水已删除").
+    if (!linkedInv.voidReason) linkedInv.voidReason = '关联流水已删除';
     linkedInv.linkedPickupId = null;
   }
   if (linkedRec) {
     linkedRec.status = 'cancelled';
     linkedRec.updatedAt = new Date().toISOString();
-    linkedRec.cancelledAt = new Date().toISOString();
-    linkedRec.cancelReason = '关联流水已删除';
+    if (!linkedRec.cancelledAt)  linkedRec.cancelledAt = new Date().toISOString();
+    if (!linkedRec.cancelReason) linkedRec.cancelReason = '关联流水已删除';
     linkedRec.linkedDepositId = null;
   }
 
@@ -8541,6 +8543,9 @@ async function saveLedgerEdit() {
       // Restore REC from snapshot (overwrite all fields)
       if (linkedRecForRollback && recSnap) Object.assign(linkedRecForRollback, recSnap);
       alert('合伙账写入失败, 本地修改已全部撤回。请检查网络后重试。\n\n详情:' + (err.message || err));
+      // P2 (batch 5 re-audit): flush the rollback synchronously so the 600ms
+      // debounce timer doesn't write back the mutated values.
+      try { await saveUserDataNow(); } catch (_) {}
       renderAll();
       return;
     }
@@ -9734,9 +9739,14 @@ async function voidInvoice(id) {
     : `作废这张发票?(无关联取货 — 仅 INV 状态变为 Void)`;
   if (!confirm(msg)) return;
 
+  // P1 (re-audit batch 5): snapshot original status BEFORE flipping to 'void',
+  // so delLedger's cascadeSnapshot captures the real previousStatus (was capturing
+  // 'void' since we'd already flipped it). Allows accurate restore later.
+  const _origInvStatus = inv.status || 'unpaid';
   inv.status = 'void';
   inv.voidedAt = new Date().toISOString();
   inv.voidReason = '用户作废';
+  inv._previousStatus = _origInvStatus;       // preserve for restore
   inv.updatedAt = new Date().toISOString();
 
   // Cascade-delete the linked pickup (handles partnership sync + dailySupply + snapshot)

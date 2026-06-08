@@ -5151,7 +5151,11 @@ function renderCharts() {
   let running = 0;
   const balData = sorted.map(e => {
     if (e.type === 'transfer' || e.type === 'in-emma' || e.type === 'in-customer') running += e.amount || 0;
-    else if (e.type === 'pickup' || e.type === 'out-supplier' || e.type === 'out-hugo' || e.type === 'out-emma-transfer') running -= e.amount || 0;
+    // P1 fix (2026-06-08 batch 5 re-audit): align with cashPoolBalance() — neither
+    // pickup nor out-emma-transfer affects the cash pool (pickups consume customer
+    // pre-pay, transfer fees are off-pool). Including them here made the chart
+    // diverge from the KPI card by ~£550 per settlement.
+    else if (e.type === 'out-supplier' || e.type === 'out-hugo') running -= e.amount || 0;
     return { date: e.date, bal: running };
   });
   const ctx2 = document.getElementById('chart-balance');
@@ -6815,11 +6819,19 @@ function _pickupItemMatches(item, snap) {
   if (snap._pickupUid && item._pickupUid) {
     return item._pickupUid === snap._pickupUid;
   }
-  // PRIORITY 2: legacy fallback — must share linkSupplyId AND match old fields
+  // PRIORITY 2: legacy fallback — must share linkSupplyId AND match old fields.
+  // P0 REGRESSION FIX (2026-06-08 batch 5): dailySupply trucks use `type` and
+  // `swapped`, customer ledger / partnership events use `palletType` and
+  // `isSwap`. Normalise so legacy data (no _pickupUid) still matches across
+  // both shapes — previously historical trucks silently failed every match.
   if (!snap._linkSupplyId || item._linkSupplyId !== snap._linkSupplyId) return false;
-  if ((item.palletType || '') !== (snap.palletType || '')) return false;
+  const itemType   = (item.palletType != null ? item.palletType : item.type) || '';
+  const snapType   = (snap.palletType != null ? snap.palletType : snap.type) || '';
+  if (itemType !== snapType) return false;
   if ((item.pallets || 0) !== (snap.pallets || 0)) return false;
-  if (!!item.isSwap !== !!snap.isSwap) return false;
+  const itemSwap   = (item.isSwap != null) ? !!item.isSwap : !!item.swapped;
+  const snapSwap   = (snap.isSwap != null) ? !!snap.isSwap : !!snap.swapped;
+  if (itemSwap !== snapSwap) return false;
   // truck number not always reliable — skip
   return true;
 }
@@ -7376,11 +7388,13 @@ async function _editPickupInPersonal(ev, oldSnap) {
     if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
     const pdata = row.data;
 
-    // Pricing snapshot — match what saveSmartPickup stored
+    // Pricing snapshot — live fallback if no historical price is available.
+    // The actual unitPrice decision uses the EXISTING entry's historical price
+    // when isSwap is unchanged (decided per-entry below). See P1 NEW-A fix
+    // from batch 5 re-audit (2026-06-08).
     const sellPrice = (pdata.params && pdata.params.sellPrice) || 265;
     const swapPrem  = (pdata.params && pdata.params.swapPremium != null) ? pdata.params.swapPremium : 30;
-    const unitPrice = ev.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    const customerAmount = ev.pallets * unitPrice;
+    const liveUnitPrice = ev.isSwap ? (sellPrice + swapPrem) : sellPrice;
 
     let counts = { ledger: 0, supplyTrucks: 0, invoices: 0 };
     const updatedLedgerIds = [];
@@ -7404,15 +7418,25 @@ async function _editPickupInPersonal(ev, oldSnap) {
       if (matched.length > 1) ambiguousLedger += (matched.length - 1);
       if (matched.length >= 1) {
         const entry = matched[0];
+        // P1 NEW-A fix (2026-06-08 batch 5): preserve historical unitPrice +
+        // swapPremium unless isSwap actually changed. Otherwise editing a 2024
+        // pickup would rewrite its old sell price to today's.
+        const entryOldUnit        = +(entry.unitPrice || 0);
+        const entryOldSwapPremium = +(entry.swapPremium || 0);
+        const entryOldIsSwap      = !!entry.isSwap;
+        const useOldPrice = (entryOldIsSwap === !!ev.isSwap) && entryOldUnit > 0;
+        const finalUnitPrice    = useOldPrice ? entryOldUnit        : liveUnitPrice;
+        const finalSwapPremium  = useOldPrice ? entryOldSwapPremium : (ev.isSwap ? swapPrem : 0);
+        const finalAmount       = ev.pallets * finalUnitPrice;
         entry.date        = ev.date;
         entry.pallets     = ev.pallets;
         entry.truck       = ev.truck;
         entry.note        = ev.note;
         entry.isSwap      = !!ev.isSwap;
         entry.palletType  = ev.isSwap ? 'TT' : (ev.palletType || 'TT');
-        entry.unitPrice   = unitPrice;
-        entry.swapPremium = ev.isSwap ? swapPrem : 0;
-        entry.amount      = customerAmount;
+        entry.unitPrice   = finalUnitPrice;
+        entry.swapPremium = finalSwapPremium;
+        entry.amount      = finalAmount;
         entry.updatedAt   = new Date().toISOString();
         // P0 #10 fix (2026-06-08): sync Emma-transfer markers to the customer
         // ledger entry so the weekly statement (customerWeeklyBreakdown reads
@@ -7459,13 +7483,22 @@ async function _editPickupInPersonal(ev, oldSnap) {
       }
     }
 
-    // 3. Linked invoices — update amount + line items + date
+    // 3. Linked invoices — read unitPrice/amount from the updated ledger
+    // entry (preserves historical price when isSwap unchanged).
     // P0 #8 fix (2026-06-08): INV ONLY reflects pool charge (pallet line).
     // £25 Emma transfer fee is OFF-POOL → never on INV. Strip any legacy
     // _emmaTransferFee line that pre-migration data may still carry.
     for (const inv of (pdata.invoices || [])) {
       if (!inv.linkedPickupId || !updatedLedgerIds.includes(inv.linkedPickupId)) continue;
-      inv.amount = customerAmount;
+      // Look up the entry we just updated to use its (possibly preserved) unitPrice
+      let invEntry = null;
+      for (const c of (pdata.customers || [])) {
+        invEntry = (c.ledger || []).find(e => e.id === inv.linkedPickupId);
+        if (invEntry) break;
+      }
+      const invUnitPrice = invEntry ? +(invEntry.unitPrice || liveUnitPrice) : liveUnitPrice;
+      const invAmount    = ev.pallets * invUnitPrice;
+      inv.amount = invAmount;
       inv.invoiceDate = ev.date;
       // Strip any pre-migration Emma fee line items first
       if (Array.isArray(inv.lineItems)) {
@@ -7475,13 +7508,13 @@ async function _editPickupInPersonal(ev, oldSnap) {
       if (Array.isArray(inv.lineItems) && inv.lineItems.length > 0) {
         let palletLine = inv.lineItems.find(li => /托|pallet|amz|amazon|tt|swap/i.test(li.description || '')) || inv.lineItems[0];
         palletLine.qty = ev.pallets;
-        palletLine.unitPrice = unitPrice;
+        palletLine.unitPrice = invUnitPrice;
         palletLine.description = (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets;
       } else {
         inv.lineItems = [{
           description: (ev.isSwap ? 'Swap TT ' : '') + (ev.palletType || 'TT') + ' 托盘 × ' + ev.pallets,
           qty: ev.pallets,
-          unitPrice: unitPrice
+          unitPrice: invUnitPrice
         }];
       }
       // Rebuild subtotal/total from pallet line(s) only — INVARIANT qty × unitPrice === subtotal
