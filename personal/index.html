@@ -2656,8 +2656,9 @@ select option { background: var(--bg-2); color: var(--text); }
               <div style="font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--text);margin-top:2px;" id="se-total-trucks">0 车</div>
             </td>
             <td colspan="3" style="padding:14px 14px 14px 0;text-align:right;">
-              <div style="font-size:10px;color:var(--text-dim);letter-spacing:0.8px;font-weight:700;text-transform:uppercase;">客户应付</div>
+              <div style="font-size:10px;color:var(--text-dim);letter-spacing:0.8px;font-weight:700;text-transform:uppercase;">资金池扣款</div>
               <div style="font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--green);margin-top:2px;" id="se-total-amount">£0</div>
+              <div id="se-total-offpool" style="display:none;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:#db2777;margin-top:5px;letter-spacing:0.2px;"></div>
             </td>
           </tr>
         </tfoot>
@@ -3284,6 +3285,16 @@ async function loadUserData() {
       if (typeof state.params.monthlyProfitTarget !== 'number') state.params.monthlyProfitTarget = 45000;
       if (!state.customers) state.customers = [];
       migrateDailyToLedger();
+      // 2026-06-08 v2 migration: £25 Emma transfer fees were previously
+      // deducted from the customer pool. They should be OFF-POOL (weekly bill,
+      // customer transfers separately). This migration removes them, refunds
+      // the pool, strips the matching INV line items, and backfills the
+      // pickup-row markers needed by the new weekly statement.
+      try {
+        if (typeof migrateEmmaTransferOffPool === 'function') {
+          await migrateEmmaTransferOffPool();
+        }
+      } catch (e) { console.warn('[migrate-emma-off-pool] failed:', e); }
       // Auto-consolidate any duplicate daily-supply records (one-time cleanup, idempotent)
       try {
         if (typeof consolidateDailySupplyDuplicates === 'function') {
@@ -3339,6 +3350,109 @@ function migrateDailyToLedger() {
   delete state.daily;
   // Persist the migration
   save();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 2026-06-08 v2 migration: £25 Emma transfer fees → OFF-POOL
+// ─────────────────────────────────────────────────────────────────
+// Before: each Emma-transfer pickup created a separate `emma-transfer-fee`
+//   customer-ledger row that DEDUCTED £25 × TT pallets from the customer's
+//   prepaid pool (wrong — it double-billed the customer because the £25 is
+//   already on the weekly statement). It also added a 2nd line item to the
+//   auto-INV, inflating the INV total.
+// After: the £25 is OFF-POOL. The customer transfers it separately on the
+//   weekly bill. We migrate by:
+//   1. Backfilling _emmaTransferDay + _emmaTransferTTPallets on the SOURCE
+//      pickup row (so the new weekly statement can derive the £25 fee).
+//   2. Removing all emma-transfer-fee customer ledger rows (this refunds
+//      the £25 × N back into the pool — customerBalance recalculates).
+//   3. Stripping _emmaTransferFee line items from related invoices and
+//      subtracting the surcharge from inv.subtotal / inv.total.
+//   Gated by state._emmaPoolMigV1Done so it runs only once.
+async function migrateEmmaTransferOffPool() {
+  if (!state) return;
+  if (state._emmaPoolMigV1Done) return;       // idempotent — already migrated
+
+  let removedFees = 0, fixedInvs = 0, backfilledPickups = 0, totalRefunded = 0;
+  const RATE = (typeof EMMA_TRANSFER_RATE !== 'undefined') ? EMMA_TRANSFER_RATE : 25;
+  const FEE_TYPE = (typeof EMMA_TRANSFER_FEE_TYPE !== 'undefined') ? EMMA_TRANSFER_FEE_TYPE : 'emma-transfer-fee';
+
+  for (const c of (state.customers || [])) {
+    if (!Array.isArray(c.ledger)) continue;
+    // Map _pickupUid → emma-transfer-fee row, so we can backfill source pickups
+    const feesByPickupUid = new Map();
+    for (const e of c.ledger) {
+      if (e.type === FEE_TYPE && e._emmaTransferLinkUid) {
+        feesByPickupUid.set(e._emmaTransferLinkUid, e);
+      }
+    }
+    // Backfill markers on the source pickup row
+    for (const e of c.ledger) {
+      if (e.type !== 'pickup' || !e._pickupUid) continue;
+      const fee = feesByPickupUid.get(e._pickupUid);
+      if (!fee) continue;
+      if (e._emmaTransferDay && e._emmaTransferTTPallets) continue;   // already set
+      e._emmaTransferDay = true;
+      e._emmaDayRotation = 'Emma';
+      const ttN = Math.round((+fee.amount || 0) / RATE);
+      e._emmaTransferTTPallets = ttN > 0 ? ttN : (e.pallets || 0);
+      backfilledPickups++;
+    }
+    // Remove all emma-transfer-fee rows — this REFUNDS the £25 × N to pool
+    const before = c.ledger.length;
+    let refundedFromThisCustomer = 0;
+    c.ledger = c.ledger.filter(e => {
+      if (e.type === FEE_TYPE) {
+        refundedFromThisCustomer += (+e.amount || 0);
+        return false;
+      }
+      return true;
+    });
+    if (refundedFromThisCustomer > 0) {
+      removedFees += (before - c.ledger.length);
+      totalRefunded += refundedFromThisCustomer;
+    }
+  }
+
+  // Strip Emma transfer line items from invoices, subtract surcharge from totals
+  for (const inv of (state.invoices || [])) {
+    if (!Array.isArray(inv.lineItems)) continue;
+    const surchargeLines = inv.lineItems.filter(li => li && li._emmaTransferFee);
+    if (!surchargeLines.length) continue;
+    const surchargeTotal = surchargeLines.reduce((s, li) => s + (+(li.qty || 0)) * (+(li.unitPrice || 0)), 0);
+    inv.lineItems = inv.lineItems.filter(li => !(li && li._emmaTransferFee));
+    inv.subtotal = Math.max(0, (+(inv.subtotal || 0)) - surchargeTotal);
+    inv.total    = Math.max(0, (+(inv.total || 0))    - surchargeTotal);
+    inv.updatedAt = new Date().toISOString();
+    fixedInvs++;
+  }
+
+  state._emmaPoolMigV1Done = true;
+  state._emmaPoolMigV1Stats = {
+    at: new Date().toISOString(),
+    removedFees, fixedInvs, backfilledPickups,
+    totalRefunded: Math.round(totalRefunded * 100) / 100
+  };
+
+  if (removedFees > 0 || fixedInvs > 0 || backfilledPickups > 0) {
+    try { await saveUserDataNow(); } catch (e) { console.warn('[migrate-emma-off-pool] save failed', e); }
+    console.log('[migrate-emma-off-pool] complete:', state._emmaPoolMigV1Stats);
+    // Show a one-time toast so Michael knows what happened
+    setTimeout(() => {
+      try {
+        alert(
+          '🩹 Emma 转售费 资金池修复完成\n\n' +
+          `• 移除了 ${removedFees} 条错误的"资金池扣款"行 (合计 £${Math.round(totalRefunded).toLocaleString('en-GB')})\n` +
+          `• 修正了 ${fixedInvs} 张 INV (移除 Emma 转售费明细 + 调低总额)\n` +
+          `• 回补了 ${backfilledPickups} 条取货记录的 _emmaTransferDay 标记\n\n` +
+          '现在 £25/TT 只在「客户详情 → 周度明细」单独出现, 客户单独转账给你 (不进资金池)。'
+        );
+      } catch (_) {}
+    }, 1500);
+  } else {
+    // No fee rows existed — just mark done silently and save the flag
+    try { await saveUserDataNow(); } catch (_) {}
+  }
 }
 
 let saveTimer = null;
@@ -4513,29 +4627,27 @@ function renderSmartEntryTrucks() {
   // pill button "Swap ON / OFF", customer dropdown labelled "→ 客户", per-truck
   // amount block aligned right with type-tag, X delete button repositioned.
   //
-  // FIX (2026-06-08, user-reported): when Emma transfer mode is active, the
-  // per-truck amount and total must include the £25/TT Emma transfer fee so
-  // the customer sees what they ACTUALLY owe (matches what gets saved to
-  // their ledger). Previously the row showed only pallets × £295 (Swap TT),
-  // missing the £25/托 surcharge → users saw confusing "保存后扣 £6,490"
-  // when the actual deduction was £7,040.
+  // FIX (2026-06-08 v2): the per-truck main amount = POOL deduction only
+  // (pallets × unitPrice). The £25 Emma transfer fee is OFF-POOL — shown as
+  // a separate pink badge so users see what hits the pool vs what gets
+  // weekly-billed. The footer "总计" is pool only; off-pool fees are shown
+  // in a second line below.
   const _trxToggle = document.getElementById('se-emma-transfer-toggle');
   const _trxOwner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
   const _trxDate = (document.getElementById('se-date') || {}).value || '';
   const _transferModeOn = (_trxOwner === 'Emma') &&
     isInEmmaTransferTrialPeriod(_trxDate) &&
     (!_trxToggle || _trxToggle.checked);
-  let totalPallets = 0, totalAmount = 0;
+  let totalPallets = 0, totalAmount = 0, totalOffPool = 0;
   tb.innerHTML = _seTrucks.map((t, idx) => {
     const unitPrice = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     const baseAmount = (t.pallets || 0) * unitPrice;
-    // Emma transfer fee (£25/TT pallet) — added to customer's bill on TT
-    // trucks during transfer mode. Goes into a SEPARATE ledger entry at save
-    // time, but shown together in the per-truck total for clarity.
+    // £25 Emma transfer fee is OFF-POOL (weekly bill, customer transfers
+    // separately to Michael — NOT deducted from prepaid pool).
     const _ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
     const transferFee = (_transferModeOn && _ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
-    const amount = baseAmount + transferFee;
-    if (t.customerId) totalAmount += amount;
+    const amount = baseAmount;                                // POOL deduction only
+    if (t.customerId) { totalAmount += amount; totalOffPool += transferFee; }
     totalPallets += (t.pallets || 0);
     // Type pill style — TT = indigo, AMZ = cyan
     const isTT = (t.type || '').toUpperCase() === 'TT';
@@ -4570,11 +4682,10 @@ function renderSmartEntryTrucks() {
         </div>
         <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-top:3px;line-height:1.3;letter-spacing:0.2px;">
           ${t.customerId
-            ? (transferFee > 0
-                ? `${t.pallets || 0} × £${unitPrice} (Swap)<br><span style="color:#f9a8d4;">+ ${t.pallets || 0} × £${EMMA_TRANSFER_RATE} Emma 转售</span>`
-                : `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''}`)
+            ? `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''} <span style="opacity:0.7;">·资金池</span>`
             : '进库存'}
         </div>
+        ${t.customerId && transferFee > 0 ? `<div style="font-size:10px;font-weight:700;margin-top:3px;color:#db2777;background:rgba(244,114,182,0.10);border-radius:5px;padding:2px 6px;display:inline-block;letter-spacing:0.2px;">🤝 +${fmt(transferFee)} off-pool</div>` : ''}
       </td>
       <td style="padding:12px 8px;text-align:center;vertical-align:middle;">
         <button onclick="removeSmartEntryTruck(${idx})" ${_seTrucks.length === 1 ? 'disabled' : ''} style="width:30px;height:30px;border-radius:50%;border:1.5px solid ${_seTrucks.length === 1 ? 'rgba(244,63,94,0.15)' : 'rgba(244,63,94,0.45)'};background:transparent;color:${_seTrucks.length === 1 ? 'rgba(244,63,94,0.30)' : 'var(--rose)'};font-size:16px;cursor:${_seTrucks.length === 1 ? 'not-allowed' : 'pointer'};display:inline-flex;align-items:center;justify-content:center;transition:all 0.15s;" title="${_seTrucks.length === 1 ? '至少保留一车' : '删除这一车'}">×</button>
@@ -4584,6 +4695,16 @@ function renderSmartEntryTrucks() {
   document.getElementById('se-total-pallets').textContent = totalPallets + ' 托';
   document.getElementById('se-total-trucks').textContent = _seTrucks.length + ' 车';
   document.getElementById('se-total-amount').textContent = fmt(totalAmount);
+  // Show off-pool 周度账单 待收 next to footer total
+  const offPoolEl = document.getElementById('se-total-offpool');
+  if (offPoolEl) {
+    if (totalOffPool > 0) {
+      offPoolEl.innerHTML = `🤝 周度账单待收 <b style="color:#db2777;">+${fmt(totalOffPool)}</b> <span style="opacity:0.75;font-size:10.5px;">(off-pool · 客户单独转账)</span>`;
+      offPoolEl.style.display = '';
+    } else {
+      offPoolEl.style.display = 'none';
+    }
+  }
 }
 
 // === Partnership cache (read-only) — populated lazily by smart entry ===
@@ -4726,21 +4847,25 @@ function updateSmartEntryPreview() {
 
   // Cost & customer payment
   const totalSssCost = totalPallets * buyPrice;        // SSS-side cost: pallets × £245
-  // FIX (2026-06-08): include Emma transfer fee (£25/TT) in customer charge
-  // when transfer mode is active — otherwise the preview misleads users by
-  // hiding the £25/托 surcharge that gets saved as a separate ledger entry.
+  // FIX (2026-06-08 v2): £25 Emma transfer fee is OFF-POOL — it is billed
+  // weekly (see customerWeeklyBreakdown) and customer transfers it separately
+  // to Michael. Do NOT add it to the customer pool deduction.
   const _previewTrxToggle = document.getElementById('se-emma-transfer-toggle');
   const _previewTrxOwner = (document.getElementById('se-pickup-by') || {}).value || 'Michael';
   const _previewTransferModeOn = (_previewTrxOwner === 'Emma') &&
     isInEmmaTransferTrialPeriod(date) &&
     (!_previewTrxToggle || _previewTrxToggle.checked);
+  // Pool deduction = pallet cost only (no Emma transfer fee)
   const customerLedgerCharge = _seTrucks.reduce((s, t) => {
     if (!t.customerId) return s;
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
-    const base = (t.pallets || 0) * unit;
+    return s + (t.pallets || 0) * unit;
+  }, 0);
+  // Off-pool weekly bill add-on (just for preview display)
+  const emmaTransferOffPoolTotal = _seTrucks.reduce((s, t) => {
+    if (!t.customerId) return s;
     const ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
-    const emmaTransferFee = (_previewTransferModeOn && ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
-    return s + base + emmaTransferFee;
+    return s + ((_previewTransferModeOn && ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0);
   }, 0);
 
   // Hugo / V cash flows (only meaningful when Michael picks up)
@@ -4772,8 +4897,9 @@ function updateSmartEntryPreview() {
   const hugoOwedBefore = _seGetHugoOwed();
 
   // Customer balances before/after (per customer)
-  // FIX (2026-06-08): include Emma transfer fee (£25/TT) in per-customer
-  // deduction so '客户账本扣 -£X' matches what's actually saved.
+  // FIX (2026-06-08 v2): the £25 Emma transfer fee is OFF-POOL. byCust.amount
+  // is ONLY the pool deduction (pallet cost). emmaTransferFee is tracked
+  // separately for display ("off-pool 周度账单单独转账").
   const byCust = {};
   for (const t of trucksWithCustomer) {
     const c = state.customers.find(x => x.id === t.customerId);
@@ -4788,8 +4914,8 @@ function updateSmartEntryPreview() {
     const ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
     const transferFee = (_previewTransferModeOn && ttEligible) ? palletsN * EMMA_TRANSFER_RATE : 0;
     byCust[c.id].pallets += palletsN;
-    byCust[c.id].amount += baseAmt + transferFee;     // total customer balance debit (incl Emma fee)
-    byCust[c.id].emmaTransferFee += transferFee;       // breakdown for display
+    byCust[c.id].amount += baseAmt;                    // POOL ONLY — no Emma fee
+    byCust[c.id].emmaTransferFee += transferFee;       // OFF-POOL — for weekly bill only
     byCust[c.id].trucks += 1;
     if (t.isSwap) byCust[c.id].swapPallets += palletsN;
   }
@@ -4812,9 +4938,12 @@ function updateSmartEntryPreview() {
   const _supplyAttribNote = _previewTransferModeOn
     ? ` <span style="color:#f9a8d4;font-size:10.5px;">(代取 Emma 日 → 算你)</span>`
     : '';
+  const _offPoolNote = emmaTransferOffPoolTotal > 0
+    ? `<br><span style="color:#db2777;font-weight:700;">🤝 周度账单待收 <b>+${fmt(emmaTransferOffPoolTotal)}</b></span> <span style="color:var(--text-dim);font-size:10.5px;">(£${EMMA_TRANSFER_RATE}/TT · off-pool · 客户单独转账)</span>`
+    : '';
   const supplySection = sec('📦', '每日供货 + SSS 取货总览', `
     加 <b>${_seTrucks.length}</b> 车 / <b>${totalPallets}</b> 托${swapHint}<br>
-    黄卡"SSS 取货总览":<b>${_supplyAttribUser}</b> 这边 +${totalPallets} 托${_supplyAttribNote}
+    黄卡"SSS 取货总览":<b>${_supplyAttribUser}</b> 这边 +${totalPallets} 托${_supplyAttribNote}${_offPoolNote}
   `, 'var(--green)');
 
   // === SSS Share card (owner-aware) ===
@@ -4851,15 +4980,20 @@ function updateSmartEntryPreview() {
 
   let custInner = '';
   for (const cd of Object.values(byCust)) {
-    const after = cd.balBefore - cd.amount;
+    const after = cd.balBefore - cd.amount;     // pool deduction only
     const canLift = sellPrice > 0 ? Math.floor(Math.max(0, after) / sellPrice) : 0;
+    const _trxN = cd.emmaTransferFee > 0 ? Math.round(cd.emmaTransferFee / EMMA_TRANSFER_RATE) : 0;
     custInner += `
       <div style="margin-bottom:8px;${Object.values(byCust).length > 1 ? 'padding-bottom:8px;border-bottom:1px dashed rgba(139,150,255,0.18);' : ''}">
         <div><b style="color:var(--violet);">${escapeHtml(cd.name)}</b> · ${cd.pallets} 托(${cd.trucks} 车${cd.swapPallets > 0 ? ` · ${cd.swapPallets} 托 Swap` : ''})</div>
-        <div>客户账本扣 <b style="color:var(--rose);">-${fmt(cd.amount)}</b>(单价 £${sellPrice}${cd.swapPallets > 0 ? '/£' + (sellPrice + swapPrem) + ' Swap' : ''}${cd.emmaTransferFee > 0 ? ' + £' + EMMA_TRANSFER_RATE + ' Emma 转售 × ' + Math.round(cd.emmaTransferFee / EMMA_TRANSFER_RATE) + ' 托' : ''})</div>
-        ${cd.emmaTransferFee > 0 ? `<div style="font-size:11px;color:#f9a8d4;padding-left:6px;border-left:2px solid rgba(244,114,182,0.40);margin:3px 0 3px 0;">🤝 含 Emma 转售费 £${cd.emmaTransferFee.toLocaleString('en-GB')} (客户单独一行)</div>` : ''}
+        <div>客户账本扣 <b style="color:var(--rose);">-${fmt(cd.amount)}</b>(单价 £${sellPrice}${cd.swapPallets > 0 ? '/£' + (sellPrice + swapPrem) + ' Swap' : ''}) <span style="color:var(--text-dim);font-size:10.5px;">· 仅托盘款 (资金池)</span></div>
         <div>当前余额 <b>${fmt(cd.balBefore)}</b> → 取货后 <b style="color:${after < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(after)}</b> (够拉 ${canLift} 托)</div>
-        <div style="color:var(--green);">✓ 自动开 <b>INV-${date.split('-').reverse().join('')}-NNN</b>(7 天到期${cd.emmaTransferFee > 0 ? ' · 含 2 行明细' : ''})</div>
+        ${cd.emmaTransferFee > 0 ? `<div style="margin-top:8px;padding:7px 9px;background:rgba(244,114,182,0.10);border-left:3px solid #db2777;border-radius:6px;">
+          <div style="font-size:11px;font-weight:700;color:#db2777;letter-spacing:0.5px;">🤝 OFF-POOL · 周度账单加收</div>
+          <div style="font-size:11.5px;color:#9d174d;margin-top:2px;">${_trxN} 托 TT × £${EMMA_TRANSFER_RATE} = <b>+${fmt(cd.emmaTransferFee)}</b> · 客户单独转账给你 (<u>不进资金池</u>)</div>
+          <div style="font-size:10.5px;color:#db2777;opacity:0.85;margin-top:1px;">→ 自动出现在「客户详情 → 周度明细」, 本周可一次性导出账单 🖨</div>
+        </div>` : ''}
+        <div style="color:var(--green);">✓ 自动开 <b>INV-${date.split('-').reverse().join('')}-NNN</b>(7 天到期, 仅托盘款)</div>
       </div>`;
   }
   if (trucksToInventory.length > 0) {
@@ -5066,11 +5200,14 @@ async function saveSmartPickup() {
     if (!customer) continue;
     const isSwap = !!t.isSwap;
     const unitPrice = isSwap ? (sellPrice + swapPrem) : sellPrice;
+    const _isTrxTT = isEmmaTransferEntry && isEmmaTransferTTEligible(t.type, t.isSwap);
     const ledgerEntry = {
       id: crypto.randomUUID(),
       date,
       type: 'pickup',
-      amount: t.pallets * unitPrice,
+      amount: t.pallets * unitPrice,    // ⚠ OFF-POOL: do NOT add £25 here — that fee
+                                        //    is billed weekly (see weekly statement),
+                                        //    customer transfers it separately to Michael
       unitPrice,
       isSwap,
       swapPremium: isSwap ? swapPrem : 0,
@@ -5079,61 +5216,24 @@ async function saveSmartPickup() {
       truck: t.truckNum || '',
       note: t.note || '',
       _linkSupplyId: linkId,
-      _pickupUid: truckUids[i]
+      _pickupUid: truckUids[i],
+      // EMMA TRANSFER markers (mirror partnership event) — needed by weekly
+      // statement (customerWeeklyBreakdown) so it can show the +£25/TT fee.
+      // The £25 itself does NOT touch the customer pool; it appears in the
+      // 周度账单 only as an off-pool charge customer transfers separately.
+      ...(isEmmaTransferEntry ? { _emmaTransferDay: true, _emmaDayRotation: 'Emma' } : {}),
+      ...(_isTrxTT ? { _emmaTransferTTPallets: t.pallets } : {})
     };
     customer.ledger.push(ledgerEntry);
     newCustomerEntries.push({ customer, entry: ledgerEntry });
-    // Auto-INV
+    // Auto-INV  — covers ONLY the pallet cost (pool side).
+    // Emma £25/TT 转售费 lives on the WEEKLY STATEMENT (off-pool, customer
+    // separately transfers to Michael) — NOT on this per-pickup INV.
     try {
       if (typeof generateInvoiceForPickup === 'function') {
         generateInvoiceForPickup(customer, ledgerEntry, 'auto-smart-pickup');
       }
     } catch (e) { console.warn('[smart-entry] INV gen failed:', e); }
-
-    // ─── EMMA TRANSFER MODE: add separate "Emma 转售费" ledger line ───
-    // Per business arrangement (2026-06-05): on Emma days during trial period,
-    // Michael's customer pays £25/TT pallet extra, which Michael passes to Emma.
-    // This appears as a SEPARATE ledger entry so the customer sees the line
-    // item and the standard pickup math (unitPrice × pallets) stays untouched.
-    // Linked to the source pickup via _emmaTransferLinkUid for sync/delete.
-    if (isEmmaTransferEntry && isEmmaTransferTTEligible(t.type, t.isSwap)) {
-      const surchargeAmount = t.pallets * EMMA_TRANSFER_RATE;
-      const surchargeEntry = {
-        id: crypto.randomUUID(),
-        date,
-        type: EMMA_TRANSFER_FEE_TYPE,                // 'emma-transfer-fee'
-        amount: surchargeAmount,                     // customerBalance treats !deposit as debit ✓
-        pallets: t.pallets,                          // for the statement detail only — does NOT enter customerTotalPallets (filter is 'pickup')
-        palletType: 'TT',
-        truck: t.truckNum || '',
-        note: `Emma 转售费 £${EMMA_TRANSFER_RATE} × ${t.pallets} TT 托盘 (Emma 代取转售试行)`,
-        // NOTE: we do NOT share `_pickupUid` with the source pickup. The existing
-        // 1:1 matcher (_pickupItemMatches) keys on _pickupUid, so duplicating it
-        // would cause sibling-sync ambiguity. Use `_emmaTransferLinkUid` only.
-        _linkSupplyId: linkId,
-        _emmaTransferLinkUid: truckUids[i],          // 1:1 link to source pickup
-        _emmaTransferRate: EMMA_TRANSFER_RATE
-      };
-      customer.ledger.push(surchargeEntry);
-      newCustomerEntries.push({ customer, entry: surchargeEntry });
-
-      // ─── Also extend the auto-generated INV with a second line item ───
-      // Customer's invoice now reads: "Pallets (Swap TT) × N @ £295" + "Emma
-      // resale fee × N @ £25" → total £320 × N. Without this, the INV would
-      // only show £295 × N and the customer wouldn't know to pay the £25.
-      const linkedInv = (state.invoices || []).find(i => i.linkedPickupId === ledgerEntry.id);
-      if (linkedInv && Array.isArray(linkedInv.lineItems)) {
-        linkedInv.lineItems.push({
-          description: `Emma transfer fee (TT pickup on Emma's day · ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})`,
-          qty: t.pallets,
-          unitPrice: EMMA_TRANSFER_RATE,
-          _emmaTransferFee: true                     // marker for edit/sync logic
-        });
-        linkedInv.subtotal = (+linkedInv.subtotal || 0) + surchargeAmount;
-        linkedInv.total    = (+linkedInv.total || 0) + surchargeAmount;
-        linkedInv.updatedAt = new Date().toISOString();
-      }
-    }
   }
 
   // 3) Partnership pickup events (one per truck) — staged for cross-table write
@@ -7291,14 +7391,17 @@ function _smartAlertsCompute() {
   }
 
   // ────────── 13. 🤝 Emma transfer outstanding balance (2026-06-05) ──────────
-  // Compute from THIS app's customer.ledger emma-transfer-fee entries (since
-  // partnership cache may not be loaded). Each fee row = £25/TT pallet that
-  // Michael's customer has paid Michael → Michael owes Emma. Settlements live
-  // in partnership_data, which we read from the cached _partnershipCache.
+  // FIX (2026-06-08 v2): derive from pickup rows with _emmaTransferTTPallets
+  // marker. The £25 is OFF-POOL (customer transfers separately on weekly bill),
+  // so we use pickup-row marker as the SOURCE OF TRUTH instead of the legacy
+  // emma-transfer-fee customer-pool deductions.
   let _emmaAccrued = 0;
   for (const c of (state.customers || [])) {
     for (const e of (c.ledger || [])) {
-      if (e.type === 'emma-transfer-fee') _emmaAccrued += (+(e.amount || 0) || 0);
+      if (e.type === 'pickup' && e._emmaTransferDay) {
+        const ttN = +(e._emmaTransferTTPallets || 0);
+        if (ttN > 0) _emmaAccrued += ttN * EMMA_TRANSFER_RATE;
+      }
     }
   }
   let _emmaPaid = 0;
