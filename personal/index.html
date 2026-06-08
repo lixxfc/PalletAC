@@ -3386,7 +3386,7 @@ async function migrateEmmaTransferOffPool() {
         feesByPickupUid.set(e._emmaTransferLinkUid, e);
       }
     }
-    // Backfill markers on the source pickup row
+    // Backfill markers on the source pickup row (TT-with-fee path)
     for (const e of c.ledger) {
       if (e.type !== 'pickup' || !e._pickupUid) continue;
       const fee = feesByPickupUid.get(e._pickupUid);
@@ -3394,8 +3394,15 @@ async function migrateEmmaTransferOffPool() {
       if (e._emmaTransferDay && e._emmaTransferTTPallets) continue;   // already set
       e._emmaTransferDay = true;
       e._emmaDayRotation = 'Emma';
+      // P2 #24 fix: anomaly fallback now uses 0 instead of e.pallets — over-counting
+      // would inflate weekly Emma fee. Log so anomalies are surfaced.
       const ttN = Math.round((+fee.amount || 0) / RATE);
-      e._emmaTransferTTPallets = ttN > 0 ? ttN : (e.pallets || 0);
+      if (ttN > 0) {
+        e._emmaTransferTTPallets = ttN;
+      } else {
+        e._emmaTransferTTPallets = 0;
+        console.warn('[migrate] fee amount=0 for pickup ' + e._pickupUid + ' — ttN set to 0 (anomaly)');
+      }
       backfilledPickups++;
     }
     // Remove all emma-transfer-fee rows — this REFUNDS the £25 × N to pool
@@ -3411,6 +3418,35 @@ async function migrateEmmaTransferOffPool() {
     if (refundedFromThisCustomer > 0) {
       removedFees += (before - c.ledger.length);
       totalRefunded += refundedFromThisCustomer;
+    }
+  }
+
+  // P2 #23 fix (2026-06-08): also backfill markers from partnership cache for
+  // AMZ-on-Emma-day pickups (those never had emma-transfer-fee rows so the
+  // first pass misses them — they need _emmaTransferDay so 🤝代取 badge + Emma
+  // PDF statement show them as transfer-day pickups too).
+  const pcEvents = (typeof _partnershipCache !== 'undefined' && _partnershipCache && _partnershipCache.events) || [];
+  if (Array.isArray(pcEvents) && pcEvents.length > 0) {
+    const pcMap = new Map();
+    for (const pev of pcEvents) {
+      if (!pev || pev.deleted) continue;
+      if (pev.type !== 'pickup' || !pev._pickupUid) continue;
+      if (!pev._emmaTransferDay) continue;
+      pcMap.set(pev._pickupUid, pev);
+    }
+    for (const c of (state.customers || [])) {
+      if (!Array.isArray(c.ledger)) continue;
+      for (const e of c.ledger) {
+        if (e.type !== 'pickup' || !e._pickupUid) continue;
+        if (e._emmaTransferDay) continue;          // already marked (handled above)
+        const pev = pcMap.get(e._pickupUid);
+        if (!pev) continue;
+        e._emmaTransferDay = true;
+        e._emmaDayRotation = pev._emmaDayRotation || 'Emma';
+        const ttN = +(pev._emmaTransferTTPallets || 0);
+        if (ttN > 0) e._emmaTransferTTPallets = ttN;
+        backfilledPickups++;
+      }
     }
   }
 
@@ -3477,7 +3513,9 @@ async function saveUserDataNow() {
 }
 
 // ============ COMPUTE ============
-const perPalletProfit = () => (state.params.sellPrice + state.params.myFee - state.params.buyPrice);
+// P2 #21 fix (2026-06-08): NaN defense — any undefined param defaults to 0
+// (was returning NaN that propagated through customerProfit / customerSwapBonus).
+const perPalletProfit = () => ((+state.params.sellPrice || 0) + (+state.params.myFee || 0) - (+state.params.buyPrice || 0));
 // fmt: format any number as a £-prefixed integer string. Defensive against
 // NaN / undefined so a single corrupt amount doesn't render '£NaN'.
 const fmt = v => {
@@ -3539,13 +3577,18 @@ function pickupMetrics(row) {
 // FIX (integrity audit, 2026-05-27): add `|| 0` fallback so a single corrupt amount
 // (undefined / null / string / NaN) on one ledger entry does not poison the customer's
 // entire balance with NaN — which would cascade into KPIs, statements and dashboards.
+// P2 #27 fix (2026-06-08): explicit whitelist instead of "anything not deposit
+// is a debit". Future ledger types (sss-refund, transfer-related, etc.) won't
+// silently corrupt the balance if they appear on a customer ledger.
+const _KNOWN_LEDGER_DEBIT_TYPES = new Set(['pickup', 'refund', 'adjust-neg', 'emma-transfer-fee']);
 function customerBalance(c) {
   let bal = 0;
   for (const e of (c.ledger || [])) {
     const amt = +(e.amount || 0);
     if (!isFinite(amt)) continue;
-    if (e.type === 'deposit') bal += amt;
-    else bal -= amt;
+    if (e.type === 'deposit')      bal += amt;
+    else if (_KNOWN_LEDGER_DEBIT_TYPES.has(e.type)) bal -= amt;
+    else { console.warn('[customerBalance] unknown ledger type ' + e.type + ' — skipped'); }
   }
   return bal;
 }
@@ -6707,6 +6750,10 @@ function closeCustomerModal() {
 function createCustomer() {
   const name = document.getElementById('new-cust-name').value.trim();
   if (!name) return;
+  // P2 #26 fix (2026-06-08): warn on duplicate name (case-insensitive) but
+  // allow override — users sometimes deliberately have similar names.
+  const dup = (state.customers || []).some(c => (c.name || '').trim().toLowerCase() === name.toLowerCase());
+  if (dup && !confirm(`已存在同名客户「${name}」 — 仍要创建第二个? (建议加上区分后缀如 "Ltd 2")`)) return;
   state.customers.push({ id: crypto.randomUUID(), name, createdAt: new Date().toISOString(), ledger: [] });
   closeCustomerModal(); save(); renderAll();
 }
@@ -7623,8 +7670,13 @@ const EMMA_TRANSFER_FEE_TYPE    = 'emma-transfer-fee';  // customer ledger entry
 // True if a given YYYY-MM-DD date falls inside the trial window (inclusive).
 function isInEmmaTransferTrialPeriod(dateStr) {
   if (!dateStr) return false;
-  // Allow trial extension if user has set state.params.emmaTransferExtendedEnd
-  const end = (state.params && state.params.emmaTransferExtendedEnd) || EMMA_TRANSFER_TRIAL_END;
+  // P1 #12 fix (2026-06-08): emmaTransferExtendedEnd is set on PARTNERSHIP
+  // side (合伙账 settings); personal_data has its own state.params. Read
+  // partnership cache first, fall back to local then to default.
+  const pcParams = (typeof _partnershipCache !== 'undefined' && _partnershipCache && _partnershipCache.params) || {};
+  const end = pcParams.emmaTransferExtendedEnd
+           || (state.params && state.params.emmaTransferExtendedEnd)
+           || EMMA_TRANSFER_TRIAL_END;
   return dateStr >= EMMA_TRANSFER_TRIAL_START && dateStr <= end;
 }
 
@@ -8343,6 +8395,13 @@ async function saveLedgerEdit() {
     unitPrice: e.unitPrice, swapPremium: e.swapPremium,
     _emmaTransferTTPallets: e._emmaTransferTTPallets
   } : { date: e.date, amount: e.amount, note: e.note };
+  // P1 #15 fix: snapshot linked INV/REC too — if partnership write fails we
+  // must roll those back as well (otherwise they show edits that don't match
+  // the rolled-back ledger entry).
+  const linkedInvForRollback = (state.invoices || []).find(i => i.linkedPickupId === _editingLedgerId);
+  const linkedRecForRollback = (state.receipts || []).find(r => r.linkedDepositId === _editingLedgerId);
+  const invSnap = linkedInvForRollback ? JSON.parse(JSON.stringify(linkedInvForRollback)) : null;
+  const recSnap = linkedRecForRollback ? JSON.parse(JSON.stringify(linkedRecForRollback)) : null;
 
   e.date = newDate;
   e.amount = newAmount;
@@ -8460,7 +8519,30 @@ async function saveLedgerEdit() {
       }
     } catch (err) {
       console.error('[saveLedgerEdit] partnership sync failed:', err);
-      partnershipSyncMsg = ' · ⚠ 合伙账同步失败:' + (err.message || err);
+      // P1 #15 fix (2026-06-08): rollback ALL local mutations on DB failure,
+      // including INV/REC. Otherwise the UI shows half-applied edits that don't
+      // match what's in DB.
+      e.date    = oldSnap.date;
+      e.amount  = oldSnap.amount;
+      e.note    = oldSnap.note;
+      if (isPickup) {
+        e.pallets    = oldSnap.pallets;
+        e.truck      = oldSnap.truck;
+        e.palletType = oldSnap.palletType;
+        e.isSwap     = oldSnap.isSwap;
+        e.unitPrice  = oldSnap.unitPrice;
+        e.swapPremium = oldSnap.swapPremium;
+        if (oldSnap._emmaTransferTTPallets !== undefined) {
+          e._emmaTransferTTPallets = oldSnap._emmaTransferTTPallets;
+        }
+      }
+      // Restore INV from snapshot (overwrite all fields)
+      if (linkedInvForRollback && invSnap) Object.assign(linkedInvForRollback, invSnap);
+      // Restore REC from snapshot (overwrite all fields)
+      if (linkedRecForRollback && recSnap) Object.assign(linkedRecForRollback, recSnap);
+      alert('合伙账写入失败, 本地修改已全部撤回。请检查网络后重试。\n\n详情:' + (err.message || err));
+      renderAll();
+      return;
     }
   }
 
@@ -8522,13 +8604,16 @@ async function saveLedgerEdit() {
   flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg + supplyTruckMsg);
 }
 
-function saveSettings() {
+async function saveSettings() {
   state.params.buyPrice = parseFloat(document.getElementById('s-buy').value) || 245;
   state.params.sellPrice = parseFloat(document.getElementById('s-sell').value) || 265;
   state.params.myFee = parseFloat(document.getElementById('s-myfee').value) || 31;
   state.params.hugoFee = parseFloat(document.getElementById('s-hugo').value) || 7;
   state.params.vFee = parseFloat(document.getElementById('s-v').value) || 2;
-  save(); renderAll();
+  // P2 #28 fix (2026-06-08): use immediate flush instead of 600ms debounced
+  // save() — settings affect every formula, no debounce buffer for race conditions.
+  try { await saveUserDataNow(); } catch (e) { console.warn('[saveSettings] flush failed', e); save(); }
+  renderAll();
   flash('参数已保存');
   // Propagate to partnership_data so合伙账 reads the same buy/hugo numbers
   _syncPricesToPartnership().catch(e => console.warn('[price-sync] failed:', e));

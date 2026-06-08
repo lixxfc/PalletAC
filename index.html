@@ -6178,6 +6178,13 @@ function recordSssRefund(to) {
   const dateStr = prompt('退款日期 (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
   if (dateStr === null) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert('日期格式必须 YYYY-MM-DD'); return; }
+  // P2 #19 fix (2026-06-08): block dates < switch day. Such events would be
+  // filtered out of _newModeEvents() and become orphans (counted nowhere).
+  const sw = newModeStartDate();
+  if (sw && dateStr < sw) {
+    alert('日期不能早于新模式切换日 (' + sw + ')\n\nSSS 退款是新模式才有的事件。如果是老模式的事情, 请在老模式记录里处理。');
+    return;
+  }
   const note = prompt('备注 (可选, 例如 "SSS 对账退回 Emma 的预付")', '') || '';
 
   const newShare = currentShare - amount;
@@ -7078,8 +7085,22 @@ async function delEvent(id) {
       flash('⚠ 合伙账已删,但个人账同步失败:' + res.error + ' · 点恢复后重新删除可重试');
     }
   } else {
+    // P1 #13 fix (2026-06-08): cancel linked PINV/SINV for non-pickup events too
+    // (in-emma, out-supplier, out-hugo, out-emma-transfer all may have linked
+    // partnership invoices). Previously orphaned a still-active invoice that
+    // referenced a soft-deleted event.
+    let cancelledInvCount = 0;
+    for (const inv of (state.partnershipInvoices || [])) {
+      if (inv.linkedEventId === ev.id && inv.status !== 'cancelled') {
+        inv.status = 'cancelled';
+        inv.cancelledAt = new Date().toISOString();
+        inv.cancelReason = '关联事件已删除';
+        inv.updatedAt = new Date().toISOString();
+        cancelledInvCount++;
+      }
+    }
     save(); renderAll();
-    flash('✓ 已删除');
+    flash('✓ 已删除' + (cancelledInvCount > 0 ? ` · ${cancelledInvCount} 张关联 PINV/SINV 已作废` : ''));
   }
 }
 
@@ -7100,28 +7121,29 @@ async function _syncPickupOwnerToPersonal(ev) {
     if (!row || !row.data) return { ok: false, error: '找不到 personal_data' };
     const pdata = row.data;
     if (!Array.isArray(pdata.dailySupply)) pdata.dailySupply = [];
-    const linkId = ev._linkSupplyId;
+    // P1 #14 fix (2026-06-08): use shared _pickupItemMatches so isSwap is
+    // included in the field-match fallback. Previously two trucks in the same
+    // linkSupplyId with same type/pallets but different swap state could be
+    // mis-matched (overwriting the wrong row).
+    const matchSnap = {
+      _pickupUid: ev._pickupUid,
+      _linkSupplyId: ev._linkSupplyId,
+      palletType: ev.palletType,
+      pallets: ev.pallets,
+      isSwap: !!ev.isSwap
+    };
     let foundDayRec = null;
     let truck = null;
     for (const dayRec of pdata.dailySupply) {
       if (dayRec.date !== ev.date) continue;
       if (!Array.isArray(dayRec.trucks)) continue;
-      const candidates = dayRec.trucks.filter(t => {
-        if (linkId && t._linkSupplyId === linkId) {
-          const typeMatch = (t.type === ev.palletType);
-          return typeMatch && t.pallets === ev.pallets;
-        }
-        if (!linkId) {
-          return t.type === ev.palletType && t.pallets === ev.pallets && (t.truckNum || '') === (ev.truck || '');
-        }
-        return false;
-      });
+      const candidates = dayRec.trucks.filter(t => _pickupItemMatches(t, matchSnap));
       if (candidates.length === 0) continue;
       foundDayRec = dayRec;
       truck = candidates[0];
       break;
     }
-    if (!foundDayRec || !truck) return { ok: false, error: '个人账找不到对应卡车(date+type+pallets)' };
+    if (!foundDayRec || !truck) return { ok: false, error: '个人账找不到对应卡车 (matchSnap)' };
     const currentOwner = foundDayRec.pickupBy || 'Michael';
     if (currentOwner === targetOwner) {
       return { ok: true, message: '已经是 ' + targetOwner + ',无需同步' };
