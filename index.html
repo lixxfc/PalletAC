@@ -3857,7 +3857,7 @@ function computeEmmaStatementData(from, to) {
   }
 
   // ===== NEW MODE (Option B accounting) =====
-  // Emma's "balance" = her SSS share = emmaOpeningCredit + Σ(in-emma) − Σ(Emma's pickups × buyPrice)
+  // Emma's "balance" = her SSS share = emmaOpeningCredit + Σ(in-emma) − Σ(Emma's pickups × buyPrice) − Σ(sss-refund to=emma)
   // Only NEW-MODE events (date >= switch) are considered. Pre-switch events are ignored
   // because their net effect is already baked into emmaOpeningCredit per Option B semantics.
   const emmaOpening = state.params.emmaOpeningCredit || 0;
@@ -3869,10 +3869,11 @@ function computeEmmaStatementData(from, to) {
     if (sw && e.date < sw) continue;  // skip pre-switch (baked into opening)
     if (e.type === 'in-emma') opening += (e.amount || 0);
     else if (e.type === 'pickup' && !isMichaelPickup(e)) opening -= (e.pallets || 0) * buyPrice;
+    else if (e.type === 'sss-refund' && e.to === 'emma') opening -= (e.amount || 0);
   }
 
   let running = opening;
-  let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0, totalHugoFee = 0;
+  let totalIn = 0, totalOut = 0, totalPallets = 0, totalPickups = 0, totalTransfers = 0, totalHugoFee = 0, totalRefund = 0, totalRefundCount = 0;
   const inRange = [];
   for (const e of sorted) {
     if (e.date < from || e.date > to) continue;
@@ -3888,10 +3889,17 @@ function computeEmmaStatementData(from, to) {
       const amt = palls * buyPrice;
       totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
       inRange.push({ ...e, _balance: running, _amount: amt });
+    } else if (e.type === 'sss-refund' && e.to === 'emma') {
+      // SSS refunded part of Emma's SSS prepay back to Emma's bank (2026-06-06).
+      // Reduces her SSS share. Show as a separate line so the statement and
+      // running balance reflect it the same way as the dashboard does.
+      const amt = e.amount || 0;
+      totalRefund += amt; totalRefundCount += 1; running -= amt;
+      inRange.push({ ...e, _balance: running, _amount: amt, _isRefund: true });
     }
     // Michael's pickups + legacy transfer events: NOT shown on Emma's new-mode statement
   }
-  return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, buyPrice, mode: 'new' };
+  return { rows: inRange, opening, closing: running, totalIn, totalOut, totalPallets, totalPickups, totalTransfers, totalHugoFee, totalRefund, totalRefundCount, buyPrice, mode: 'new' };
 }
 
 // Compute Hugo commission data for given range
@@ -4029,6 +4037,16 @@ function buildEmmaStatementEmailHtml(from, to) {
         </tr>`;
       }
       return transferRow;
+    } else if (e._isRefund || e.type === 'sss-refund') {
+      // SSS refund to Emma (2026-06-06) — distinct yellow row
+      return `
+        <tr style="background:#fef3c7;">
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#92400e;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#92400e;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fde68a;color:#92400e;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">REFUND</span><b>SSS Refund to Emma</b>${e.note ? ' <span style="color:#a16207;">— ' + _pmEsc(e.note) + '</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#b91c1c;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e._amount)}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
+        </tr>`;
     } else {
       return `
         <tr>
@@ -4692,6 +4710,18 @@ function generateEmmaStatement() {
         return transferRow + hugoRow;
       }
       return transferRow;
+    } else if (e._isRefund || e.type === 'sss-refund') {
+      // SSS refund to Emma (2026-06-06): SSS handed money back to Emma's bank
+      // → reduces her SSS share. Show as a distinct row.
+      let desc = `<b>SSS Refund to Emma</b>`;
+      if (e.note) desc += ` <span class="muted">&mdash; ${esc(e.note)}</span>`;
+      return `<tr style="background:#fef3c7;">
+        <td class="date-col">${fmtDate(e.date)}</td>
+        <td><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fde68a;color:#92400e;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">REFUND</span>${desc}</td>
+        <td class="num pos"></td>
+        <td class="num neg">${money(e._amount)}</td>
+        <td class="num bal">${money(e._balance)}</td>
+      </tr>`;
     } else {
       let desc = `<b>Pallets Collected</b> &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
       if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
