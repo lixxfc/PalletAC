@@ -2618,26 +2618,30 @@ select option { background: var(--bg-2); color: var(--text); }
     <!-- Section divider -->
     <div style="margin-top: 28px; display:flex; align-items:flex-end; gap:14px;">
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:700;color:var(--text);letter-spacing:0.4px;display:flex;align-items:center;gap:8px;">
-          <span>🚚</span><span>卡车清单</span>
+        <div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:0.4px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:18px;">🚚</span><span>卡车清单</span>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:3px;">每车一行,可分配给不同客户。Swap = 跟 Emma 换的(单价 £<span id="se-swap-price-hint">295</span>/托)</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.6;">
+          每车一行,可分配给不同客户 ·
+          <b style="color:#f9a8d4;">Swap</b> = 跟 Emma 换的 (单价 £<span id="se-swap-price-hint">295</span>/托) ·
+          <b style="color:var(--text-dim);">普通</b> = 客户原价
+        </div>
       </div>
-      <button class="btn sm" onclick="addSmartEntryTruck()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:600;">＋ 加一车</button>
+      <button class="btn sm" onclick="addSmartEntryTruck()" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;padding:9px 18px;font-size:12.5px;box-shadow:0 4px 14px rgba(139,92,246,0.30);">＋ 加一车</button>
     </div>
 
     <!-- Trucks table -->
-    <div class="table-wrap" style="margin-top: 12px; border-color:rgba(139,92,246,0.20); border-radius: 12px; overflow: hidden;">
-      <table style="border-collapse: collapse;">
+    <div class="table-wrap" style="margin-top: 12px; border:1px solid rgba(139,92,246,0.25); border-radius: 14px; overflow: hidden; background:linear-gradient(180deg,rgba(5,6,15,0.45),rgba(5,6,15,0.20));">
+      <table style="border-collapse: collapse;table-layout:fixed;width:100%;">
         <thead>
-          <tr>
-            <th style="width:84px;">类型</th>
-            <th style="width:74px;text-align:center;">托盘</th>
-            <th style="width:90px;">车次</th>
-            <th style="width:96px;text-align:center;">Swap?</th>
-            <th class="se-col-customer">客户</th>
-            <th style="width:120px;text-align:right;padding-right:14px;" class="se-col-amount">该车金额</th>
-            <th style="width:42px;"></th>
+          <tr style="background:linear-gradient(90deg,rgba(139,92,246,0.08),rgba(0,229,255,0.06));">
+            <th style="width:90px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">类型</th>
+            <th style="width:80px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:center;">托盘</th>
+            <th style="width:100px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">车次</th>
+            <th style="width:110px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:center;">Swap</th>
+            <th class="se-col-customer" style="padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">→ 客户</th>
+            <th style="width:130px;text-align:right;padding:11px 14px 11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;" class="se-col-amount">该车金额</th>
+            <th style="width:48px;padding:11px 8px;"></th>
           </tr>
         </thead>
         <tbody id="se-trucks-body"></tbody>
@@ -4310,36 +4314,55 @@ function _renderEmmaLegacyBannerHTML() {
 }
 
 // _renderEmmaTransferBannerHTML(isChecked):
-// isChecked === true  → 转售模式 (Michael 代取 Emma 日, 收 £25 转售费)
-// isChecked === false → Emma 自取 (她自己拿自己卖, 不分配你客户, 不收转售费)
+// isChecked === true  → 转售模式 (Michael 代取 Emma 日, 收 £25 转售费, Michael SSS 份额扣)
+// isChecked === false → Emma 自取 (她自己拿自己卖, 不分配你客户, 不收转售费, Emma SSS 份额扣)
 function _renderEmmaTransferBannerHTML(isChecked) {
-  const checkedAttr = isChecked === false ? '' : 'checked';
-  const titleColor = isChecked === false ? '#94a3b8' : '#f9a8d4';
-  const bgGradient = isChecked === false
-    ? 'background:rgba(148,163,196,0.08);border:1px dashed rgba(148,163,196,0.30);'
-    : 'background:linear-gradient(135deg,rgba(244,114,182,0.12),rgba(139,92,246,0.10));border:1px solid rgba(244,114,182,0.45);';
-  const titleText = isChecked === false
-    ? '🔁 Emma 自取模式 (转售模式已停用)'
-    : `🤝 Emma 转售模式 (试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END})`;
-  const previewBlock = isChecked === false
-    ? `<div style="font-size:11px;color:#94a3b8;line-height:1.7;">
-         <b>Emma 自己取货</b> · 这单不分配你的客户, 不开 INV, 不收 £25 转售费<br>
-         适用于: Emma 取的是她自己的 / 她拿去卖给她自己的客户
-       </div>`
-    : `<div id="se-emma-transfer-preview" style="font-size:11px;color:#fbcfe8;opacity:0.92;">计算中…</div>
-       <div style="font-size:10.5px;color:#fbcfe8;opacity:0.7;margin-top:5px;border-top:1px dashed rgba(244,114,182,0.25);padding-top:5px;">
-         Michael 代取 Emma 日: TT £25/托盘 付 Emma · AMZ 让利无费用 · 客户单据自动加一行 "Emma 转售费"
-       </div>`;
-  return `<div style="padding:12px 14px;${bgGradient}border-radius:12px;font-size:12px;color:#fce7f3;line-height:1.65;">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
-      <span style="font-weight:700;color:${titleColor};font-size:13px;">${titleText}</span>
-      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#fbcfe8;cursor:pointer;user-select:none;">
-        <input type="checkbox" id="se-emma-transfer-toggle" ${checkedAttr} onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;cursor:pointer;">
-        <span>${isChecked === false ? '点这里启用转售模式' : '启用'}</span>
-      </label>
-    </div>
-    ${previewBlock}
-  </div>`;
+  const isOn = isChecked !== false;
+  if (isOn) {
+    // ── ON 状态 — 粉色渐变, 强调转售模式启用 ──
+    return `<div style="padding:14px 16px;background:linear-gradient(135deg,rgba(244,114,182,0.18),rgba(139,92,246,0.12));border:1.5px solid rgba(244,114,182,0.55);border-radius:14px;font-size:12px;color:#fce7f3;line-height:1.65;box-shadow:0 4px 18px rgba(244,114,182,0.10);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:18px;line-height:1;">🤝</div>
+          <div>
+            <div style="font-weight:800;color:#f9a8d4;font-size:13.5px;letter-spacing:0.2px;">Emma 转售模式 · 已启用</div>
+            <div style="font-size:10.5px;color:#fbcfe8;opacity:0.75;margin-top:1px;">试行期 ${EMMA_TRANSFER_TRIAL_START} ~ ${EMMA_TRANSFER_TRIAL_END}</div>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#fbcfe8;cursor:pointer;user-select:none;padding:6px 12px;background:rgba(244,114,182,0.18);border:1px solid rgba(244,114,182,0.40);border-radius:8px;font-weight:700;">
+          <input type="checkbox" id="se-emma-transfer-toggle" checked onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;cursor:pointer;width:14px;height:14px;">
+          <span>启用中</span>
+        </label>
+      </div>
+      <div id="se-emma-transfer-preview" style="font-size:11.5px;color:#fbcfe8;opacity:0.95;padding:8px 10px;background:rgba(5,6,15,0.30);border-radius:8px;">计算中…</div>
+      <div style="font-size:10.5px;color:#fbcfe8;opacity:0.7;margin-top:6px;line-height:1.65;">
+        <b>你代取 Emma 日</b>: 你 SSS 份额扣 (你拿货) · TT 自动 Swap · 客户多付 £25/托 · 你欠 Emma £25/托
+      </div>
+    </div>`;
+  } else {
+    // ── OFF 状态 — 浅蓝绿, 强调"切换到 Emma 自取模式"按钮 ──
+    return `<div style="padding:14px 16px;background:linear-gradient(135deg,rgba(34,211,165,0.06),rgba(0,229,255,0.05));border:1.5px dashed rgba(34,211,165,0.40);border-radius:14px;font-size:12px;color:var(--text);line-height:1.65;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="font-size:18px;line-height:1;">🔁</div>
+          <div>
+            <div style="font-weight:800;color:var(--green);font-size:13.5px;letter-spacing:0.2px;">Emma 自取模式 · 已切换</div>
+            <div style="font-size:10.5px;color:var(--text-dim);margin-top:1px;">Emma 自己拿货 · 不分配你的客户 · 不收转售费</div>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text);cursor:pointer;user-select:none;padding:8px 14px;background:linear-gradient(135deg,rgba(244,114,182,0.18),rgba(244,114,182,0.10));border:1.5px solid rgba(244,114,182,0.45);border-radius:10px;font-weight:700;transition:all 0.15s;">
+          <input type="checkbox" id="se-emma-transfer-toggle" onchange="applySmartEntryOwnerMode()" style="accent-color:#f472b6;cursor:pointer;width:14px;height:14px;">
+          <span style="color:#f472b6;">点这里启用转售模式</span>
+        </label>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);line-height:1.75;padding:8px 10px;background:rgba(5,6,15,0.25);border-radius:8px;">
+        ✓ Emma SSS 份额扣 (她拿货)<br>
+        ✓ 不分配你的客户, 不开 INV<br>
+        ✓ 不收 £25 转售费 · Hugo 由 Emma 自己结
+        <div style="margin-top:6px;color:var(--text-dim);font-size:10.5px;font-style:italic;">→ 适用: Emma 取她自己的, 拿去卖给她自己的客户</div>
+      </div>
+    </div>`;
+  }
 }
 
 // Live-update preview inside the transfer-mode banner.
@@ -4474,41 +4497,53 @@ function renderSmartEntryTrucks() {
     '<option value="">— 不分配(进库存)—</option>'
     + customers.map(c => `<option value="${c.id}" ${c.id === selectedId ? 'selected' : ''}>${escapeHtml(c.name || '?')}</option>`).join('');
 
+  // UI v3 (2026-06-08): redesigned for clarity — Swap toggle is now a clear
+  // pill button "Swap ON / OFF", customer dropdown labelled "→ 客户", per-truck
+  // amount block aligned right with type-tag, X delete button repositioned.
   let totalPallets = 0, totalAmount = 0;
   tb.innerHTML = _seTrucks.map((t, idx) => {
     const unitPrice = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     const amount = (t.pallets || 0) * unitPrice;
     if (t.customerId) totalAmount += amount;
     totalPallets += (t.pallets || 0);
-    return `<tr>
-      <td style="padding:10px 8px;">
-        <select onchange="updateSmartEntryTruck(${idx}, 'type', this.value)" style="width:100%;padding:7px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.22);border-radius:7px;color:var(--text);font-size:12px;font-weight:600;">
-          <option value="TT" ${t.type === 'TT' ? 'selected' : ''}>TT</option>
-          <option value="AMAZON" ${t.type === 'AMAZON' ? 'selected' : ''}>AMAZON</option>
+    // Type pill style — TT = indigo, AMZ = cyan
+    const isTT = (t.type || '').toUpperCase() === 'TT';
+    const typeColor = isTT ? 'rgba(99,102,241,0.5)' : 'rgba(34,211,238,0.45)';
+    const typeBgColor = isTT ? 'rgba(67,56,202,0.18)' : 'rgba(34,211,238,0.10)';
+    return `<tr style="border-top:1px solid rgba(139,150,255,0.10);">
+      <td style="padding:12px 10px;vertical-align:middle;">
+        <select onchange="updateSmartEntryTruck(${idx}, 'type', this.value)" style="width:100%;padding:9px 8px;background:${typeBgColor};border:1.5px solid ${typeColor};border-radius:8px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;">
+          <option value="TT" ${isTT ? 'selected' : ''}>TT</option>
+          <option value="AMAZON" ${!isTT ? 'selected' : ''}>AMZ</option>
         </select>
       </td>
-      <td style="padding:10px 8px;text-align:center;"><input type="number" min="0" value="${t.pallets || 0}" oninput="updateSmartEntryTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:7px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.22);border-radius:7px;color:var(--text);font-size:13px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;"></td>
-      <td style="padding:10px 8px;"><input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="T-001" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;padding:7px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.22);border-radius:7px;color:var(--text);font-size:12px;"></td>
-      <td style="padding:10px 8px;text-align:center;">
-        <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-size:11px;padding:5px 10px;border-radius:7px;background:${t.isSwap ? 'rgba(244,114,182,0.10)' : 'rgba(139,150,255,0.04)'};border:1px solid ${t.isSwap ? 'rgba(244,114,182,0.35)' : 'rgba(139,150,255,0.15)'};transition:all 0.15s;">
-          <input type="checkbox" ${t.isSwap ? 'checked' : ''} onchange="updateSmartEntryTruck(${idx}, 'isSwap', this.checked)" style="margin:0;">
-          <span style="color:${t.isSwap ? 'var(--pink)' : 'var(--text-dim)'};font-weight:${t.isSwap ? '700' : '500'};white-space:nowrap;">${t.isSwap ? '🔁 SWAP' : '保留'}</span>
-        </label>
+      <td style="padding:12px 10px;text-align:center;vertical-align:middle;">
+        <input type="number" min="0" value="${t.pallets || 0}" oninput="updateSmartEntryTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(139,150,255,0.22);border-radius:8px;color:var(--text);font-size:15px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;">
       </td>
-      <td style="padding:10px 8px;" class="se-col-customer">
-        <select onchange="updateSmartEntryTruck(${idx}, 'customerId', this.value)" style="width:100%;padding:7px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.22);border-radius:7px;color:var(--text);font-size:12px;">
+      <td style="padding:12px 10px;vertical-align:middle;">
+        <input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="车次号" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.5);border:1.5px solid rgba(139,150,255,0.18);border-radius:8px;color:var(--text);font-size:12px;">
+      </td>
+      <td style="padding:12px 10px;text-align:center;vertical-align:middle;">
+        <button type="button" onclick="updateSmartEntryTruck(${idx}, 'isSwap', !${!!t.isSwap})" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:8px 14px;border-radius:20px;background:${t.isSwap ? 'linear-gradient(135deg,rgba(244,114,182,0.25),rgba(244,114,182,0.10))' : 'rgba(139,150,255,0.06)'};border:1.5px solid ${t.isSwap ? 'rgba(244,114,182,0.55)' : 'rgba(139,150,255,0.18)'};color:${t.isSwap ? '#fda4af' : 'var(--text-dim)'};font-weight:${t.isSwap ? '800' : '600'};letter-spacing:0.4px;transition:all 0.18s;min-width:80px;justify-content:center;">
+          ${t.isSwap ? '🔁 SWAP' : '○ 普通'}
+        </button>
+      </td>
+      <td style="padding:12px 10px;vertical-align:middle;" class="se-col-customer">
+        <select onchange="updateSmartEntryTruck(${idx}, 'customerId', this.value)" style="width:100%;padding:9px 8px;background:${t.customerId ? 'rgba(139,92,246,0.10)' : 'rgba(5,6,15,0.5)'};border:1.5px solid ${t.customerId ? 'rgba(139,92,246,0.35)' : 'rgba(139,150,255,0.18)'};border-radius:8px;color:var(--text);font-size:12px;${t.customerId ? 'font-weight:600;' : ''}">
           ${custOptions(t.customerId)}
         </select>
       </td>
-      <td style="padding:10px 14px 10px 8px;font-variant-numeric:tabular-nums;text-align:right;" class="se-col-amount">
-        <div style="font-size:13px;font-weight:700;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};line-height:1.2;">
+      <td style="padding:12px 14px 12px 10px;font-variant-numeric:tabular-nums;text-align:right;vertical-align:middle;" class="se-col-amount">
+        <div style="font-size:15px;font-weight:800;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};line-height:1.2;">
           ${t.customerId ? fmt(amount) : '—'}
         </div>
-        <div style="font-size:10px;color:var(--text-dim);font-weight:400;margin-top:2px;line-height:1.2;">
-          ${t.customerId ? `${t.pallets || 0} × £${unitPrice}` : '进库存'}
+        <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-top:3px;line-height:1.2;letter-spacing:0.2px;">
+          ${t.customerId ? `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''}` : '进库存'}
         </div>
       </td>
-      <td style="padding:10px 8px;text-align:center;"><button class="btn sm danger" onclick="removeSmartEntryTruck(${idx})" ${_seTrucks.length === 1 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>×</button></td>
+      <td style="padding:12px 8px;text-align:center;vertical-align:middle;">
+        <button onclick="removeSmartEntryTruck(${idx})" ${_seTrucks.length === 1 ? 'disabled' : ''} style="width:30px;height:30px;border-radius:50%;border:1.5px solid ${_seTrucks.length === 1 ? 'rgba(244,63,94,0.15)' : 'rgba(244,63,94,0.45)'};background:transparent;color:${_seTrucks.length === 1 ? 'rgba(244,63,94,0.30)' : 'var(--rose)'};font-size:16px;cursor:${_seTrucks.length === 1 ? 'not-allowed' : 'pointer'};display:inline-flex;align-items:center;justify-content:center;transition:all 0.15s;" title="${_seTrucks.length === 1 ? '至少保留一车' : '删除这一车'}">×</button>
+      </td>
     </tr>`;
   }).join('');
   document.getElementById('se-total-pallets').textContent = totalPallets + ' 托';
