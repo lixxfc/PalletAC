@@ -4621,7 +4621,12 @@ function _seGetSssShares() {
   const sssOpening = params.sssOpeningCredit || 0;
   const emmaOpening = params.emmaOpeningCredit || 0;
   const michaelOpening = sssOpening - emmaOpening;
+  // 2026-06-08: also account for sss-refund events (SSS sends money back to a
+  // partner, dropping that partner's SSS share). Mirrors partnership/index.html
+  // emmaSssShare / michaelSssShare formulas — without this the preview shown
+  // in smart entry was outdated by the refund amount (e.g. £9,315 instead of £6,315).
   let outSupplier = 0, inEmma = 0, michaelUsed = 0, emmaUsed = 0;
+  let michaelRefund = 0, emmaRefund = 0;
   for (const e of _seNewModeEvents()) {
     if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
     else if (e.type === 'in-emma') inEmma += (e.amount || 0);
@@ -4630,12 +4635,14 @@ function _seGetSssShares() {
       if (_seIsMichaelPickup(e)) michaelUsed += cost;
       else emmaUsed += cost;
     }
+    else if (e.type === 'sss-refund' && e.to === 'emma')    emmaRefund    += (e.amount || 0);
+    else if (e.type === 'sss-refund' && e.to === 'michael') michaelRefund += (e.amount || 0);
   }
   const michaelIn = michaelOpening + outSupplier - inEmma;
   const emmaIn = emmaOpening + inEmma;
   return {
-    michael: { opening: michaelOpening, in: michaelIn, used: michaelUsed, remaining: michaelIn - michaelUsed },
-    emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    remaining: emmaIn - emmaUsed }
+    michael: { opening: michaelOpening, in: michaelIn, used: michaelUsed, refunded: michaelRefund, remaining: michaelIn - michaelUsed - michaelRefund },
+    emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    refunded: emmaRefund,    remaining: emmaIn - emmaUsed - emmaRefund }
   };
 }
 // Returns { accrued, paid, owed, rate, opening } or null. Only Michael's pickups accrue.
@@ -6961,12 +6968,15 @@ function _smartAlertsCompute() {
   }
 
   // ────────── 4. 🚨/💸 Cash pool overdraft / low ──────────
-  // MUST mirror partnership cashPoolBalance() exactly — including out-emma-transfer
-  // (added 2026-06-05), or alerts won't fire when Emma settlements push the pool
-  // into overdraft.
+  // MUST mirror partnership cashPoolBalance() exactly — includes:
+  //   • out-emma-transfer (added 2026-06-05)
+  //   • cashPoolOpeningBalance (added 2026-06-08, fixes 'fake overdraft' bug)
+  // Without these, alerts fire incorrectly (false overdraft, or missed overdraft).
   if (_partnershipCache) {
     const events = _partnershipCache.events || [];
     const sw = (typeof _seNewModeStartDate === 'function') ? _seNewModeStartDate() : null;
+    const params = _partnershipCache.params || {};
+    const cashOpening = +(params.cashPoolOpeningBalance) || 0;
     let inEmma = 0, inCustomerManual = 0, outSupplier = 0, outHugo = 0, outEmmaTransfer = 0;
     for (const e of events) {
       if (e.deleted || !e.date) continue;
@@ -6990,7 +7000,7 @@ function _smartAlertsCompute() {
         }
       }
     }
-    const cashPool = inEmma + inCustomerManual + customerNet - outSupplier - outHugo - outEmmaTransfer;
+    const cashPool = cashOpening + inEmma + inCustomerManual + customerNet - outSupplier - outHugo - outEmmaTransfer;
     if (cashPool < 0) {
       alerts.push({
         id: 'cash-pool-overdraft',
