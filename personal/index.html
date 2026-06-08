@@ -4664,8 +4664,15 @@ function updateSmartEntryPreview() {
   // === Owner-aware accounting (NEW mode) ===
   // The picker is the person whose SSS share gets debited. Michael earns profit + handles
   // Hugo/V cash only on HIS OWN pickups; Emma's pickups are off-books for Michael.
+  //
+  // MODEL B (2026-06-08): Emma transfer mode treats the entry as Michael's pickup.
+  // Michael's SSS share takes the hit (his own credit), Michael earns the profit,
+  // Hugo cash on Michael. So preview reflects Michael's view, not Emma's.
   const pickupOwner = document.getElementById('se-pickup-by').value || 'Michael';
-  const isMichaelPick = (pickupOwner === 'Michael');
+  const _ueTrPrevToggle = document.getElementById('se-emma-transfer-toggle');
+  const _ueTrPrevActive = (pickupOwner === 'Emma') && isInEmmaTransferTrialPeriod(date) &&
+    (!_ueTrPrevToggle || _ueTrPrevToggle.checked);
+  const isMichaelPick = (pickupOwner === 'Michael') || _ueTrPrevActive;
   const shares = _seGetSssShares();
   const ownerShareBefore = shares ? (isMichaelPick ? shares.michael.remaining : shares.emma.remaining) : null;
   const ownerShareAfter = ownerShareBefore != null ? (ownerShareBefore - totalSssCost) : null;
@@ -4911,17 +4918,25 @@ async function saveSmartPickup() {
   // form's pickupBy with the existing record's. This meant selecting "Emma" on a
   // day that already had Michael's pickups got mis-tagged as Michael's.
   // Now: if pickupBy differs, create a SEPARATE day record (one per owner).
-  let dayRec = state.dailySupply.find(d => d.date === date && (d.pickupBy || 'Michael') === formPickupBy);
-  let usedPickupBy = formPickupBy;
+  //
+  // MODEL B (2026-06-08): When isEmmaTransferEntry, Michael is the actual physical
+  // picker. pickedUpBy reflects reality (Michael), so SSS share / monthly pallets /
+  // Hugo accrual all attribute to Michael — he used his own SSS credit. The
+  // _emmaTransferDay marker preserves the "this was Emma's rotation day" context
+  // for transfer-fee accrual + UI display ("🤝 代取" badge).
+  const effectivePickupBy = isEmmaTransferEntry ? 'Michael' : formPickupBy;
+  let dayRec = state.dailySupply.find(d => d.date === date && (d.pickupBy || 'Michael') === effectivePickupBy);
+  let usedPickupBy = effectivePickupBy;
   if (!dayRec) {
     dayRec = {
       id: crypto.randomUUID(),
       date,
-      pickupBy: formPickupBy,
+      pickupBy: effectivePickupBy,
       manualOverride: false,
       trucks: [],
       note: '',
-      _linkSupplyId: linkId
+      _linkSupplyId: linkId,
+      _emmaDayRotation: isEmmaTransferEntry ? 'Emma' : null  // 代取时, 记录原本是 Emma 日
     };
     state.dailySupply.push(dayRec);
   }
@@ -5021,11 +5036,16 @@ async function saveSmartPickup() {
   // 3) Partnership pickup events (one per truck) — staged for cross-table write
   // IMPORTANT: write `pickedUpBy` explicitly (authoritative field per handoff §6) so
   // downstream consumers don't have to fall back to parsing createdBy email.
-  // EMMA TRANSFER (2026-06-05): in transfer mode, pickedUpBy STAYS 'Emma' so existing
-  // emmaSssShare / michaelSssShare attribution math is preserved 1:1. The transfer
-  // marker (_emmaTransferDay) is layered on top — it does NOT participate in any
-  // existing formula. New helpers (emmaTransferAccrued / emmaTransferPaid /
-  // emmaTransferOutstanding) read it for the statement and the settlement KPI.
+  //
+  // MODEL B (2026-06-08, confirmed by Michael):
+  // - When isEmmaTransferEntry, pickedUpBy = 'Michael' (he physically picks up).
+  //   The SSS share / monthly pallets / Hugo accrual all correctly attribute to him.
+  //   This means Michael's SSS credit goes down by pallets × £245 (he used his own
+  //   credit), Emma's stays. Michael pays Emma £25/托 for the day's right (recorded
+  //   via out-emma-transfer at settlement). Hugo £7/托 is on Michael (he ran the sale).
+  // - _emmaTransferDay = true marker tells downstream "this was Emma's rotation
+  //   day, Michael 代取" for: transfer fee accrual, 🤝 代取 UI badge,
+  //   Emma transfer Word statement, drilldowns.
   const newPartEvents = validTrucks.map((t, i) => {
     const ev = {
       id: crypto.randomUUID(),
@@ -5037,15 +5057,17 @@ async function saveSmartPickup() {
       truck: t.truckNum || '',
       note: t.note || '智能录入',
       isSwap: !!t.isSwap,
-      pickedUpBy: usedPickupBy,                                              // 'Michael' | 'Emma'
+      pickedUpBy: usedPickupBy,                                              // Model B: 'Michael' on transfer days too
       createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
       createdAt: new Date().toISOString(),
       _linkSupplyId: linkId,
       _pickupUid: truckUids[i]                                               // per-truck 1:1 sync key
     };
-    // Layer Emma-transfer markers (additive — existing logic ignores them)
+    // Layer Emma-transfer markers (additive — existing isMichaelPickup-based
+    // formulas now correctly debit Michael's SSS share + Hugo accrual)
     if (isEmmaTransferEntry) {
       ev._emmaTransferDay = true;
+      ev._emmaDayRotation = 'Emma';   // original rotation owner (for display / audit)
       if (isEmmaTransferTTEligible(t.type, t.isSwap)) {
         ev._emmaTransferTTPallets = t.pallets;
         ev._emmaTransferAmount    = t.pallets * EMMA_TRANSFER_RATE;

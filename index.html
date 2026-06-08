@@ -3078,7 +3078,7 @@ function buildDrilldownData(key) {
       { date: '—', desc: `<b>📌 我的 SSS 期初(切换日)</b> = SSS 总池 £${fmt0(sssOpening)} − Emma 切换日预付 £${fmt0(emmaOpening)}`, amount: mShare.opening },
       ...outSupplier.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ 付 SSS</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
       ..._newModeEvents().filter(e => e.type === 'in-emma').map(e => ({ date: e.date, desc: `<b style="color:var(--mute-2);">  其中 Emma 出资部分(归 Emma 份额)</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) })),
-      ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice })),
+      ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e._emmaTransferDay ? ' <span style="font-size:9px;color:#f9a8d4;background:rgba(244,114,182,0.18);padding:1px 5px;border-radius:3px;font-weight:700;">🤝 代取 Emma 日</span>' : ''}`, amount: -(e.pallets || 0) * buyPrice })),
       ...michaelRefunds.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">📥 SSS 退款给我</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const refundLine = (mShare.refunded || 0) > 0
@@ -3122,7 +3122,10 @@ function buildDrilldownData(key) {
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(eShare.used)}</span></div>
                 ${refundLine}
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>Emma 的 SSS 份额</b></span><span class="v total" style="float:right;color:${eShare.remaining < 0 ? 'var(--rose)' : 'var(--pink)'};">£${fmt0(eShare.remaining)}</span></div>
-                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">注:切换日的 £${fmt0(eShare.opening)} 是从老模式带过来的预付。Emma 通过取货消化,不需要现金还款。</div>`,
+                <div style="margin-top:8px;padding:8px 10px;background:rgba(196,181,253,0.05);border-radius:6px;font-size:11px;color:var(--mute-2);">
+                  注:切换日的 £${fmt0(eShare.opening)} 是从老模式带过来的预付。Emma 通过取货消化,不需要现金还款。<br>
+                  <span style="color:#f9a8d4;">🤝 Emma 日 Michael 代取的取货 不算 Emma 份额, 算 Michael 份额 (方案 B, 2026-06-08)。</span>
+                </div>`,
       rows
     };
   }
@@ -3197,12 +3200,14 @@ function buildDrilldownData(key) {
     const opening = state.params.hugoOpeningOwed || 0;
     // Hugo accrues to Michael for:
     //   (a) Michael's own pickup days
-    //   (b) Emma's pickup days where Michael 代取 (Emma transfer trial)
+    //   (b) Emma's pickup days where Michael 代取 (Emma transfer trial — Model B
+    //       has pickedUpBy=Michael + _emmaTransferDay=true)
     // Pure-Emma own-day pickups still go on Emma's own settlement.
     const allPickups = _newModeEvents().filter(e => e.type === 'pickup');
     const michaelAccrued = allPickups.filter(e => isHugoAccruedToMichael(e));
-    const ownDayMichael  = michaelAccrued.filter(e => isMichaelPickup(e));
-    const transferDay    = michaelAccrued.filter(e => !isMichaelPickup(e) && e._emmaTransferDay);
+    // Split by _emmaTransferDay marker (works for both Model A & B):
+    const ownDayMichael  = michaelAccrued.filter(e => !e._emmaTransferDay);
+    const transferDay    = michaelAccrued.filter(e =>  !!e._emmaTransferDay);
     const pureEmma       = allPickups.filter(e => !isHugoAccruedToMichael(e));
     const payRows = _newModeEvents().filter(e => e.type === 'out-hugo');
     const accrued = michaelAccrued.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
@@ -3583,17 +3588,19 @@ function renderPickups() {
     const commission = (r.pallets || 0) * rate;
     // Hugo commission display:
     //   • Michael's own pickup → show £ amount (he owes Hugo)
-    //   • Emma 转售试行 代取 (_emmaTransferDay) → show £ amount with badge (he owes Hugo too)
+    //   • Emma 转售试行 代取 (_emmaTransferDay, Model B: pickedUpBy=Michael) →
+    //     show £ amount with 🤝 代取 badge
     //   • Pure Emma own-day pickup in new mode → Emma 自结, no amount
     const hugoOnMichael = (typeof isHugoAccruedToMichael === 'function')
       ? isHugoAccruedToMichael(r)
       : isMpick;
+    const isTransferPickup = !!r._emmaTransferDay;
     let commissionCell;
     if (isNewMode() && !hugoOnMichael) {
       commissionCell = '<td class="dim" style="color:var(--text-dim);font-size:11px;">— <span style="font-size:10px;">(Emma 自结)</span></td>';
-    } else if (isNewMode() && !isMpick && r._emmaTransferDay) {
-      // Emma's day + Michael 代取 → amount + small 转售 badge
-      commissionCell = `<td class="dim">${fmt(commission)} <span style="font-size:9px;color:#f9a8d4;">🤝代取</span></td>`;
+    } else if (isNewMode() && isTransferPickup) {
+      // Any pickup with the transfer marker — show £ amount + pink 🤝 代取 badge
+      commissionCell = `<td class="dim">${fmt(commission)} <span style="font-size:9px;color:#f9a8d4;" title="Emma 转售试行: Emma 日 Michael 代取">🤝代取</span></td>`;
     } else {
       commissionCell = `<td class="dim">${fmt(commission)}</td>`;
     }
