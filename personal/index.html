@@ -1774,6 +1774,7 @@ select option { background: var(--bg-2); color: var(--text); }
           <span class="sync-badge" id="sync-badge"><span class="dot"></span><span id="sync-text">已同步</span></span>
           <button class="btn sm ghost" onclick="exportJson()">⇣ 导出</button>
           <button class="btn sm ghost" onclick="document.getElementById('import-file').click()">⇡ 导入</button>
+          <button class="btn sm ghost" onclick="openBackupHistory()" title="自动备份 — 最近 14 天每日快照">💾 备份历史</button>
           <button class="btn sm ghost" onclick="window.print()">🖨 PDF</button>
           <input type="file" id="import-file" class="hide" accept="application/json" onchange="importJson(event)">
         </div>
@@ -3379,6 +3380,12 @@ async function loadUserData() {
           await migrateEmmaTransferOffPool();
         }
       } catch (e) { console.warn('[migrate-emma-off-pool] failed:', e); }
+      // 2026-06-09: auto-backup snapshot to IndexedDB (once per day max)
+      try {
+        if (typeof _pacSnapshotIfNeeded === 'function') {
+          await _pacSnapshotIfNeeded();
+        }
+      } catch (e) { console.warn('[auto-backup] snapshot failed:', e); }
       // Auto-consolidate any duplicate daily-supply records (one-time cleanup, idempotent)
       try {
         if (typeof consolidateDailySupplyDuplicates === 'function') {
@@ -5204,6 +5211,78 @@ function updateSmartEntryPreview() {
 }
 
 // === MAIN: save smart pickup ===
+// ============================================================
+// ANOMALY DETECTION on save (2026-06-09)
+// Pure READ — runs before saveSmartPickup, flags suspicious data,
+// shows confirm dialog, user can override or cancel.
+// ============================================================
+function _seDetectAnomalies(date, trucks) {
+  const out = [];
+  // Per-truck checks
+  for (const t of trucks) {
+    if (!t.customerId) continue;
+    const c = (state.customers || []).find(x => x.id === t.customerId);
+    if (!c) continue;
+    const palletsN = +(t.pallets || 0);
+
+    // 1) Duplicate check — same customer + same date + same type + same swap state + same pallets
+    const dupe = (c.ledger || []).find(e =>
+      e.type === 'pickup' && e.date === date &&
+      (e.palletType || '') === (t.isSwap ? 'TT' : (t.type || '')) &&
+      !!e.isSwap === !!t.isSwap &&
+      (e.pallets || 0) === palletsN
+    );
+    if (dupe) {
+      out.push({
+        icon: '🔁',
+        msg: `${c.name} ${date} 已有同类型同数量取货 (${palletsN} 托 ${dupe.palletType || '?'}${dupe.isSwap ? ' Swap' : ''}) — 是不是重复录入?`
+      });
+    }
+
+    // 2) Pallet count > 200% of customer's 30-day average
+    const past = (c.ledger || []).filter(e => e.type === 'pickup' && e.date && e.date < date)
+      .slice(-10);
+    if (past.length >= 3) {
+      const avg = past.reduce((s, e) => s + (e.pallets || 0), 0) / past.length;
+      if (avg > 0 && palletsN > avg * 2.5) {
+        out.push({
+          icon: '📈',
+          msg: `${c.name} 这次 ${palletsN} 托 — 是过去 10 笔平均 ${avg.toFixed(0)} 托的 ${(palletsN/avg).toFixed(1)} 倍, 确认?`
+        });
+      }
+    }
+
+    // 3) Customer balance will go deeply negative
+    const sellPrice = state.params.sellPrice || 265;
+    const swapPrem  = swapTtPremium();
+    const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
+    const charge = palletsN * unit;
+    const balBefore = customerBalance(c);
+    const balAfter = balBefore - charge;
+    if (balAfter < -3000 && balBefore >= 0) {
+      out.push({
+        icon: '💸',
+        msg: `${c.name} 当前余额 ${fmt(balBefore)} 取货后将变 ${fmt(balAfter)} (透支 ${fmt(Math.abs(balAfter))}) — 客户已欠款这么多?`
+      });
+    }
+
+    // 4) Future date warning
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (date > todayStr) {
+      out.push({ icon: '📅', msg: `${date} 是未来日期, 确认?` });
+    }
+
+    // 5) Very old date (>30 days back) — possible typo
+    const tDate = new Date(date + 'T00:00:00');
+    const tToday = new Date(todayStr + 'T00:00:00');
+    const daysAgo = Math.floor((tToday - tDate) / 86400000);
+    if (daysAgo > 30) {
+      out.push({ icon: '⏪', msg: `${date} 是 ${daysAgo} 天前 — 真的是这么旧的录入?` });
+    }
+  }
+  return out;
+}
+
 async function saveSmartPickup() {
   const btn = document.getElementById('se-save-btn');
   const txt = document.getElementById('se-save-text');
@@ -5212,6 +5291,17 @@ async function saveSmartPickup() {
   if (!date) { alert('请填写日期'); return; }
   const validTrucks = _seTrucks.filter(t => (t.pallets || 0) > 0);
   if (!validTrucks.length) { alert('至少要填一车托盘 > 0'); return; }
+
+  // 2026-06-09: ANOMALY DETECTION — warn (but allow override) on suspicious entries.
+  // All checks are read-only; if user confirms, proceed normally.
+  try {
+    const anomalies = _seDetectAnomalies(date, validTrucks);
+    if (anomalies.length) {
+      const list = anomalies.map(a => `· ${a.icon} ${a.msg}`).join('\n');
+      const ok = confirm(`⚠ 录入检测到 ${anomalies.length} 个异常:\n\n${list}\n\n确认仍要保存吗?`);
+      if (!ok) return;
+    }
+  } catch (e) { console.warn('[anomaly-check] skipped:', e); }
 
   // ============================================================
   // EMMA TRANSFER MODE DETECTION (Michael 代取 Emma 日, 2026-06-08~)
@@ -12874,6 +12964,201 @@ function exportJson() {
   a.href = URL.createObjectURL(blob);
   a.download = 'pallet-business-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
+}
+
+// ============================================================
+// AUTO-BACKUP — IndexedDB rotating snapshot store (2026-06-09)
+// Pure ADDITIVE — never modifies state, just snapshots it.
+// Rotation: keep last 14 daily snapshots. One snapshot/day max.
+// ============================================================
+const _PAC_DB_NAME    = 'pallet-backup-store';
+const _PAC_DB_VERSION = 1;
+const _PAC_STORE      = 'snapshots';
+const _PAC_KEEP_DAYS  = 14;
+
+function _pacOpenDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_PAC_DB_NAME, _PAC_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(_PAC_STORE)) {
+        const s = db.createObjectStore(_PAC_STORE, { keyPath: 'date' });
+        s.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function _pacSnapshotIfNeeded() {
+  if (!state || !state.customers) return;
+  try {
+    const db = await _pacOpenDb();
+    const today = new Date().toISOString().slice(0, 10);
+    // Skip if today's snapshot already exists
+    const exists = await new Promise(r => {
+      const tx = db.transaction(_PAC_STORE, 'readonly');
+      const req = tx.objectStore(_PAC_STORE).get(today);
+      req.onsuccess = () => r(!!req.result);
+      req.onerror = () => r(false);
+    });
+    if (exists) return;
+    // Snapshot — clone the state, stamp metadata
+    const snap = {
+      date: today,
+      createdAt: new Date().toISOString(),
+      customerCount: (state.customers || []).length,
+      ledgerCount: (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0),
+      supplyDays: (state.dailySupply || []).length,
+      invoiceCount: (state.invoices || []).length,
+      receiptCount: (state.receipts || []).length,
+      sizeBytes: 0,         // filled below
+      data: JSON.parse(JSON.stringify(state))
+    };
+    snap.sizeBytes = new Blob([JSON.stringify(snap.data)]).size;
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(_PAC_STORE, 'readwrite');
+      tx.objectStore(_PAC_STORE).put(snap);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    // Rotate — remove snapshots older than _PAC_KEEP_DAYS days
+    await _pacRotate();
+    console.log('[backup] snapshot saved for', today, '·', snap.sizeBytes, 'bytes');
+  } catch (e) {
+    console.warn('[backup] snapshot failed:', e);
+  }
+}
+
+async function _pacRotate() {
+  try {
+    const db = await _pacOpenDb();
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - _PAC_KEEP_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    await new Promise(resolve => {
+      const tx = db.transaction(_PAC_STORE, 'readwrite');
+      const store = tx.objectStore(_PAC_STORE);
+      const req = store.openCursor();
+      req.onsuccess = (e) => {
+        const cur = e.target.result;
+        if (!cur) return;
+        if (cur.value.date < cutoffStr) cur.delete();
+        cur.continue();
+      };
+      tx.oncomplete = resolve;
+    });
+  } catch (e) { console.warn('[backup] rotate failed:', e); }
+}
+
+async function _pacListBackups() {
+  try {
+    const db = await _pacOpenDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(_PAC_STORE, 'readonly');
+      const req = tx.objectStore(_PAC_STORE).getAll();
+      req.onsuccess = () => {
+        const arr = req.result || [];
+        arr.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        resolve(arr);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) { console.warn('[backup] list failed:', e); return []; }
+}
+
+async function openBackupHistory() {
+  const list = await _pacListBackups();
+  const today = new Date().toISOString().slice(0, 10);
+  const rowsHtml = list.length === 0
+    ? '<div style="padding:30px;text-align:center;color:var(--text-dim);">还没有自动备份。打开 App 时会每天自动备份一次。</div>'
+    : list.map(s => {
+        const isToday = s.date === today;
+        const kb = (s.sizeBytes / 1024).toFixed(1);
+        const created = s.createdAt ? new Date(s.createdAt).toLocaleString('zh-CN', { hour12: false }) : '—';
+        return `<tr style="border-bottom:1px solid rgba(139,150,255,0.10);">
+          <td style="padding:10px 12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">
+            ${s.date}${isToday ? ' <span class="badge" style="background:rgba(34,211,165,0.15);color:var(--green);">今天</span>' : ''}
+          </td>
+          <td style="padding:10px 12px;font-size:11px;color:var(--text-dim);">${created}</td>
+          <td style="padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);">${s.customerCount} 客户</td>
+          <td style="padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text);">${s.ledgerCount} 流水</td>
+          <td style="padding:10px 12px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-dim);">${kb} KB</td>
+          <td style="padding:10px 12px;text-align:right;">
+            <button class="btn ghost sm" onclick="downloadBackup('${s.date}')" title="下载这个快照">⇣</button>
+            <button class="btn ghost sm" onclick="restoreBackup('${s.date}')" title="恢复到这个快照(会覆盖当前数据)" style="color:var(--rose);">↺</button>
+          </td>
+        </tr>`;
+      }).join('');
+  const totalSize = list.reduce((s, x) => s + (x.sizeBytes || 0), 0);
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(5,6,15,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:linear-gradient(135deg,#0b122a 0%,#141e37 100%);border:1px solid rgba(139,150,255,0.20);border-radius:14px;max-width:780px;width:100%;max-height:85vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.55);">
+      <div style="padding:18px 22px;border-bottom:1px solid rgba(139,150,255,0.18);display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">💾</span>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:var(--text);">自动备份历史</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">最近 ${_PAC_KEEP_DAYS} 天每日快照 · 共 ${list.length} 个 · ${(totalSize/1024).toFixed(1)} KB · 存在本机浏览器 IndexedDB</div>
+        </div>
+        <button class="btn ghost" style="margin-left:auto;" onclick="this.closest('[data-pac-modal]').remove()">关闭</button>
+      </div>
+      <div style="overflow-y:auto;flex:1;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="background:rgba(11,18,42,0.50);">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">日期</th>
+            <th style="padding:8px 12px;text-align:left;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">备份时间</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">客户</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">流水</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">大小</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">操作</th>
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div style="padding:12px 22px;border-top:1px solid rgba(139,150,255,0.18);font-size:11px;color:var(--text-dim);background:rgba(11,18,42,0.50);">
+        ↺ 恢复会覆盖当前云端数据(同步到 Supabase),操作前会再次确认。⇣ 下载是 JSON 文件,可以另存。
+      </div>
+    </div>
+  `;
+  modal.setAttribute('data-pac-modal', '1');
+  document.body.appendChild(modal);
+}
+
+async function downloadBackup(date) {
+  try {
+    const db = await _pacOpenDb();
+    const snap = await new Promise(r => {
+      const tx = db.transaction(_PAC_STORE, 'readonly');
+      const req = tx.objectStore(_PAC_STORE).get(date);
+      req.onsuccess = () => r(req.result);
+    });
+    if (!snap) { alert('找不到这个日期的备份'); return; }
+    const blob = new Blob([JSON.stringify(snap.data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'pallet-backup-' + date + '.json';
+    a.click();
+  } catch (e) { alert('下载失败:' + e.message); }
+}
+
+async function restoreBackup(date) {
+  const ok = confirm(`⚠ 恢复到 ${date} 的备份会:\n\n· 覆盖当前所有客户 / 流水 / INV / 收据\n· 同步到云端 (其他设备也会被覆盖)\n· 当前数据将无法恢复(除非有更新的备份)\n\n确认要恢复吗?`);
+  if (!ok) return;
+  try {
+    const db = await _pacOpenDb();
+    const snap = await new Promise(r => {
+      const tx = db.transaction(_PAC_STORE, 'readonly');
+      const req = tx.objectStore(_PAC_STORE).get(date);
+      req.onsuccess = () => r(req.result);
+    });
+    if (!snap || !snap.data) { alert('找不到这个备份'); return; }
+    state = snap.data;
+    await saveUserDataNow();
+    renderAll();
+    flash(`✓ 已恢复到 ${date} 备份`);
+    document.querySelectorAll('[data-pac-modal]').forEach(el => el.remove());
+  } catch (e) { alert('恢复失败:' + e.message); }
 }
 function importJson(e) {
   const f = e.target.files[0]; if (!f) return;
