@@ -3600,6 +3600,7 @@ function ensureHeleraState() {
   }
   if (state.helera && state.brands.length === 0) {
     // 把老的 helera 数据包装成第一个品牌
+    // P0 FIX (2026-06-09): sed 误把 state.helera.* 替换成 currentBrand.* (null) → TypeError → state 被 catch 重置成 emptyState!
     state.brands.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('brand_helera_' + Date.now()),
       name: 'HELERA',
@@ -3607,11 +3608,11 @@ function ensureHeleraState() {
       icon: '✨',
       country: 'UK',
       createdAt: new Date().toISOString(),
-      params: currentBrand.params || _emptyBrand().params,
-      suppliers: currentBrand.suppliers || [],
-      customers: currentBrand.customers || [],
-      purchases: currentBrand.purchases || [],
-      hugoLedger: currentBrand.hugoLedger || []
+      params: state.helera.params || _emptyBrand().params,
+      suppliers: state.helera.suppliers || [],
+      customers: state.helera.customers || [],
+      purchases: state.helera.purchases || [],
+      hugoLedger: state.helera.hugoLedger || []
     });
     delete state.helera;
     console.log('[migrate] helera → brands[0] (HELERA)');
@@ -3681,8 +3682,16 @@ async function loadUserData() {
       // Default for monthly profit target if missing (added 2026-05-27 with widget v2)
       if (typeof state.params.monthlyProfitTarget !== 'number') state.params.monthlyProfitTarget = 45000;
       if (!state.customers) state.customers = [];
-      // HELERA 模块 (2026-06-09) — 确保 state.helera 存在
-      if (typeof ensureHeleraState === 'function') ensureHeleraState();
+      // HELERA 模块 (2026-06-09) — 确保 state.brands 存在 + 迁移
+      // P0 SAFETY (2026-06-09): wrap in try/catch — bug in this code path
+      // must NOT throw and trigger the outer catch that resets state to empty.
+      try {
+        if (typeof ensureHeleraState === 'function') ensureHeleraState();
+      } catch (e) {
+        console.error('[ensureHeleraState] failed (data preserved):', e);
+        // Provide minimum state.brands so HELERA UI doesn't crash, but DON'T touch pallet data
+        if (!state.brands || !Array.isArray(state.brands)) state.brands = [];
+      }
       migrateDailyToLedger();
       // 2026-06-08 v2 migration: £25 Emma transfer fees were previously
       // deducted from the customer pool. They should be OFF-POOL (weekly bill,
