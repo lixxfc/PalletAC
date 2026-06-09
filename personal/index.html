@@ -3682,42 +3682,44 @@ async function loadUserData() {
       // Default for monthly profit target if missing (added 2026-05-27 with widget v2)
       if (typeof state.params.monthlyProfitTarget !== 'number') state.params.monthlyProfitTarget = 45000;
       if (!state.customers) state.customers = [];
-      // HELERA 模块 (2026-06-09) — 确保 state.brands 存在 + 迁移
-      // P0 SAFETY (2026-06-09): wrap in try/catch — bug in this code path
-      // must NOT throw and trigger the outer catch that resets state to empty.
+
+      // 🩹 P0 FIX (2026-06-09 v2): take pre-migration snapshot of REAL loaded data
+      // BEFORE running any migrations. If any migration corrupts state, this
+      // snapshot is the safety net. Key is tagged 'pre-mig-' so it doesn't
+      // collide with daily backups and never gets rotated out.
+      try {
+        if (typeof _pacEmergencySnapshot === 'function') {
+          await _pacEmergencySnapshot('pre-mig', state);
+        }
+      } catch (e) { console.warn('[pre-mig snapshot] skipped:', e); }
+
+      // === All migrations wrapped in try/catch — NEVER throw to outer catch ===
       try {
         if (typeof ensureHeleraState === 'function') ensureHeleraState();
       } catch (e) {
         console.error('[ensureHeleraState] failed (data preserved):', e);
-        // Provide minimum state.brands so HELERA UI doesn't crash, but DON'T touch pallet data
         if (!state.brands || !Array.isArray(state.brands)) state.brands = [];
       }
-      migrateDailyToLedger();
-      // 2026-06-08 v2 migration: £25 Emma transfer fees were previously
-      // deducted from the customer pool. They should be OFF-POOL (weekly bill,
-      // customer transfers separately). This migration removes them, refunds
-      // the pool, strips the matching INV line items, and backfills the
-      // pickup-row markers needed by the new weekly statement.
+      try {
+        migrateDailyToLedger();
+      } catch (e) { console.error('[migrateDailyToLedger] failed (data preserved):', e); }
       try {
         if (typeof migrateEmmaTransferOffPool === 'function') {
           await migrateEmmaTransferOffPool();
         }
       } catch (e) { console.warn('[migrate-emma-off-pool] failed:', e); }
-      // 2026-06-09: auto-backup snapshot to IndexedDB (once per day max)
+      // Auto-backup snapshot (only AFTER migrations succeed, so we know data is good)
       try {
         if (typeof _pacSnapshotIfNeeded === 'function') {
           await _pacSnapshotIfNeeded();
         }
       } catch (e) { console.warn('[auto-backup] snapshot failed:', e); }
-      // Auto-consolidate any duplicate daily-supply records (one-time cleanup, idempotent)
       try {
         if (typeof consolidateDailySupplyDuplicates === 'function') {
           const merged = consolidateDailySupplyDuplicates();
-          if (merged > 0) await saveUserDataNow();  // persist the cleanup
+          if (merged > 0) await saveUserDataNow();
         }
       } catch (e) { console.warn('[supply] consolidate skipped:', e); }
-      // Migrate invoice/receipt numbering + backfill receipts for historical deposits
-      // (idempotent — safe on every load)
       try {
         if (typeof migrateInvoicesAndReceiptsToNewFormat === 'function') {
           const r = migrateInvoicesAndReceiptsToNewFormat();
@@ -3725,16 +3727,26 @@ async function loadUserData() {
         }
       } catch (e) { console.warn('[migrate] invoice/receipt skipped:', e); }
     } else {
-      // First-time user: start with empty state (no test data)
+      // First-time user
       state = emptyState();
       ensureReceiptsArray();
       await saveUserDataNow();
     }
   } catch (err) {
     console.error('Load failed:', err);
-    // Fallback to empty state
-    state = emptyState();
+    // 🩹 P0 FIX (2026-06-09 v2): NEVER reset state on error.
+    // Previous behavior reset state = emptyState() which propagated empty data
+    // to Supabase via subsequent save(). Now we keep whatever state we have
+    // (might be null if read truly failed, in which case enterApp fallback handles it).
     setSyncStatus('error');
+    if (!state) {
+      // Truly nothing loaded — provide minimal scaffolding so UI doesn't crash
+      // but DON'T saveUserDataNow (that would push empty to Supabase)
+      state = emptyState();
+      // Mark this state as "not yet persisted" — saves are blocked until user explicitly creates data
+      state._unsavedFromLoad = true;
+      console.error('[loadUserData] state was null after error — using emptyState scaffold (saves blocked)');
+    }
   }
 }
 
@@ -3914,17 +3926,56 @@ function save() {
 
 async function saveUserDataNow() {
   if (!currentUser || !state) return;
+  // 🩹 P0 SAFETY (2026-06-09 v2): block saves of unrecovered scaffold state
+  if (state._unsavedFromLoad) {
+    console.warn('[save] blocked: state is unrecovered scaffold (loadUserData failed). Restore from backup first.');
+    setSyncStatus('error');
+    return;
+  }
+  // 🩹 P0 SAFETY (2026-06-09 v2): DATA SHRINK PROTECTION
+  // Compare current customer count to last known good count. If shrunk > 50%,
+  // refuse to save + emergency snapshot the suspect state + alert user.
+  const currentCount = (state.customers || []).length;
+  const ledgerCount = (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0);
+  const lastGoodCount = +localStorage.getItem('_pac_last_save_count') || 0;
+  const lastGoodLedger = +localStorage.getItem('_pac_last_save_ledger') || 0;
+  const customerShrunk = lastGoodCount > 0 && (currentCount < lastGoodCount * 0.5);
+  const ledgerShrunk = lastGoodLedger > 0 && (ledgerCount < lastGoodLedger * 0.5);
+  if (customerShrunk || ledgerShrunk) {
+    console.error('[save] DATA SHRINK DETECTED', { lastGoodCount, currentCount, lastGoodLedger, ledgerCount });
+    // Emergency snapshot the SUSPECT state separately
+    try {
+      if (typeof _pacEmergencySnapshot === 'function') {
+        await _pacEmergencySnapshot('suspect-shrink', state);
+      }
+    } catch (_) {}
+    const proceed = confirm(
+      `⚠ 数据收缩检测!\n\n` +
+      `客户: ${lastGoodCount} → ${currentCount} ${customerShrunk ? '(⚠ 缩水 >50%)' : ''}\n` +
+      `流水: ${lastGoodLedger} → ${ledgerCount} ${ledgerShrunk ? '(⚠ 缩水 >50%)' : ''}\n\n` +
+      `这可能是数据丢失. 拒绝同步到云端可以保护你的备份.\n\n` +
+      `· 确认: 仍然推到云端 (如果你确实大批删了客户/数据)\n` +
+      `· 取消: 不推送 (推荐) — 然后从备份恢复\n\n` +
+      `点击 [💾 备份历史] 可以恢复昨天的数据.`
+    );
+    if (!proceed) {
+      setSyncStatus('error');
+      flash && flash('⚠ 同步已拒绝 — 数据收缩保护. 从 💾 备份历史 恢复');
+      return;
+    }
+  }
   try {
     const { error } = await db
       .from('personal_data')
       .upsert({ user_id: currentUser.id, data: state }, { onConflict: 'user_id' });
     if (error) throw error;
+    // Save successful — update last known good counts
+    localStorage.setItem('_pac_last_save_count', String(currentCount));
+    localStorage.setItem('_pac_last_save_ledger', String(ledgerCount));
     setSyncStatus('ok');
   } catch (err) {
     console.error('Save failed:', err);
     setSyncStatus('error');
-    // P2 batch 6 fix (2026-06-09): rethrow so callers' catch() actually triggers
-    // (previously silently swallowed → callers' fallback branches were dead code).
     throw err;
   }
 }
@@ -13324,7 +13375,8 @@ function exportJson() {
 const _PAC_DB_NAME    = 'pallet-backup-store';
 const _PAC_DB_VERSION = 1;
 const _PAC_STORE      = 'snapshots';
-const _PAC_KEEP_DAYS  = 14;
+const _PAC_KEEP_DAYS  = 30;     // 2026-06-09 v2: 14 → 30 天
+const _PAC_SHRINK_THRESHOLD = 0.5;  // 拒绝快照 if data < 50% of last good
 
 function _pacOpenDb() {
   return new Promise((resolve, reject) => {
@@ -13342,11 +13394,34 @@ function _pacOpenDb() {
 }
 
 async function _pacSnapshotIfNeeded() {
-  if (!state || !state.customers) return;
+  if (!state) return;
+  // 🩹 P0 (2026-06-09 v2): refuse to snapshot if state is empty or unrecovered
+  const custCount = (state.customers || []).length;
+  const ledgerCount = (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0);
+  if (state._unsavedFromLoad) {
+    console.warn('[backup] skipping snapshot: state is unrecovered scaffold');
+    return;
+  }
+  if (custCount === 0 && ledgerCount === 0) {
+    console.warn('[backup] skipping snapshot: state appears empty (0 customers, 0 ledger)');
+    return;
+  }
+  // 🩹 P0 (2026-06-09 v2): refuse if data shrunk dramatically vs last snapshot
+  try {
+    const lastList = await _pacListBackups();
+    const lastGood = lastList.find(s => (s.customerCount || 0) > 0);
+    if (lastGood) {
+      const shrunk = custCount < lastGood.customerCount * _PAC_SHRINK_THRESHOLD ||
+                     ledgerCount < lastGood.ledgerCount * _PAC_SHRINK_THRESHOLD;
+      if (shrunk) {
+        console.warn('[backup] DATA SHRINK — snapshot refused. Current:', custCount, 'cust /', ledgerCount, 'ledger. Last good:', lastGood.customerCount, '/', lastGood.ledgerCount);
+        return;
+      }
+    }
+  } catch (_) {}
   try {
     const db = await _pacOpenDb();
-    const today = new Date().toISOString().slice(0, 10);
-    // Skip if today's snapshot already exists
+    const today = new Date().toLocaleDateString('en-CA');  // LOCAL date, not UTC
     const exists = await new Promise(r => {
       const tx = db.transaction(_PAC_STORE, 'readonly');
       const req = tx.objectStore(_PAC_STORE).get(today);
@@ -13354,16 +13429,16 @@ async function _pacSnapshotIfNeeded() {
       req.onerror = () => r(false);
     });
     if (exists) return;
-    // Snapshot — clone the state, stamp metadata
     const snap = {
       date: today,
       createdAt: new Date().toISOString(),
-      customerCount: (state.customers || []).length,
-      ledgerCount: (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0),
+      customerCount: custCount,
+      ledgerCount: ledgerCount,
       supplyDays: (state.dailySupply || []).length,
       invoiceCount: (state.invoices || []).length,
       receiptCount: (state.receipts || []).length,
-      sizeBytes: 0,         // filled below
+      brandCount: (state.brands || []).length,
+      sizeBytes: 0,
       data: JSON.parse(JSON.stringify(state))
     };
     snap.sizeBytes = new Blob([JSON.stringify(snap.data)]).size;
@@ -13373,11 +13448,47 @@ async function _pacSnapshotIfNeeded() {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
-    // Rotate — remove snapshots older than _PAC_KEEP_DAYS days
     await _pacRotate();
-    console.log('[backup] snapshot saved for', today, '·', snap.sizeBytes, 'bytes');
+    console.log('[backup] snapshot saved for', today, '·', snap.sizeBytes, 'bytes ·', custCount, 'cust /', ledgerCount, 'ledger');
   } catch (e) {
     console.warn('[backup] snapshot failed:', e);
+  }
+}
+
+// 🩹 NEW (2026-06-09 v2): EMERGENCY snapshot — bypasses dedupe + shrink checks
+// Used for pre-migration / pre-restore / suspect-shrink markers.
+// Key format: 'emergency-{tag}-{ISO-timestamp}' — never collides with daily snapshots
+// and never rotated out (kept until manually cleared).
+async function _pacEmergencySnapshot(tag, snapState) {
+  if (!snapState) return;
+  try {
+    const db = await _pacOpenDb();
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const key = 'emergency-' + tag + '-' + ts;
+    const snap = {
+      date: key,
+      createdAt: new Date().toISOString(),
+      tag,
+      isEmergency: true,
+      customerCount: (snapState.customers || []).length,
+      ledgerCount: (snapState.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0),
+      supplyDays: (snapState.dailySupply || []).length,
+      invoiceCount: (snapState.invoices || []).length,
+      receiptCount: (snapState.receipts || []).length,
+      brandCount: (snapState.brands || []).length,
+      sizeBytes: 0,
+      data: JSON.parse(JSON.stringify(snapState))
+    };
+    snap.sizeBytes = new Blob([JSON.stringify(snap.data)]).size;
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(_PAC_STORE, 'readwrite');
+      tx.objectStore(_PAC_STORE).put(snap);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    console.log('[backup] EMERGENCY snapshot saved:', tag, '·', snap.sizeBytes, 'bytes');
+  } catch (e) {
+    console.warn('[backup] emergency snapshot failed:', e);
   }
 }
 
@@ -13385,15 +13496,18 @@ async function _pacRotate() {
   try {
     const db = await _pacOpenDb();
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - _PAC_KEEP_DAYS);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const cutoffStr = cutoff.toLocaleDateString('en-CA');
     await new Promise(resolve => {
       const tx = db.transaction(_PAC_STORE, 'readwrite');
       const store = tx.objectStore(_PAC_STORE);
       const req = store.openCursor();
       req.onsuccess = (e) => {
         const cur = e.target.result;
-        if (!cur) return;
-        if (cur.value.date < cutoffStr) cur.delete();
+        if (!cur) { resolve(); return; }
+        // 🩹 P0 (2026-06-09 v2): NEVER rotate emergency snapshots
+        if (cur.value && !cur.value.isEmergency && cur.value.date < cutoffStr) {
+          cur.delete();
+        }
         cur.continue();
       };
       tx.oncomplete = resolve;
@@ -13493,9 +13607,16 @@ async function downloadBackup(date) {
 }
 
 async function restoreBackup(date) {
-  const ok = confirm(`⚠ 恢复到 ${date} 的备份会:\n\n· 覆盖当前所有客户 / 流水 / INV / 收据\n· 同步到云端 (其他设备也会被覆盖)\n· 当前数据将无法恢复(除非有更新的备份)\n\n确认要恢复吗?`);
+  const ok = confirm(`⚠ 恢复到 ${date} 的备份会:\n\n· 覆盖当前所有客户 / 流水 / INV / 收据\n· 同步到云端 (其他设备也会被覆盖)\n· 当前数据自动备份成 'pre-restore' 紧急快照, 可再恢复\n\n确认要恢复吗?`);
   if (!ok) return;
   try {
+    // 🩹 P0 (2026-06-09 v2): take EMERGENCY snapshot of current state BEFORE overwriting
+    if (state) {
+      try {
+        await _pacEmergencySnapshot('pre-restore', state);
+        console.log('[restore] pre-restore emergency snapshot taken');
+      } catch (e) { console.warn('[restore] pre-restore snapshot failed:', e); }
+    }
     const db = await _pacOpenDb();
     const snap = await new Promise(r => {
       const tx = db.transaction(_PAC_STORE, 'readonly');
@@ -13503,12 +13624,28 @@ async function restoreBackup(date) {
       req.onsuccess = () => r(req.result);
     });
     if (!snap || !snap.data) { alert('找不到这个备份'); return; }
+    // ATOMIC RESTORE: only overwrite state AFTER successful Supabase write
+    const prevState = state;
     state = snap.data;
-    await saveUserDataNow();
+    // Bypass the shrink protection (restore is intentional)
+    delete state._unsavedFromLoad;
+    // Update last known good counts so shrink check won't fire later
+    const cc = (state.customers || []).length;
+    const lc = (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0);
+    localStorage.setItem('_pac_last_save_count', String(cc));
+    localStorage.setItem('_pac_last_save_ledger', String(lc));
+    try {
+      await saveUserDataNow();
+    } catch (err) {
+      // Roll back state to prev on Supabase failure
+      state = prevState;
+      alert('恢复同步到云端失败:' + (err.message || err) + '\n本地已还原到恢复前的状态。');
+      return;
+    }
     renderAll();
-    flash(`✓ 已恢复到 ${date} 备份`);
+    flash(`✓ 已恢复到 ${date} 备份 (${cc} 客户 / ${lc} 流水)`);
     document.querySelectorAll('[data-pac-modal]').forEach(el => el.remove());
-  } catch (e) { alert('恢复失败:' + e.message); }
+  } catch (e) { alert('恢复失败:' + (e.message || e)); }
 }
 function importJson(e) {
   const f = e.target.files[0]; if (!f) return;
