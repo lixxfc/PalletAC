@@ -1743,9 +1743,9 @@ select option { background: var(--bg-2); color: var(--text); }
     <div class="nav-section-title">智能</div>
     <div class="nav-item" data-view="ai"><span class="icon">✦</span><span>AI 经营建议</span></div>
 
-    <!-- HELERA 退货品牌 (2026-06-09) — 独立业务模块, 不动现有托盘账目 -->
-    <div class="nav-section-title" style="color:#f59e0b;letter-spacing:1.8px;">HELERA · 退货</div>
-    <div class="nav-item" data-view="helera" style="background:linear-gradient(90deg,rgba(245,158,11,0.06),rgba(244,114,182,0.04));"><span class="icon" style="color:#f59e0b;">✨</span><span>HELERA 概览</span></div>
+    <!-- 品牌退货 (2026-06-09 v2) — 多品牌支持, 独立业务模块 -->
+    <div class="nav-section-title" style="color:#a855f7;letter-spacing:1.8px;">品牌退货</div>
+    <div class="nav-item" data-view="helera" style="background:linear-gradient(90deg,rgba(168,85,247,0.06),rgba(244,114,182,0.04));"><span class="icon" style="color:#a855f7;">✨</span><span>品牌总览</span></div>
 
     <div class="nav-section-title">系统</div>
     <div class="nav-item" data-view="settings"><span class="icon">⚙</span><span>参数设置</span></div>
@@ -2524,14 +2524,26 @@ select option { background: var(--bg-2); color: var(--text); }
       <!-- HERO -->
       <div class="page-head">
         <div>
-          <h1 class="page-title"><span style="background:linear-gradient(135deg,#f59e0b,#ec4899,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">HELERA</span> <span style="font-size:14px;color:var(--text-dim);font-weight:600;letter-spacing:2px;margin-left:8px;">· 退货品牌</span></h1>
-          <div class="page-sub">独立账目 · 不混托盘业务 · 进货 → 库存 → 销售 → 利润</div>
+          <h1 class="page-title"><span id="brand-title-main" style="background:linear-gradient(135deg,#f59e0b,#ec4899,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">品牌退货</span> <span style="font-size:14px;color:var(--text-dim);font-weight:600;letter-spacing:2px;margin-left:8px;" id="brand-title-sub">· 多品牌账目</span></h1>
+          <div class="page-sub" id="brand-title-desc">每个品牌独立账目 · 进货 → 库存 → 销售 → 利润</div>
         </div>
         <div class="row" style="gap:8px;">
           <button class="btn primary" onclick="openHeleraForecast()" style="background:linear-gradient(135deg,#06b6d4,#10b981);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(6,182,212,0.30);">🔮 利润预估</button>
           <button class="btn primary" onclick="openHeleraPurchase()" style="background:linear-gradient(135deg,#f59e0b,#ec4899);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(245,158,11,0.30);">+ 进货录入</button>
           <button class="btn primary" onclick="openHeleraSale()" style="background:linear-gradient(135deg,#a855f7,#ec4899);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(168,85,247,0.30);">+ 销售录入</button>
           <button class="btn sm ghost" onclick="openHeleraSettings()">⚙ 参数</button>
+        </div>
+      </div>
+
+      <!-- BRAND PICKER (2026-06-09 v2) -->
+      <div class="card mb-4" style="padding:14px 18px;background:linear-gradient(90deg,rgba(168,85,247,0.06),rgba(245,158,11,0.04));border:1px solid rgba(168,85,247,0.20);">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.8px;text-transform:uppercase;font-weight:700;">当前品牌</div>
+            <div style="font-size:11px;color:var(--text);margin-top:2px;">点切换 · 每个品牌独立账目</div>
+          </div>
+          <div id="brand-pills" style="display:flex;gap:8px;flex-wrap:wrap;flex:1;justify-content:flex-end;"></div>
+          <button class="btn sm" onclick="openHeleraBrandEdit()" style="background:linear-gradient(135deg,#a855f7,#ec4899);color:white;font-weight:700;">+ 新品牌</button>
         </div>
       </div>
 
@@ -3346,7 +3358,7 @@ select option { background: var(--bg-2); color: var(--text); }
   <div class="mobile-nav-item" data-view="customers"><span class="icon">◈</span><span>客户</span></div>
   <div class="mobile-nav-item" data-view="monthly"><span class="icon">▩</span><span>月度</span></div>
   <div class="mobile-nav-item" data-view="ai"><span class="icon">✦</span><span>AI</span></div>
-  <div class="mobile-nav-item" data-view="helera"><span class="icon" style="color:#f59e0b;">✨</span><span>HELERA</span></div>
+  <div class="mobile-nav-item" data-view="helera"><span class="icon" style="color:#a855f7;">✨</span><span>品牌</span></div>
   <div class="mobile-nav-item" data-view="settings"><span class="icon">⚙</span><span>设置</span></div>
   <a class="mobile-nav-item nav-external" href="../" style="text-decoration:none;"><span class="icon">⇆</span><span>合伙</span></a>
 </nav>
@@ -3516,24 +3528,30 @@ function emptyState() {
       michaelDays: { mon: true, tue: false, wed: true, thu: false, fri: true },
       alternate: 'weekly'
     },
-    // HELERA 模块 (2026-06-09) — 退货品牌业务, 完全独立账目
-    helera: _heleraEmptyState()
+    // 多品牌退货模块 (2026-06-09 v2) — 支持任意多个品牌
+    brands: [_emptyBrand('HELERA', '#f59e0b', '✨', 'UK')]
   };
 }
 
-// HELERA 模块 默认状态
-function _heleraEmptyState() {
+// 新建一个空品牌
+function _emptyBrand(name, color, icon, country) {
   return {
+    id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('brand_' + Date.now()),
+    name: name || '新品牌',
+    color: color || '#a855f7',
+    icon: icon || '✨',
+    country: country || 'UK',
+    createdAt: new Date().toISOString(),
     params: {
-      defaultBuyPrice: 1.0,     // 默认进货价 £/件 (从供货商)
-      defaultSellPrice: 2.5,    // 默认售价 £/件
-      hugoRate: 0.1,            // Hugo 提成 £/件
-      monthlyTarget: 80000      // 月度利润目标 £80k
+      defaultBuyPrice: 1.0,
+      defaultSellPrice: 2.5,
+      hugoRate: 0.1,
+      monthlyTarget: 80000
     },
-    suppliers: [],              // 供货商
-    customers: [],              // 客户 (各自有 ledger)
-    purchases: [],              // 进货流水 (从供货商买入)
-    hugoLedger: []              // Hugo 提成累计 + 结算
+    suppliers: [],
+    customers: [],
+    purchases: [],
+    hugoLedger: []
   };
 }
 
@@ -3559,31 +3577,83 @@ function _heleraCountryName(code) {
   return c ? c.name : (code || '其他');
 }
 
-// 确保 state.helera 存在 + 迁移老数据补全新字段
+// === 多品牌支持 (2026-06-09 v2) ===
+let currentBrandId = null;
+let currentBrand = null;   // points at currently-selected brand object
+
+function refreshCurrentBrand() {
+  if (!state.brands || !state.brands.length) {
+    currentBrand = null;
+    return;
+  }
+  let b = state.brands.find(x => x.id === currentBrandId);
+  if (!b) b = state.brands[0];
+  currentBrand = b;
+  currentBrandId = b ? b.id : null;
+}
+
+// 确保 state.brands 存在 + 一次性迁移老 state.helera → state.brands[0]
 function ensureHeleraState() {
-  if (!state.helera) state.helera = _heleraEmptyState();
-  if (!state.helera.params) state.helera.params = _heleraEmptyState().params;
-  if (!Array.isArray(state.helera.suppliers))  state.helera.suppliers = [];
-  if (!Array.isArray(state.helera.customers))  state.helera.customers = [];
-  if (!Array.isArray(state.helera.purchases))  state.helera.purchases = [];
-  if (!Array.isArray(state.helera.hugoLedger)) state.helera.hugoLedger = [];
-  // 2026-06-09 多供货商升级: 给每个供货商补全 country / currency / 默认参数
-  const params = state.helera.params || {};
-  for (const s of state.helera.suppliers) {
-    if (s.country == null)              s.country            = 'UK';
-    if (s.currency == null)             s.currency           = 'GBP';
-    if (s.defaultBuyPrice == null)      s.defaultBuyPrice    = +(params.defaultBuyPrice || 1.0);
-    if (s.defaultHugoRate == null)      s.defaultHugoRate    = +(params.hugoRate || 0);
-    if (s.defaultShippingCost == null)  s.defaultShippingCost = 0;
-    if (s.defaultCustomsCost == null)   s.defaultCustomsCost  = 0;
+  // ---- v2 迁移: state.helera (单品牌) → state.brands[] (多品牌) ----
+  if (!state.brands || !Array.isArray(state.brands)) {
+    state.brands = [];
   }
-  // 给每个 purchase 补全 shipping / customs / hugoRate
-  for (const p of state.helera.purchases) {
-    if (p.shippingCost == null) p.shippingCost = 0;
-    if (p.customsCost == null)  p.customsCost  = 0;
-    if (p.hugoRate == null)     p.hugoRate     = 0;
-    if (p.hugoAmount == null)   p.hugoAmount   = (+(p.pieces || 0) || 0) * (+(p.hugoRate || 0) || 0);
+  if (state.helera && state.brands.length === 0) {
+    // 把老的 helera 数据包装成第一个品牌
+    state.brands.push({
+      id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('brand_helera_' + Date.now()),
+      name: 'HELERA',
+      color: '#f59e0b',
+      icon: '✨',
+      country: 'UK',
+      createdAt: new Date().toISOString(),
+      params: currentBrand.params || _emptyBrand().params,
+      suppliers: currentBrand.suppliers || [],
+      customers: currentBrand.customers || [],
+      purchases: currentBrand.purchases || [],
+      hugoLedger: currentBrand.hugoLedger || []
+    });
+    delete state.helera;
+    console.log('[migrate] helera → brands[0] (HELERA)');
   }
+  // 如果一个品牌都没, 给一个默认
+  if (state.brands.length === 0) {
+    state.brands.push(_emptyBrand('HELERA', '#f59e0b', '✨', 'UK'));
+  }
+
+  // Per-brand 字段补全
+  for (const b of state.brands) {
+    if (!b.id) b.id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('brand_' + Date.now() + '_' + Math.random());
+    if (!b.name) b.name = '未命名品牌';
+    if (!b.color) b.color = '#a855f7';
+    if (!b.icon) b.icon = '✨';
+    if (!b.country) b.country = 'UK';
+    if (!b.createdAt) b.createdAt = new Date().toISOString();
+    if (!b.params) b.params = _emptyBrand().params;
+    if (!Array.isArray(b.suppliers))  b.suppliers  = [];
+    if (!Array.isArray(b.customers))  b.customers  = [];
+    if (!Array.isArray(b.purchases))  b.purchases  = [];
+    if (!Array.isArray(b.hugoLedger)) b.hugoLedger = [];
+
+    // 给每个供货商补全字段 (2026-06-09 升级)
+    const params = b.params;
+    for (const s of b.suppliers) {
+      if (s.country == null)              s.country            = b.country || 'UK';
+      if (s.currency == null)             s.currency           = 'GBP';
+      if (s.defaultBuyPrice == null)      s.defaultBuyPrice    = +(params.defaultBuyPrice || 1.0);
+      if (s.defaultHugoRate == null)      s.defaultHugoRate    = +(params.hugoRate || 0);
+      if (s.defaultShippingCost == null)  s.defaultShippingCost = 0;
+      if (s.defaultCustomsCost == null)   s.defaultCustomsCost  = 0;
+    }
+    for (const p of b.purchases) {
+      if (p.shippingCost == null) p.shippingCost = 0;
+      if (p.customsCost == null)  p.customsCost  = 0;
+      if (p.hugoRate == null)     p.hugoRate     = 0;
+      if (p.hugoAmount == null)   p.hugoAmount   = (+(p.pieces || 0) || 0) * (+(p.hugoRate || 0) || 0);
+    }
+  }
+
+  refreshCurrentBrand();
 }
 
 function setSyncStatus(status) {
@@ -14018,10 +14088,10 @@ async function _personalCleanupStalePartnershipDeletes() {
 
 // ---- Compute helpers (pure read) ----
 function heleraStockTotal() {
-  if (!state.helera) return 0;
+  if (!currentBrand) return 0;
   let bought = 0, sold = 0;
-  for (const p of (state.helera.purchases || [])) bought += +(p.pieces || 0) || 0;
-  for (const c of (state.helera.customers || [])) {
+  for (const p of (currentBrand.purchases || [])) bought += +(p.pieces || 0) || 0;
+  for (const c of (currentBrand.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type === 'sale') sold += +(e.pieces || 0) || 0;
     }
@@ -14038,7 +14108,7 @@ function heleraCustomerBalance(c) {
   return bal;
 }
 function heleraTotalCustomerBalance() {
-  return (state.helera.customers || []).reduce((s, c) => s + heleraCustomerBalance(c), 0);
+  return (currentBrand.customers || []).reduce((s, c) => s + heleraCustomerBalance(c), 0);
 }
 function heleraMonthStats(ym) {
   // FIX (2026-06-09 multi-supplier): cost now includes shipping + customs
@@ -14046,7 +14116,7 @@ function heleraMonthStats(ym) {
   // to "pieces sold" via avg hugo per piece purchased.
   ym = ym || new Date().toISOString().slice(0, 7);
   let pieces = 0, revenue = 0;
-  for (const c of (state.helera.customers || [])) {
+  for (const c of (currentBrand.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type !== 'sale' || !e.date || !e.date.startsWith(ym)) continue;
       pieces += +(e.pieces || 0) || 0;
@@ -14056,7 +14126,7 @@ function heleraMonthStats(ym) {
   // Avg cost per piece — prefer this-month avg, fallback to all-time avg
   const computeAvg = (filterFn) => {
     let bought = 0, spend = 0, hugo = 0;
-    for (const p of (state.helera.purchases || [])) {
+    for (const p of (currentBrand.purchases || [])) {
       if (!filterFn(p)) continue;
       bought += +(p.pieces || 0) || 0;
       spend  += +(p.totalCost || 0) || 0;
@@ -14076,7 +14146,7 @@ function heleraMonthStats(ym) {
 function heleraAllTimeProfit() {
   // Same logic as month but across all time
   let pieces = 0, revenue = 0;
-  for (const c of (state.helera.customers || [])) {
+  for (const c of (currentBrand.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type !== 'sale') continue;
       pieces += +(e.pieces || 0) || 0;
@@ -14084,24 +14154,24 @@ function heleraAllTimeProfit() {
     }
   }
   let bought = 0, spend = 0;
-  for (const p of (state.helera.purchases || [])) {
+  for (const p of (currentBrand.purchases || [])) {
     bought += +(p.pieces || 0) || 0;
     spend += +(p.totalCost || 0) || 0;
   }
   const avgCost = bought > 0 ? spend / bought : 0;
   const cost = pieces * avgCost;
-  const hugoOwed = pieces * (+(state.helera.params.hugoRate || 0) || 0);
+  const hugoOwed = pieces * (+(currentBrand.params.hugoRate || 0) || 0);
   return revenue - cost - hugoOwed;
 }
 function heleraHugoAccrued() {
   // 2026-06-09: Hugo 现在在 PURCHASE 时累计 (per-supplier rate, 进货时自动加 accrue 行)
   // 读 hugoLedger.accrue 行. 老数据兼容: 如果有 sale 行带 hugoRate 字段, 也计入.
   let acc = 0;
-  for (const r of (state.helera.hugoLedger || [])) {
+  for (const r of (currentBrand.hugoLedger || [])) {
     if (r.type === 'accrue') acc += +(r.amount || 0) || 0;
   }
   // 兼容: 老数据 sale 行可能也带 hugoRate
-  for (const c of (state.helera.customers || [])) {
+  for (const c of (currentBrand.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type !== 'sale') continue;
       if (e.hugoRate != null && e._hugoFromSale) {
@@ -14113,7 +14183,7 @@ function heleraHugoAccrued() {
 }
 function heleraHugoPaid() {
   let paid = 0;
-  for (const r of (state.helera.hugoLedger || [])) {
+  for (const r of (currentBrand.hugoLedger || [])) {
     if (r.type === 'settle') paid += +(r.amount || 0) || 0;
   }
   return paid;
@@ -14140,11 +14210,103 @@ function setHeleraTab(name) {
   });
 }
 
+// ---- Brand picker / CRUD ----
+function setCurrentBrand(id) {
+  currentBrandId = id;
+  refreshCurrentBrand();
+  renderHelera();
+}
+function renderBrandPicker() {
+  const pillsEl = document.getElementById('brand-pills');
+  if (!pillsEl) return;
+  pillsEl.innerHTML = (state.brands || []).map(b => {
+    const active = b.id === currentBrandId;
+    return `<button onclick="setCurrentBrand('${b.id}')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;border:1.5px solid ${active ? b.color : 'rgba(139,150,255,0.20)'};background:${active ? b.color + '25' : 'rgba(11,18,42,0.40)'};color:${active ? b.color : 'var(--text)'};font-weight:${active ? '800' : '600'};font-size:12px;cursor:pointer;letter-spacing:0.3px;transition:all 0.15s;" onmouseover="if(${!active})this.style.background='rgba(11,18,42,0.65)'" onmouseout="if(${!active})this.style.background='rgba(11,18,42,0.40)'">
+      <span style="font-size:14px;">${b.icon || '✨'}</span>
+      <span>${escapeHtml(b.name)}</span>
+      ${_heleraCountryFlag(b.country)}
+      ${active ? '<button onclick="event.stopPropagation();openHeleraBrandEdit(\'' + b.id + '\')" style="margin-left:4px;background:transparent;border:none;color:' + b.color + ';cursor:pointer;padding:0 0 0 4px;font-size:11px;" title="编辑品牌">✎</button>' : ''}
+    </button>`;
+  }).join('');
+}
+
+function openHeleraBrandEdit(id) {
+  const isEdit = !!id;
+  const b = isEdit ? (state.brands || []).find(x => x.id === id) : { name: '', color: '#a855f7', icon: '✨', country: 'UK' };
+  if (isEdit && !b) return;
+  const countryOpts = HELERA_COUNTRIES.map(c =>
+    `<option value="${c.code}" ${(b.country || 'UK') === c.code ? 'selected' : ''}>${c.flag} ${c.name}</option>`
+  ).join('');
+  const colorOpts = [
+    { c: '#f59e0b', n: '橙' }, { c: '#a855f7', n: '紫' }, { c: '#ec4899', n: '粉' },
+    { c: '#06b6d4', n: '青' }, { c: '#10b981', n: '绿' }, { c: '#3b82f6', n: '蓝' },
+    { c: '#ef4444', n: '红' }, { c: '#eab308', n: '黄' }
+  ];
+  const colorHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap;">${colorOpts.map(co =>
+    `<button type="button" data-color="${co.c}" onclick="document.querySelectorAll('[data-color]').forEach(b=>b.style.borderColor=b.dataset.color==='${b.color || co.c}'?b.dataset.color:'transparent');this.style.borderColor='white';document.getElementById('h-brand-color').value=this.dataset.color;" style="width:30px;height:30px;border-radius:50%;background:${co.c};border:2px solid ${b.color === co.c ? 'white' : 'transparent'};cursor:pointer;" title="${co.n}"></button>`
+  ).join('')}<input type="hidden" id="h-brand-color" value="${b.color || '#a855f7'}"></div>`;
+  const iconOpts = ['✨','⭐','💎','🌟','🎁','🏷','🛍','🛒','📦','🌹','🌺','🦋'];
+  const iconHtml = `<div style="display:flex;gap:4px;flex-wrap:wrap;">${iconOpts.map(ic =>
+    `<button type="button" onclick="document.querySelectorAll('[data-iconbtn]').forEach(x=>x.style.background='transparent');this.style.background='rgba(168,85,247,0.30)';document.getElementById('h-brand-icon').value='${ic}'" data-iconbtn style="width:36px;height:36px;font-size:18px;border:1px solid rgba(139,150,255,0.20);background:${b.icon === ic ? 'rgba(168,85,247,0.30)' : 'transparent'};border-radius:6px;cursor:pointer;">${ic}</button>`
+  ).join('')}<input type="hidden" id="h-brand-icon" value="${b.icon || '✨'}"></div>`;
+  _showHeleraModal({
+    title: isEdit ? '编辑品牌' : '+ 新品牌',
+    icon: '🏷',
+    color: '#a855f7',
+    intro: '<b style="color:#c084fc;">每个品牌独立账目</b> — 自己的供货商 / 客户 / 进货 / Hugo 提成 / 月度目标。',
+    fields: [
+      { id: 'h-brand-name', label: '品牌名 *', value: b.name || '', required: true },
+      { id: 'h-brand-country', label: '主要国家', html: `<select id="h-brand-country" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid #a855f740;border-radius:8px;color:var(--text);font-size:13px;">${countryOpts}</select>` },
+      { id: 'h-brand-color-row', label: '主题色', html: colorHtml },
+      { id: 'h-brand-icon-row', label: '图标', html: iconHtml }
+    ],
+    onSave: () => {
+      const name = document.getElementById('h-brand-name').value.trim();
+      if (!name) { alert('请填品牌名'); return; }
+      const data = {
+        name,
+        country: document.getElementById('h-brand-country').value || 'UK',
+        color: document.getElementById('h-brand-color').value || '#a855f7',
+        icon: document.getElementById('h-brand-icon').value || '✨'
+      };
+      if (isEdit) Object.assign(b, data);
+      else {
+        const newB = _emptyBrand(data.name, data.color, data.icon, data.country);
+        state.brands.push(newB);
+        currentBrandId = newB.id;
+        refreshCurrentBrand();
+      }
+      save(); renderHelera(); _closeHeleraModal();
+      flash(isEdit ? '✓ 品牌已更新' : '✓ 品牌已创建 — 现已切换到这个品牌');
+    },
+    extraActions: isEdit ? [{ label: '删除品牌', danger: true, fn: () => {
+      const totalRows = (b.suppliers || []).length + (b.customers || []).length + (b.purchases || []).length;
+      if (totalRows > 0 && !confirm(`「${b.name}」品牌有 ${(b.suppliers||[]).length} 供货商 / ${(b.customers||[]).length} 客户 / ${(b.purchases||[]).length} 进货 — 真的删?\n所有数据一并删除, 不可恢复。`)) return;
+      if (totalRows === 0 && !confirm(`删除空品牌「${b.name}」?`)) return;
+      if (state.brands.length === 1) { alert('至少保留 1 个品牌, 不能全删完'); return; }
+      state.brands = state.brands.filter(x => x.id !== id);
+      currentBrandId = state.brands[0].id;
+      refreshCurrentBrand();
+      save(); renderHelera(); _closeHeleraModal();
+      flash('✓ 已删除品牌「' + b.name + '」');
+    }}] : []
+  });
+}
+
 // ---- Master render ----
 function renderHelera() {
   if (currentViewName !== 'helera') return;
   ensureHeleraState();
-  const params = state.helera.params;
+  if (!currentBrand) return;
+  // Update titles to reflect current brand
+  const titleEl = document.getElementById('brand-title-main');
+  if (titleEl) titleEl.textContent = currentBrand.icon + ' ' + currentBrand.name;
+  const subEl = document.getElementById('brand-title-sub');
+  if (subEl) subEl.textContent = '· ' + _heleraCountryName(currentBrand.country) + ' 退货品牌';
+  const descEl = document.getElementById('brand-title-desc');
+  if (descEl) descEl.textContent = '品牌独立账目 · 共 ' + state.brands.length + ' 个品牌 · 切换品牌看不同账目';
+  renderBrandPicker();
+  const params = currentBrand.params;
   const stock = heleraStockTotal();
   const month = heleraMonthStats();
   const totalProfit = heleraAllTimeProfit();
@@ -14162,7 +14324,7 @@ function renderHelera() {
   document.getElementById('helera-hugo-owed').textContent = fmt(hugoBal);
   document.getElementById('helera-hugo-sub').textContent = hugoBal > 0 ? '该结算' : '已结清 ✓';
   document.getElementById('helera-cust-bal').textContent = fmt(custBal);
-  document.getElementById('helera-cust-sub').textContent = `${(state.helera.customers || []).length} 客户`;
+  document.getElementById('helera-cust-sub').textContent = `${(currentBrand.customers || []).length} 客户`;
   document.getElementById('helera-total-profit').textContent = fmt(totalProfit);
   document.getElementById('helera-total-sub').textContent = '累计净利 (扣 Hugo + 成本)';
 
@@ -14173,9 +14335,9 @@ function renderHelera() {
   document.getElementById('helera-target-text').textContent = `${fmt(month.profit)} / ${fmt(target)}`;
 
   // Badge counts
-  document.getElementById('helera-cust-count').textContent = (state.helera.customers || []).length;
-  document.getElementById('helera-sup-count').textContent = (state.helera.suppliers || []).length;
-  document.getElementById('helera-purch-count').textContent = (state.helera.purchases || []).length;
+  document.getElementById('helera-cust-count').textContent = (currentBrand.customers || []).length;
+  document.getElementById('helera-sup-count').textContent = (currentBrand.suppliers || []).length;
+  document.getElementById('helera-purch-count').textContent = (currentBrand.purchases || []).length;
 
   renderHeleraCustomerList();
   renderHeleraSupplierList();
@@ -14186,7 +14348,7 @@ function renderHelera() {
 function renderHeleraCustomerList() {
   const el = document.getElementById('helera-customer-list');
   if (!el) return;
-  const list = (state.helera.customers || []).slice();
+  const list = (currentBrand.customers || []).slice();
   if (list.length === 0) {
     el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);">还没有客户. 点上面 <b style="color:#ec4899;">+ 新客户</b> 添加</div>`;
     return;
@@ -14232,14 +14394,14 @@ function renderHeleraCustomerList() {
 function renderHeleraSupplierList() {
   const el = document.getElementById('helera-supplier-list');
   if (!el) return;
-  const list = (state.helera.suppliers || []).slice();
+  const list = (currentBrand.suppliers || []).slice();
   if (list.length === 0) {
     el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-dim);">还没有供货商. 点上面 <b style="color:#f59e0b;">+ 新供货商</b> 添加</div>`;
     return;
   }
   const cards = list.map(s => {
     let totalPieces = 0, totalCost = 0, totalShipping = 0, totalCustoms = 0;
-    for (const p of (state.helera.purchases || [])) {
+    for (const p of (currentBrand.purchases || [])) {
       if (p.supplierId !== s.id) continue;
       totalPieces += +(p.pieces || 0) || 0;
       totalCost += +(p.totalCost || 0) || 0;
@@ -14281,13 +14443,13 @@ function renderHeleraSupplierList() {
 function renderHeleraPurchasesList() {
   const tb = document.getElementById('helera-purchases-body');
   if (!tb) return;
-  const list = (state.helera.purchases || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const list = (currentBrand.purchases || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   if (list.length === 0) {
     tb.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-dim);">还没有进货记录</td></tr>`;
     return;
   }
   tb.innerHTML = list.map(p => {
-    const sup = (state.helera.suppliers || []).find(s => s.id === p.supplierId);
+    const sup = (currentBrand.suppliers || []).find(s => s.id === p.supplierId);
     const flag = sup ? _heleraCountryFlag(sup.country) : '';
     const pieces = +(p.pieces || 0) || 0;
     const truePerPiece = pieces > 0 ? (+(p.totalCost || 0)) / pieces : 0;
@@ -14321,7 +14483,7 @@ function renderHeleraHugoTab() {
   // Hugo accruals come from hugoLedger (purchase time, per-supplier rate)
   // Settlements also in hugoLedger
   const rows = [];
-  for (const r of (state.helera.hugoLedger || [])) {
+  for (const r of (currentBrand.hugoLedger || [])) {
     if (r.type === 'accrue') {
       rows.push({
         date: r.date, kind: 'accrue',
@@ -14356,8 +14518,8 @@ function renderHeleraHugoTab() {
 // ============ CRUD: Suppliers ============
 function openHeleraSupplierEdit(id) {
   const isEdit = !!id;
-  const params = state.helera.params || {};
-  const s = isEdit ? (state.helera.suppliers || []).find(x => x.id === id) : {
+  const params = currentBrand.params || {};
+  const s = isEdit ? (currentBrand.suppliers || []).find(x => x.id === id) : {
     name: '', contact: '', phone: '', email: '', address: '', notes: '',
     country: 'UK', currency: 'GBP',
     defaultBuyPrice: +(params.defaultBuyPrice || 1.0),
@@ -14411,22 +14573,22 @@ function openHeleraSupplierEdit(id) {
         notes: document.getElementById('h-sup-notes').value.trim()
       };
       if (isEdit) Object.assign(s, data);
-      else state.helera.suppliers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...data });
+      else currentBrand.suppliers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...data });
       save(); renderHelera();
       _closeHeleraModal();
     },
     extraActions: isEdit ? [{ label: '删除', danger: true, fn: () => {
       if (!confirm('删除供货商「' + s.name + '」?\n\n所有相关进货记录会变成"供货商已删除"提示, 但不会消失。')) return;
-      state.helera.suppliers = state.helera.suppliers.filter(x => x.id !== id);
+      currentBrand.suppliers = currentBrand.suppliers.filter(x => x.id !== id);
       save(); renderHelera(); _closeHeleraModal();
     }}] : []
   });
 }
 
 function openHeleraSupplierDetail(id) {
-  const s = (state.helera.suppliers || []).find(x => x.id === id);
+  const s = (currentBrand.suppliers || []).find(x => x.id === id);
   if (!s) return;
-  const purchases = (state.helera.purchases || []).filter(p => p.supplierId === id).sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  const purchases = (currentBrand.purchases || []).filter(p => p.supplierId === id).sort((a,b) => (b.date||'').localeCompare(a.date||''));
   const totalPieces = purchases.reduce((acc, p) => acc + (+(p.pieces || 0) || 0), 0);
   const totalCost = purchases.reduce((acc, p) => acc + (+(p.totalCost || 0) || 0), 0);
   const avgPrice = totalPieces > 0 ? totalCost / totalPieces : 0;
@@ -14465,7 +14627,7 @@ function openHeleraSupplierDetail(id) {
 // ============ CRUD: Customers ============
 function openHeleraCustomerEdit(id) {
   const isEdit = !!id;
-  const c = isEdit ? (state.helera.customers || []).find(x => x.id === id) : { name: '', contact: '', phone: '', email: '', address: '', notes: '' };
+  const c = isEdit ? (currentBrand.customers || []).find(x => x.id === id) : { name: '', contact: '', phone: '', email: '', address: '', notes: '' };
   if (isEdit && !c) return;
   _showHeleraModal({
     title: isEdit ? '编辑客户' : '新客户',
@@ -14491,20 +14653,20 @@ function openHeleraCustomerEdit(id) {
         notes: document.getElementById('h-cust-notes').value.trim()
       };
       if (isEdit) Object.assign(c, data);
-      else state.helera.customers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ledger: [], ...data });
+      else currentBrand.customers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ledger: [], ...data });
       save(); renderHelera();
       _closeHeleraModal();
     },
     extraActions: isEdit ? [{ label: '删除', danger: true, fn: () => {
       if (!confirm('删除客户「' + c.name + '」?\n\n所有 ' + (c.ledger || []).length + ' 条流水会一并删除, 不可恢复。')) return;
-      state.helera.customers = state.helera.customers.filter(x => x.id !== id);
+      currentBrand.customers = currentBrand.customers.filter(x => x.id !== id);
       save(); renderHelera(); _closeHeleraModal();
     }}] : []
   });
 }
 
 function openHeleraCustomerDetail(id) {
-  const c = (state.helera.customers || []).find(x => x.id === id);
+  const c = (currentBrand.customers || []).find(x => x.id === id);
   if (!c) return;
   const ledger = (c.ledger || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const bal = heleraCustomerBalance(c);
@@ -14562,7 +14724,7 @@ function openHeleraCustomerDetail(id) {
 
 // ============ Transactions ============
 function openHeleraPurchase(presetSupplierId) {
-  const sups = (state.helera.suppliers || []);
+  const sups = (currentBrand.suppliers || []);
   if (sups.length === 0) { alert('先建一个供货商'); openHeleraSupplierEdit(); return; }
   const initSupId = presetSupplierId || sups[0].id;
   const initSup = sups.find(x => x.id === initSupId) || sups[0];
@@ -14597,7 +14759,7 @@ function openHeleraPurchase(presetSupplierId) {
       const totalCost = Math.round((productCost + shippingCost + customsCost) * 100) / 100;
       const hugoAmount = Math.round(pieces * hugoRate * 100) / 100;
       const purchaseId = crypto.randomUUID();
-      state.helera.purchases.push({
+      currentBrand.purchases.push({
         id: purchaseId,
         date, supplierId, pieces, unitPrice,
         shippingCost, customsCost,
@@ -14608,8 +14770,8 @@ function openHeleraPurchase(presetSupplierId) {
       });
       // Auto-accrue Hugo at purchase time (per-supplier rate)
       if (hugoAmount > 0) {
-        const sup = (state.helera.suppliers || []).find(x => x.id === supplierId);
-        state.helera.hugoLedger.push({
+        const sup = (currentBrand.suppliers || []).find(x => x.id === supplierId);
+        currentBrand.hugoLedger.push({
           id: crypto.randomUUID(),
           date, type: 'accrue',
           supplierId, pieces, rate: hugoRate, amount: hugoAmount,
@@ -14628,7 +14790,7 @@ function openHeleraPurchase(presetSupplierId) {
 // 切换供货商时, 自动填充该供货商的默认参数
 function _heleraOnPurchaseSupplierChange() {
   const id = document.getElementById('h-purch-supplier').value;
-  const s = (state.helera.suppliers || []).find(x => x.id === id);
+  const s = (currentBrand.suppliers || []).find(x => x.id === id);
   if (!s) return;
   document.getElementById('h-purch-unit').value     = (+(s.defaultBuyPrice || 0)).toFixed(2);
   document.getElementById('h-purch-shipping').value = (+(s.defaultShippingCost || 0)).toFixed(2);
@@ -14637,7 +14799,7 @@ function _heleraOnPurchaseSupplierChange() {
 }
 
 function openHeleraSale(presetCustomerId) {
-  const custs = (state.helera.customers || []);
+  const custs = (currentBrand.customers || []);
   if (custs.length === 0) { alert('先建一个客户'); openHeleraCustomerEdit(); return; }
   const stock = heleraStockTotal();
   const custOpts = custs.map(c => `<option value="${c.id}" ${presetCustomerId === c.id ? 'selected' : ''}>${escapeHtml(c.name)} (余 ${fmt(heleraCustomerBalance(c))})</option>`).join('');
@@ -14650,7 +14812,7 @@ function openHeleraSale(presetCustomerId) {
       { id: 'h-sale-date', label: '日期 *', value: new Date().toISOString().slice(0, 10), type: 'date', required: true },
       { id: 'h-sale-customer', label: '客户 *', html: `<select id="h-sale-customer" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(168,85,247,0.30);border-radius:8px;color:var(--text);font-size:13px;">${custOpts}</select>` },
       { id: 'h-sale-pieces', label: '件数 *', value: '', type: 'number', required: true },
-      { id: 'h-sale-unit', label: '单价 £/件 *', value: state.helera.params.defaultSellPrice || 2.5, type: 'number', step: '0.01', required: true },
+      { id: 'h-sale-unit', label: '单价 £/件 *', value: currentBrand.params.defaultSellPrice || 2.5, type: 'number', step: '0.01', required: true },
       { id: 'h-sale-notes', label: '备注', value: '', textarea: true }
     ],
     onSave: () => {
@@ -14660,7 +14822,7 @@ function openHeleraSale(presetCustomerId) {
       const unitPrice = parseFloat(document.getElementById('h-sale-unit').value);
       if (!date || !customerId || !(pieces > 0) || !(unitPrice > 0)) { alert('请填完整'); return; }
       if (pieces > stock && !confirm(`库存只剩 ${stock} 件, 这笔销售 ${pieces} 件会让库存变成 ${stock - pieces} 件 (负数). 确认?`)) return;
-      const c = (state.helera.customers || []).find(x => x.id === customerId);
+      const c = (currentBrand.customers || []).find(x => x.id === customerId);
       const amount = Math.round(pieces * unitPrice * 100) / 100;
       const balAfter = heleraCustomerBalance(c) - amount;
       if (balAfter < 0 && !confirm(`客户 "${c.name}" 余额会变 ${fmt(balAfter)} (透支). 确认?`)) return;
@@ -14679,7 +14841,7 @@ function openHeleraSale(presetCustomerId) {
 }
 
 function openHeleraDeposit(customerId) {
-  const c = (state.helera.customers || []).find(x => x.id === customerId);
+  const c = (currentBrand.customers || []).find(x => x.id === customerId);
   if (!c) return;
   _closeHeleraModal();
   _showHeleraModal({
@@ -14724,7 +14886,7 @@ function openHeleraHugoSettle() {
       const date = document.getElementById('h-hugo-date').value;
       const amount = parseFloat(document.getElementById('h-hugo-amount').value);
       if (!date || !(amount > 0)) { alert('请填完整'); return; }
-      state.helera.hugoLedger.push({
+      currentBrand.hugoLedger.push({
         id: crypto.randomUUID(), date, type: 'settle', amount,
         notes: document.getElementById('h-hugo-notes').value.trim(),
         createdAt: new Date().toISOString()
@@ -14740,12 +14902,12 @@ function openHeleraHugoSettle() {
 // 输出: 总成本 / 单件成本 / 销售额 / 毛利润 / 利润率 (实时)
 function openHeleraForecast() {
   _closeHeleraModal();
-  const sups = (state.helera.suppliers || []);
+  const sups = (currentBrand.suppliers || []);
   const initSup = sups[0];
   const supOpts = ['<option value="">— 不选 (手动填) —</option>']
     .concat(sups.map(s => `<option value="${s.id}">${_heleraCountryFlag(s.country)} ${escapeHtml(s.name)}</option>`))
     .join('');
-  const params = state.helera.params || {};
+  const params = currentBrand.params || {};
   const initBuyPrice = initSup ? (+(initSup.defaultBuyPrice || 0)) : (+(params.defaultBuyPrice || 1.0));
   const initShipping = initSup ? (+(initSup.defaultShippingCost || 0)) : 0;
   const initCustoms = initSup ? (+(initSup.defaultCustomsCost || 0)) : 0;
@@ -14884,7 +15046,7 @@ function openHeleraForecast() {
 
 function _heleraOnForecastSupplierChange() {
   const id = document.getElementById('hf-supplier').value;
-  const s = (state.helera.suppliers || []).find(x => x.id === id);
+  const s = (currentBrand.suppliers || []).find(x => x.id === id);
   if (!s) return;
   document.getElementById('hf-buy').value      = (+(s.defaultBuyPrice || 0)).toFixed(2);
   document.getElementById('hf-shipping').value = (+(s.defaultShippingCost || 0)).toFixed(2);
@@ -14983,7 +15145,7 @@ function _heleraRecomputeForecast() {
   // Comparison to existing supplier averages
   const compEl = document.getElementById('hf-comparison');
   let totBought = 0, totSpend = 0;
-  for (const p of (state.helera.purchases || [])) {
+  for (const p of (currentBrand.purchases || [])) {
     totBought += +(p.pieces || 0) || 0;
     totSpend += +(p.totalCost || 0) || 0;
   }
@@ -15000,7 +15162,7 @@ function _heleraRecomputeForecast() {
 }
 
 function openHeleraSettings() {
-  const p = state.helera.params;
+  const p = currentBrand.params;
   _showHeleraModal({
     title: '⚙ HELERA 参数',
     icon: '⚙',
@@ -15024,18 +15186,18 @@ function openHeleraSettings() {
 
 // ============ Delete helpers ============
 function delHeleraPurchase(id) {
-  const p = (state.helera.purchases || []).find(x => x.id === id);
+  const p = (currentBrand.purchases || []).find(x => x.id === id);
   if (!p) return;
   const hugoAmt = +(p.hugoAmount || 0) || 0;
   if (!confirm(`删除 ${p.date} 的进货 ${p.pieces} 件 (${fmt(p.totalCost)})?\n\n库存回退 ${p.pieces} 件${hugoAmt > 0 ? ' · Hugo 应付减少 ' + fmt(hugoAmt) : ''}。`)) return;
-  state.helera.purchases = state.helera.purchases.filter(x => x.id !== id);
+  currentBrand.purchases = currentBrand.purchases.filter(x => x.id !== id);
   // 同步删除连带的 Hugo accrue 行
-  state.helera.hugoLedger = (state.helera.hugoLedger || []).filter(r => r.linkedPurchaseId !== id);
+  currentBrand.hugoLedger = (currentBrand.hugoLedger || []).filter(r => r.linkedPurchaseId !== id);
   save(); renderHelera();
   flash('✓ 进货已删除' + (hugoAmt > 0 ? ' · Hugo 累计 -' + fmt(hugoAmt) : ''));
 }
 function delHeleraLedger(customerId, ledgerId) {
-  const c = (state.helera.customers || []).find(x => x.id === customerId);
+  const c = (currentBrand.customers || []).find(x => x.id === customerId);
   if (!c) return;
   const e = (c.ledger || []).find(x => x.id === ledgerId);
   if (!e) return;
