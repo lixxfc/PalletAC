@@ -14635,11 +14635,15 @@ function delHeleraLedger(customerId, ledgerId) {
 }
 
 // ============ Modal infrastructure ============
+// FIX (2026-06-09): use addEventListener so onSave / extraAction callbacks
+// KEEP their closures (isEdit, s, c etc). Previously used Function.toString()
+// inlined into onclick="...", which serialized only the source — the new
+// function ran in global scope and threw ReferenceError silently on access
+// to closure-captured variables, so 保存 button did nothing.
 function _showHeleraModal(opts) {
   _closeHeleraModal();
   const fieldsHtml = (opts.fields || []).map(f => {
     if (f.html) return `<div style="margin-bottom:14px;"><label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">${f.label}</label>${f.html}</div>`;
-    const tag = f.textarea ? 'textarea' : 'input';
     const typeAttr = f.type ? ` type="${f.type}"` : '';
     const stepAttr = f.step ? ` step="${f.step}"` : '';
     const valEsc = String(f.value == null ? '' : f.value).replace(/"/g, '&quot;');
@@ -14651,7 +14655,6 @@ function _showHeleraModal(opts) {
       }
     </div>`;
   }).join('');
-  const extras = (opts.extraActions || []).map(a => `<button class="btn ${a.danger ? 'danger' : 'ghost'}" onclick="(${a.fn.toString()})()">${a.label}</button>`).join('');
   const modal = document.createElement('div');
   modal.setAttribute('data-helera-modal', '1');
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(5,6,15,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -14659,17 +14662,52 @@ function _showHeleraModal(opts) {
     <div style="padding:16px 20px;border-bottom:1px solid ${opts.color}40;display:flex;align-items:center;gap:10px;">
       <span style="font-size:22px;">${opts.icon || '✨'}</span>
       <div style="font-size:15px;font-weight:800;color:var(--text);">${escapeHtml(opts.title)}</div>
-      <button class="btn ghost" style="margin-left:auto;padding:4px 10px;" onclick="_closeHeleraModal()">×</button>
+      <button class="btn ghost helera-modal-close" style="margin-left:auto;padding:4px 10px;">×</button>
     </div>
     ${opts.intro ? `<div style="padding:12px 20px;background:rgba(11,18,42,0.50);font-size:12px;color:var(--text-dim);border-bottom:1px solid rgba(139,150,255,0.10);">${opts.intro}</div>` : ''}
     <div style="padding:18px 20px;overflow-y:auto;flex:1;">${fieldsHtml}</div>
-    <div style="padding:14px 20px;border-top:1px solid rgba(139,150,255,0.18);display:flex;gap:8px;background:rgba(11,18,42,0.40);">
-      ${extras}
-      <button class="btn ghost" style="margin-left:auto;" onclick="_closeHeleraModal()">取消</button>
-      <button class="btn primary" style="background:linear-gradient(135deg,${opts.color},${opts.color}cc);" onclick="(${opts.onSave.toString()})()">保存</button>
-    </div>
+    <div class="helera-modal-actions" style="padding:14px 20px;border-top:1px solid rgba(139,150,255,0.18);display:flex;gap:8px;background:rgba(11,18,42,0.40);"></div>
   </div>`;
   document.body.appendChild(modal);
+
+  // Wire up actions WITH closure preservation
+  const actionsBar = modal.querySelector('.helera-modal-actions');
+  // Extra actions (e.g. delete)
+  for (const a of (opts.extraActions || [])) {
+    const b = document.createElement('button');
+    b.className = 'btn ' + (a.danger ? 'danger' : 'ghost');
+    b.textContent = a.label;
+    b.addEventListener('click', a.fn);
+    actionsBar.appendChild(b);
+  }
+  // Cancel
+  const cancel = document.createElement('button');
+  cancel.className = 'btn ghost';
+  cancel.style.marginLeft = 'auto';
+  cancel.textContent = '取消';
+  cancel.addEventListener('click', _closeHeleraModal);
+  actionsBar.appendChild(cancel);
+  // Save (real closure preserved!)
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn primary';
+  saveBtn.style.background = `linear-gradient(135deg,${opts.color},${opts.color}cc)`;
+  saveBtn.textContent = '保存';
+  saveBtn.addEventListener('click', opts.onSave);
+  actionsBar.appendChild(saveBtn);
+  // Close (×) button
+  const closeBtn = modal.querySelector('.helera-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', _closeHeleraModal);
+
+  // Keyboard: Enter to save, Escape to cancel
+  modal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') _closeHeleraModal();
+    else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') opts.onSave();
+  });
+  // Auto-focus first input
+  setTimeout(() => {
+    const first = modal.querySelector('input, textarea, select');
+    if (first) first.focus();
+  }, 50);
 }
 function _showHeleraInfoModal(opts) {
   _closeHeleraModal();
@@ -14679,12 +14717,16 @@ function _showHeleraInfoModal(opts) {
   modal.innerHTML = `<div style="background:linear-gradient(135deg,#0b122a 0%,#141e37 100%);border:1px solid ${opts.color}60;border-radius:14px;max-width:680px;width:100%;max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.55);">
     <div style="padding:16px 20px;border-bottom:1px solid ${opts.color}40;display:flex;align-items:center;gap:10px;">
       <div style="font-size:15px;font-weight:800;color:var(--text);">${escapeHtml(opts.title)}</div>
-      ${opts.editFn ? `<button class="btn sm ghost" style="margin-left:auto;" onclick="(${opts.editFn.toString()})()">✎ 编辑</button>` : '<div style="margin-left:auto;"></div>'}
-      <button class="btn ghost" style="padding:4px 10px;" onclick="_closeHeleraModal()">×</button>
+      ${opts.editFn ? `<button class="btn sm ghost helera-info-edit" style="margin-left:auto;">✎ 编辑</button>` : '<div style="margin-left:auto;"></div>'}
+      <button class="btn ghost helera-info-close" style="padding:4px 10px;">×</button>
     </div>
     <div style="padding:18px 20px;overflow-y:auto;flex:1;">${opts.html}</div>
   </div>`;
   document.body.appendChild(modal);
+  const editBtn = modal.querySelector('.helera-info-edit');
+  if (editBtn && opts.editFn) editBtn.addEventListener('click', opts.editFn);
+  const closeBtn = modal.querySelector('.helera-info-close');
+  if (closeBtn) closeBtn.addEventListener('click', _closeHeleraModal);
 }
 function _closeHeleraModal() {
   document.querySelectorAll('[data-helera-modal]').forEach(el => el.remove());
