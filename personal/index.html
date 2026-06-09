@@ -2528,6 +2528,7 @@ select option { background: var(--bg-2); color: var(--text); }
           <div class="page-sub">独立账目 · 不混托盘业务 · 进货 → 库存 → 销售 → 利润</div>
         </div>
         <div class="row" style="gap:8px;">
+          <button class="btn primary" onclick="openHeleraForecast()" style="background:linear-gradient(135deg,#06b6d4,#10b981);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(6,182,212,0.30);">🔮 利润预估</button>
           <button class="btn primary" onclick="openHeleraPurchase()" style="background:linear-gradient(135deg,#f59e0b,#ec4899);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(245,158,11,0.30);">+ 进货录入</button>
           <button class="btn primary" onclick="openHeleraSale()" style="background:linear-gradient(135deg,#a855f7,#ec4899);font-weight:700;letter-spacing:0.4px;box-shadow:0 4px 16px rgba(168,85,247,0.30);">+ 销售录入</button>
           <button class="btn sm ghost" onclick="openHeleraSettings()">⚙ 参数</button>
@@ -14732,6 +14733,270 @@ function openHeleraHugoSettle() {
       flash('✓ 已结算 Hugo ' + fmt(amount));
     }
   });
+}
+
+// ============ 利润预估器 (2026-06-09) ============
+// 输入: 数量 / 进价 / 运费 / 清关 / Hugo / 卖价
+// 输出: 总成本 / 单件成本 / 销售额 / 毛利润 / 利润率 (实时)
+function openHeleraForecast() {
+  _closeHeleraModal();
+  const sups = (state.helera.suppliers || []);
+  const initSup = sups[0];
+  const supOpts = ['<option value="">— 不选 (手动填) —</option>']
+    .concat(sups.map(s => `<option value="${s.id}">${_heleraCountryFlag(s.country)} ${escapeHtml(s.name)}</option>`))
+    .join('');
+  const params = state.helera.params || {};
+  const initBuyPrice = initSup ? (+(initSup.defaultBuyPrice || 0)) : (+(params.defaultBuyPrice || 1.0));
+  const initShipping = initSup ? (+(initSup.defaultShippingCost || 0)) : 0;
+  const initCustoms = initSup ? (+(initSup.defaultCustomsCost || 0)) : 0;
+  const initHugo = initSup ? (+(initSup.defaultHugoRate || 0)) : (+(params.hugoRate || 0));
+  const initSell = +(params.defaultSellPrice || 2.5);
+
+  const modal = document.createElement('div');
+  modal.setAttribute('data-helera-modal', '1');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(5,6,15,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="background:linear-gradient(135deg,#0b122a 0%,#141e37 100%);border:1px solid rgba(6,182,212,0.40);border-radius:16px;max-width:880px;width:100%;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.55);">
+
+      <!-- HEADER -->
+      <div style="padding:18px 24px;border-bottom:1px solid rgba(6,182,212,0.30);display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(6,182,212,0.18),rgba(16,185,129,0.10));">
+        <span style="font-size:26px;">🔮</span>
+        <div>
+          <div style="font-size:17px;font-weight:800;color:var(--text);letter-spacing:0.4px;">HELERA 利润预估器</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">输入参数 → 实时计算利润 · 不保存任何数据 · 选供货商一键填默认值</div>
+        </div>
+        <button class="btn ghost helera-modal-close" style="margin-left:auto;padding:4px 10px;">×</button>
+      </div>
+
+      <!-- BODY: 2-column layout -->
+      <div style="display:grid;grid-template-columns:1fr 1.1fr;gap:1px;background:rgba(139,150,255,0.10);overflow-y:auto;flex:1;">
+
+        <!-- LEFT: Inputs -->
+        <div style="padding:22px 24px;background:rgba(11,18,42,0.55);">
+          <div style="font-size:11px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:14px;">📝 参数输入</div>
+
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">供货商 (可选, 选了自动填)</label>
+            <select id="hf-supplier" onchange="_heleraOnForecastSupplierChange()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(6,182,212,0.30);border-radius:8px;color:var(--text);font-size:13px;">${supOpts}</select>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">📦 件数 (假设进多少件)</label>
+            <input id="hf-pieces" type="number" value="1000" min="1" oninput="_heleraRecomputeForecast()" style="width:100%;padding:11px 12px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(6,182,212,0.30);border-radius:8px;color:var(--text);font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+              <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">📥 进价 £/件</label>
+              <input id="hf-buy" type="number" step="0.01" value="${initBuyPrice.toFixed(2)}" oninput="_heleraRecomputeForecast()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(245,158,11,0.30);border-radius:8px;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums;">
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">🛒 卖价 £/件</label>
+              <input id="hf-sell" type="number" step="0.01" value="${initSell.toFixed(2)}" oninput="_heleraRecomputeForecast()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(168,85,247,0.40);border-radius:8px;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums;font-weight:700;">
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+            <div>
+              <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">🚚 运费 £ (本批)</label>
+              <input id="hf-shipping" type="number" step="0.01" value="${initShipping.toFixed(2)}" oninput="_heleraRecomputeForecast()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(245,158,11,0.30);border-radius:8px;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums;">
+            </div>
+            <div>
+              <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">🛃 清关 £ (本批)</label>
+              <input id="hf-customs" type="number" step="0.01" value="${initCustoms.toFixed(2)}" oninput="_heleraRecomputeForecast()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(245,158,11,0.30);border-radius:8px;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums;">
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;font-weight:700;margin-bottom:4px;">🤝 Hugo 提成 £/件</label>
+            <input id="hf-hugo" type="number" step="0.01" value="${initHugo.toFixed(2)}" oninput="_heleraRecomputeForecast()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(251,191,36,0.30);border-radius:8px;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums;">
+          </div>
+
+          <div style="margin-top:20px;padding:12px 14px;background:rgba(6,182,212,0.08);border:1px solid rgba(6,182,212,0.20);border-radius:8px;font-size:11px;color:var(--text-dim);line-height:1.7;">
+            💡 <b style="color:var(--cyan);">提示</b>: 改任何一个数字, 右边的利润报告会实时更新。
+            不会保存到数据库 — 纯计算器。算完后可以直接点 "用这套参数进货" 一键开始进货录入。
+          </div>
+        </div>
+
+        <!-- RIGHT: Live results -->
+        <div style="padding:22px 24px;background:linear-gradient(135deg,rgba(11,18,42,0.65) 0%,rgba(6,182,212,0.04) 100%);">
+          <div style="font-size:11px;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:14px;">📊 利润报告 (实时)</div>
+
+          <!-- HERO PROFIT -->
+          <div id="hf-result-hero" style="padding:22px 24px;background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.08));border:1.5px solid rgba(16,185,129,0.30);border-radius:12px;margin-bottom:14px;">
+            <div style="font-size:10px;color:#34d399;letter-spacing:2px;text-transform:uppercase;font-weight:700;">💰 总利润</div>
+            <div id="hf-total-profit" style="font-size:38px;font-weight:800;color:#10b981;font-variant-numeric:tabular-nums;letter-spacing:-1px;margin-top:4px;">£0</div>
+            <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;">
+              <div><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">单件利润</span> <b id="hf-per-piece" style="color:#10b981;font-variant-numeric:tabular-nums;">£0</b></div>
+              <div><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">利润率</span> <b id="hf-margin" style="color:#10b981;font-variant-numeric:tabular-nums;">0%</b></div>
+              <div><span style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;">ROI</span> <b id="hf-roi" style="color:#10b981;font-variant-numeric:tabular-nums;">0%</b></div>
+            </div>
+          </div>
+
+          <!-- BREAKDOWN -->
+          <div style="background:rgba(5,6,15,0.55);border-radius:10px;padding:14px 16px;font-variant-numeric:tabular-nums;">
+            <div id="hf-breakdown" style="display:flex;flex-direction:column;gap:8px;font-size:13px;"></div>
+          </div>
+
+          <!-- VERDICT -->
+          <div id="hf-verdict" style="margin-top:14px;padding:12px 14px;border-radius:8px;font-size:12px;line-height:1.6;"></div>
+
+          <!-- COMPARISON to existing -->
+          <div id="hf-comparison" style="margin-top:14px;padding:12px 14px;background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.20);border-radius:8px;font-size:11.5px;line-height:1.7;color:var(--text);"></div>
+
+          <!-- CTA -->
+          <div style="margin-top:14px;display:flex;gap:8px;">
+            <button id="hf-apply-btn" class="btn primary" style="background:linear-gradient(135deg,#f59e0b,#ec4899);flex:1;font-weight:700;">✓ 用这套参数 → 开始进货</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.helera-modal-close').addEventListener('click', _closeHeleraModal);
+  modal.querySelector('#hf-apply-btn').addEventListener('click', () => {
+    // Carry params to 进货 modal
+    const supId = document.getElementById('hf-supplier').value;
+    const pieces = parseInt(document.getElementById('hf-pieces').value, 10) || 0;
+    const buyPrice = parseFloat(document.getElementById('hf-buy').value) || 0;
+    const shipping = parseFloat(document.getElementById('hf-shipping').value) || 0;
+    const customs = parseFloat(document.getElementById('hf-customs').value) || 0;
+    const hugo = parseFloat(document.getElementById('hf-hugo').value) || 0;
+    _closeHeleraModal();
+    openHeleraPurchase(supId);
+    // Defer field setting until purchase modal renders
+    setTimeout(() => {
+      const setIf = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      if (pieces) setIf('h-purch-pieces', pieces);
+      setIf('h-purch-unit', buyPrice.toFixed(2));
+      setIf('h-purch-shipping', shipping.toFixed(2));
+      setIf('h-purch-customs', customs.toFixed(2));
+      setIf('h-purch-hugo', hugo.toFixed(2));
+    }, 100);
+  });
+  // Modal keyboard
+  modal.addEventListener('keydown', (e) => { if (e.key === 'Escape') _closeHeleraModal(); });
+  // First compute
+  _heleraRecomputeForecast();
+  // Auto-focus pieces field
+  setTimeout(() => { const el = document.getElementById('hf-pieces'); if (el) { el.focus(); el.select(); } }, 50);
+}
+
+function _heleraOnForecastSupplierChange() {
+  const id = document.getElementById('hf-supplier').value;
+  const s = (state.helera.suppliers || []).find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('hf-buy').value      = (+(s.defaultBuyPrice || 0)).toFixed(2);
+  document.getElementById('hf-shipping').value = (+(s.defaultShippingCost || 0)).toFixed(2);
+  document.getElementById('hf-customs').value  = (+(s.defaultCustomsCost || 0)).toFixed(2);
+  document.getElementById('hf-hugo').value     = (+(s.defaultHugoRate || 0)).toFixed(2);
+  _heleraRecomputeForecast();
+}
+
+function _heleraRecomputeForecast() {
+  const pieces = parseInt(document.getElementById('hf-pieces').value, 10) || 0;
+  const buyPrice = parseFloat(document.getElementById('hf-buy').value) || 0;
+  const sellPrice = parseFloat(document.getElementById('hf-sell').value) || 0;
+  const shipping = parseFloat(document.getElementById('hf-shipping').value) || 0;
+  const customs = parseFloat(document.getElementById('hf-customs').value) || 0;
+  const hugoRate = parseFloat(document.getElementById('hf-hugo').value) || 0;
+
+  const productCost = pieces * buyPrice;
+  const hugoTotal = pieces * hugoRate;
+  const totalCost = productCost + shipping + customs + hugoTotal;
+  const truePerPieceCost = pieces > 0 ? totalCost / pieces : 0;
+  const totalRevenue = pieces * sellPrice;
+  const totalProfit = totalRevenue - totalCost;
+  const perPieceProfit = pieces > 0 ? totalProfit / pieces : 0;
+  const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+  const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+
+  // Update hero
+  const profitColor = totalProfit > 0 ? '#10b981' : totalProfit < 0 ? '#fb7185' : 'var(--text)';
+  const heroEl = document.getElementById('hf-result-hero');
+  heroEl.style.background = totalProfit > 0
+    ? 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.08))'
+    : 'linear-gradient(135deg,rgba(244,63,94,0.15),rgba(168,85,247,0.08))';
+  heroEl.style.borderColor = totalProfit > 0 ? 'rgba(16,185,129,0.30)' : 'rgba(244,63,94,0.30)';
+  document.getElementById('hf-total-profit').textContent = (totalProfit < 0 ? '−' : '') + fmt(Math.abs(totalProfit));
+  document.getElementById('hf-total-profit').style.color = profitColor;
+  document.getElementById('hf-per-piece').textContent = (perPieceProfit < 0 ? '−' : '') + '£' + Math.abs(perPieceProfit).toFixed(2);
+  document.getElementById('hf-per-piece').style.color = profitColor;
+  document.getElementById('hf-margin').textContent = margin.toFixed(1) + '%';
+  document.getElementById('hf-margin').style.color = profitColor;
+  document.getElementById('hf-roi').textContent = roi.toFixed(1) + '%';
+  document.getElementById('hf-roi').style.color = profitColor;
+
+  // Breakdown
+  const rows = [
+    { label: '进货成本', value: productCost, sub: `${pieces.toLocaleString('en-GB')} × £${buyPrice.toFixed(2)}`, sign: '−', color: 'var(--amber)' },
+    { label: '运费', value: shipping, sub: shipping > 0 ? '本批一次性' : '—', sign: '−', color: shipping > 0 ? 'var(--amber)' : 'var(--text-dim)' },
+    { label: '清关费', value: customs, sub: customs > 0 ? '本批一次性' : '—', sign: '−', color: customs > 0 ? 'var(--amber)' : 'var(--text-dim)' },
+    { label: 'Hugo 提成', value: hugoTotal, sub: hugoTotal > 0 ? `${pieces.toLocaleString('en-GB')} × £${hugoRate.toFixed(2)}` : '—', sign: '−', color: hugoTotal > 0 ? '#fbbf24' : 'var(--text-dim)' }
+  ];
+  const breakdownHtml = rows.map(r => `<div style="display:flex;justify-content:space-between;align-items:baseline;">
+    <span style="color:var(--text-dim);">${r.label} <span style="font-size:10px;opacity:0.7;">${r.sub}</span></span>
+    <span style="font-weight:700;color:${r.color};">${r.sign}${fmt(r.value)}</span>
+  </div>`).join('') +
+  `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed rgba(139,150,255,0.20);display:flex;justify-content:space-between;align-items:baseline;">
+    <span style="font-weight:700;color:var(--text);">总成本</span>
+    <span style="font-weight:800;color:var(--amber);font-size:15px;">${fmt(totalCost)}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:var(--text-dim);">
+    <span>真实进价/件 (含一切)</span>
+    <span style="font-weight:700;">£${truePerPieceCost.toFixed(2)}/件</span>
+  </div>
+  <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:baseline;">
+    <span style="color:var(--text-dim);">销售总额 <span style="font-size:10px;opacity:0.7;">${pieces.toLocaleString('en-GB')} × £${sellPrice.toFixed(2)}</span></span>
+    <span style="font-weight:800;color:#a855f7;font-size:15px;">+${fmt(totalRevenue)}</span>
+  </div>`;
+  document.getElementById('hf-breakdown').innerHTML = breakdownHtml;
+
+  // Verdict
+  const vEl = document.getElementById('hf-verdict');
+  if (pieces === 0 || buyPrice === 0 || sellPrice === 0) {
+    vEl.style.background = 'rgba(100,116,139,0.06)';
+    vEl.style.border = '1px solid rgba(100,116,139,0.20)';
+    vEl.innerHTML = '<span style="color:var(--text-dim);">填完所有参数看结论</span>';
+  } else if (totalProfit > 0 && margin > 30) {
+    vEl.style.background = 'rgba(16,185,129,0.10)';
+    vEl.style.border = '1px solid rgba(16,185,129,0.30)';
+    vEl.innerHTML = `<b style="color:#10b981;">✅ 强烈推荐 — 利润率 ${margin.toFixed(1)}%</b><br><span style="color:var(--text-dim);">每件赚 £${perPieceProfit.toFixed(2)}, 投 ${fmt(totalCost)} 赚 ${fmt(totalProfit)} 回报率 ${roi.toFixed(0)}%</span>`;
+  } else if (totalProfit > 0 && margin > 15) {
+    vEl.style.background = 'rgba(34,211,165,0.08)';
+    vEl.style.border = '1px solid rgba(34,211,165,0.25)';
+    vEl.innerHTML = `<b style="color:#22d3a5;">✓ 可以做 — 利润率 ${margin.toFixed(1)}%</b><br><span style="color:var(--text-dim);">每件赚 £${perPieceProfit.toFixed(2)} · 健康利润</span>`;
+  } else if (totalProfit > 0) {
+    vEl.style.background = 'rgba(251,191,36,0.08)';
+    vEl.style.border = '1px solid rgba(251,191,36,0.25)';
+    vEl.innerHTML = `<b style="color:var(--amber);">⚠ 利润薄 — 利润率仅 ${margin.toFixed(1)}%</b><br><span style="color:var(--text-dim);">每件只赚 £${perPieceProfit.toFixed(2)} · 想想能不能压价或提高卖价</span>`;
+  } else if (totalProfit === 0) {
+    vEl.style.background = 'rgba(100,116,139,0.10)';
+    vEl.style.border = '1px solid rgba(100,116,139,0.30)';
+    vEl.innerHTML = `<b style="color:var(--text);">⚪ 不赚不赔</b><br><span style="color:var(--text-dim);">刚刚好持平</span>`;
+  } else {
+    vEl.style.background = 'rgba(244,63,94,0.10)';
+    vEl.style.border = '1px solid rgba(244,63,94,0.30)';
+    vEl.innerHTML = `<b style="color:#fb7185;">❌ 亏本 — 每件亏 £${Math.abs(perPieceProfit).toFixed(2)}</b><br><span style="color:var(--text-dim);">总共亏 ${fmt(Math.abs(totalProfit))} · 不要做</span>`;
+  }
+
+  // Comparison to existing supplier averages
+  const compEl = document.getElementById('hf-comparison');
+  let totBought = 0, totSpend = 0;
+  for (const p of (state.helera.purchases || [])) {
+    totBought += +(p.pieces || 0) || 0;
+    totSpend += +(p.totalCost || 0) || 0;
+  }
+  const histAvg = totBought > 0 ? totSpend / totBought : 0;
+  if (histAvg > 0 && truePerPieceCost > 0) {
+    const diff = truePerPieceCost - histAvg;
+    const diffPct = histAvg > 0 ? (diff / histAvg * 100) : 0;
+    const color = diff < 0 ? '#10b981' : '#fb7185';
+    const arrow = diff < 0 ? '↓ 比平均便宜' : '↑ 比平均贵';
+    compEl.innerHTML = `📊 <b>对比历史平均</b>: 真实进价 £${truePerPieceCost.toFixed(2)}/件 vs 历史均价 £${histAvg.toFixed(2)}/件 · <b style="color:${color};">${arrow} £${Math.abs(diff).toFixed(2)} (${(diffPct >= 0 ? '+' : '') + diffPct.toFixed(1)}%)</b>`;
+  } else {
+    compEl.innerHTML = `📊 还没历史数据可对比 — 这是首笔预估`;
+  }
 }
 
 function openHeleraSettings() {
