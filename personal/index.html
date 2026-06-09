@@ -2630,10 +2630,21 @@ select option { background: var(--bg-2); color: var(--text); }
       <!-- TAB: PURCHASES -->
       <div id="helera-pane-purchases" class="helera-pane hide">
         <div class="card">
-          <div class="card-title">进货流水 <span class="badge">从供货商买入</span></div>
+          <div class="card-title">进货流水 <span class="badge">从供货商买入 · 含运费 + 清关 + Hugo</span></div>
           <div class="table-wrap mt-4">
             <table>
-              <thead><tr><th>日期</th><th>供货商</th><th style="text-align:right;">件数</th><th style="text-align:right;">单价</th><th style="text-align:right;">总成本</th><th>备注</th><th></th></tr></thead>
+              <thead><tr>
+                <th>日期</th>
+                <th>供货商</th>
+                <th style="text-align:right;">件数</th>
+                <th style="text-align:right;">单价</th>
+                <th style="text-align:right;">运费</th>
+                <th style="text-align:right;">清关</th>
+                <th style="text-align:right;">Hugo</th>
+                <th style="text-align:right;">总成本</th>
+                <th style="text-align:right;">真实均价</th>
+                <th></th>
+              </tr></thead>
               <tbody id="helera-purchases-body"></tbody>
             </table>
           </div>
@@ -3525,7 +3536,29 @@ function _heleraEmptyState() {
   };
 }
 
-// 确保 state.helera 存在 (老数据迁移)
+// 常用国家 + 币种 (UI 下拉)
+const HELERA_COUNTRIES = [
+  { code: 'UK', name: '英国', flag: '🇬🇧', cur: 'GBP' },
+  { code: 'DE', name: '德国', flag: '🇩🇪', cur: 'EUR' },
+  { code: 'FR', name: '法国', flag: '🇫🇷', cur: 'EUR' },
+  { code: 'IT', name: '意大利', flag: '🇮🇹', cur: 'EUR' },
+  { code: 'ES', name: '西班牙', flag: '🇪🇸', cur: 'EUR' },
+  { code: 'NL', name: '荷兰', flag: '🇳🇱', cur: 'EUR' },
+  { code: 'PL', name: '波兰', flag: '🇵🇱', cur: 'EUR' },
+  { code: 'US', name: '美国', flag: '🇺🇸', cur: 'USD' },
+  { code: 'CN', name: '中国', flag: '🇨🇳', cur: 'CNY' },
+  { code: 'OTHER', name: '其他', flag: '🌐', cur: 'GBP' }
+];
+function _heleraCountryFlag(code) {
+  const c = HELERA_COUNTRIES.find(x => x.code === code);
+  return c ? c.flag : '🌐';
+}
+function _heleraCountryName(code) {
+  const c = HELERA_COUNTRIES.find(x => x.code === code);
+  return c ? c.name : (code || '其他');
+}
+
+// 确保 state.helera 存在 + 迁移老数据补全新字段
 function ensureHeleraState() {
   if (!state.helera) state.helera = _heleraEmptyState();
   if (!state.helera.params) state.helera.params = _heleraEmptyState().params;
@@ -3533,6 +3566,23 @@ function ensureHeleraState() {
   if (!Array.isArray(state.helera.customers))  state.helera.customers = [];
   if (!Array.isArray(state.helera.purchases))  state.helera.purchases = [];
   if (!Array.isArray(state.helera.hugoLedger)) state.helera.hugoLedger = [];
+  // 2026-06-09 多供货商升级: 给每个供货商补全 country / currency / 默认参数
+  const params = state.helera.params || {};
+  for (const s of state.helera.suppliers) {
+    if (s.country == null)              s.country            = 'UK';
+    if (s.currency == null)             s.currency           = 'GBP';
+    if (s.defaultBuyPrice == null)      s.defaultBuyPrice    = +(params.defaultBuyPrice || 1.0);
+    if (s.defaultHugoRate == null)      s.defaultHugoRate    = +(params.hugoRate || 0);
+    if (s.defaultShippingCost == null)  s.defaultShippingCost = 0;
+    if (s.defaultCustomsCost == null)   s.defaultCustomsCost  = 0;
+  }
+  // 给每个 purchase 补全 shipping / customs / hugoRate
+  for (const p of state.helera.purchases) {
+    if (p.shippingCost == null) p.shippingCost = 0;
+    if (p.customsCost == null)  p.customsCost  = 0;
+    if (p.hugoRate == null)     p.hugoRate     = 0;
+    if (p.hugoAmount == null)   p.hugoAmount   = (+(p.pieces || 0) || 0) * (+(p.hugoRate || 0) || 0);
+  }
 }
 
 function setSyncStatus(status) {
@@ -13990,9 +14040,11 @@ function heleraTotalCustomerBalance() {
   return (state.helera.customers || []).reduce((s, c) => s + heleraCustomerBalance(c), 0);
 }
 function heleraMonthStats(ym) {
+  // FIX (2026-06-09 multi-supplier): cost now includes shipping + customs
+  // (via purchase.totalCost). Hugo is purchase-time per-supplier, allocated
+  // to "pieces sold" via avg hugo per piece purchased.
   ym = ym || new Date().toISOString().slice(0, 7);
-  const params = state.helera.params || {};
-  let pieces = 0, revenue = 0, cost = 0, hugoOwed = 0;
+  let pieces = 0, revenue = 0;
   for (const c of (state.helera.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type !== 'sale' || !e.date || !e.date.startsWith(ym)) continue;
@@ -14000,26 +14052,23 @@ function heleraMonthStats(ym) {
       revenue += +(e.amount || 0) || 0;
     }
   }
-  // Approximate cost via avg cost = total purchased value / total pieces purchased
-  let bought = 0, boughtSpend = 0;
-  for (const p of (state.helera.purchases || [])) {
-    if (!p.date || !p.date.startsWith(ym)) continue;
-    bought += +(p.pieces || 0) || 0;
-    boughtSpend += +(p.totalCost || 0) || 0;
-  }
-  // For profit: assume each piece sold this month costs the same as avg buy of this month,
-  // fallback to overall avg if no buys this month
-  let avgCost = 0;
-  if (bought > 0) avgCost = boughtSpend / bought;
-  else {
-    let totBought = 0, totSpend = 0;
+  // Avg cost per piece — prefer this-month avg, fallback to all-time avg
+  const computeAvg = (filterFn) => {
+    let bought = 0, spend = 0, hugo = 0;
     for (const p of (state.helera.purchases || [])) {
-      totBought += +(p.pieces || 0) || 0; totSpend += +(p.totalCost || 0) || 0;
+      if (!filterFn(p)) continue;
+      bought += +(p.pieces || 0) || 0;
+      spend  += +(p.totalCost || 0) || 0;
+      hugo   += +(p.hugoAmount || 0) || 0;
     }
-    if (totBought > 0) avgCost = totSpend / totBought;
-  }
-  cost = pieces * avgCost;
-  hugoOwed = pieces * (+(params.hugoRate || 0) || 0);
+    return { bought, spend, hugo };
+  };
+  let agg = computeAvg(p => p.date && p.date.startsWith(ym));
+  if (agg.bought === 0) agg = computeAvg(() => true);
+  const avgCost = agg.bought > 0 ? agg.spend / agg.bought : 0;
+  const avgHugo = agg.bought > 0 ? agg.hugo  / agg.bought : 0;
+  const cost = pieces * avgCost;
+  const hugoOwed = pieces * avgHugo;
   const profit = revenue - cost - hugoOwed;
   return { pieces, revenue, cost, hugoOwed, profit };
 }
@@ -14044,14 +14093,19 @@ function heleraAllTimeProfit() {
   return revenue - cost - hugoOwed;
 }
 function heleraHugoAccrued() {
-  // From sale events × hugoRate at sale time (stored on sale row if present, else use current rate)
-  const rate = +(state.helera.params.hugoRate || 0) || 0;
+  // 2026-06-09: Hugo 现在在 PURCHASE 时累计 (per-supplier rate, 进货时自动加 accrue 行)
+  // 读 hugoLedger.accrue 行. 老数据兼容: 如果有 sale 行带 hugoRate 字段, 也计入.
   let acc = 0;
+  for (const r of (state.helera.hugoLedger || [])) {
+    if (r.type === 'accrue') acc += +(r.amount || 0) || 0;
+  }
+  // 兼容: 老数据 sale 行可能也带 hugoRate
   for (const c of (state.helera.customers || [])) {
     for (const e of (c.ledger || [])) {
       if (e.type !== 'sale') continue;
-      const r = e.hugoRate != null ? +e.hugoRate : rate;
-      acc += (+(e.pieces || 0) || 0) * r;
+      if (e.hugoRate != null && e._hugoFromSale) {
+        acc += (+(e.pieces || 0) || 0) * (+(e.hugoRate || 0) || 0);
+      }
     }
   }
   return acc;
@@ -14183,17 +14237,26 @@ function renderHeleraSupplierList() {
     return;
   }
   const cards = list.map(s => {
-    let totalPieces = 0, totalCost = 0;
+    let totalPieces = 0, totalCost = 0, totalShipping = 0, totalCustoms = 0;
     for (const p of (state.helera.purchases || [])) {
       if (p.supplierId !== s.id) continue;
       totalPieces += +(p.pieces || 0) || 0;
       totalCost += +(p.totalCost || 0) || 0;
+      totalShipping += +(p.shippingCost || 0) || 0;
+      totalCustoms += +(p.customsCost || 0) || 0;
     }
     const avgPrice = totalPieces > 0 ? totalCost / totalPieces : 0;
-    return `<div onclick="openHeleraSupplierDetail('${s.id}')" style="display:grid;grid-template-columns:1fr auto auto auto auto;gap:14px;align-items:center;padding:14px 18px;background:rgba(11,18,42,0.55);border:1px solid rgba(245,158,11,0.20);border-radius:10px;margin-bottom:10px;cursor:pointer;transition:all 0.18s;" onmouseover="this.style.borderColor='rgba(245,158,11,0.50)';this.style.background='rgba(245,158,11,0.06)'" onmouseout="this.style.borderColor='rgba(245,158,11,0.20)';this.style.background='rgba(11,18,42,0.55)'">
+    const flag = _heleraCountryFlag(s.country);
+    return `<div onclick="openHeleraSupplierDetail('${s.id}')" style="display:grid;grid-template-columns:auto 1fr auto auto auto auto;gap:14px;align-items:center;padding:14px 18px;background:rgba(11,18,42,0.55);border:1px solid rgba(245,158,11,0.20);border-radius:10px;margin-bottom:10px;cursor:pointer;transition:all 0.18s;" onmouseover="this.style.borderColor='rgba(245,158,11,0.50)';this.style.background='rgba(245,158,11,0.06)'" onmouseout="this.style.borderColor='rgba(245,158,11,0.20)';this.style.background='rgba(11,18,42,0.55)'">
+      <div style="font-size:30px;line-height:1;" title="${escapeHtml(_heleraCountryName(s.country))}">${flag}</div>
       <div>
-        <div style="font-size:14px;font-weight:800;color:var(--text);">${escapeHtml(s.name)}</div>
-        <div style="font-size:10.5px;color:var(--text-dim);margin-top:3px;">${s.contact ? escapeHtml(s.contact) + ' · ' : ''}${(state.helera.purchases || []).filter(p => p.supplierId === s.id).length} 笔进货</div>
+        <div style="font-size:14px;font-weight:800;color:var(--text);">${escapeHtml(s.name)} <span style="font-size:10px;color:var(--text-dim);font-weight:600;letter-spacing:0.5px;margin-left:6px;">${escapeHtml(_heleraCountryName(s.country))} · ${s.currency || 'GBP'}</span></div>
+        <div style="font-size:10.5px;color:var(--text-dim);margin-top:3px;">
+          默认: £${(+(s.defaultBuyPrice || 0)).toFixed(2)}/件
+          ${(+(s.defaultHugoRate || 0)) > 0 ? ' · Hugo £' + (+s.defaultHugoRate).toFixed(2) : ''}
+          ${(+(s.defaultShippingCost || 0)) > 0 ? ' · 运费 £' + (+s.defaultShippingCost).toFixed(0) + '/批' : ''}
+          ${(+(s.defaultCustomsCost || 0)) > 0 ? ' · 清关 £' + (+s.defaultCustomsCost).toFixed(0) + '/批' : ''}
+        </div>
       </div>
       <div style="text-align:right;">
         <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;">累计件数</div>
@@ -14202,9 +14265,10 @@ function renderHeleraSupplierList() {
       <div style="text-align:right;">
         <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;">累计花费</div>
         <div style="font-size:14px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;">${fmt(totalCost)}</div>
+        ${totalShipping + totalCustoms > 0 ? `<div style="font-size:9.5px;color:var(--text-dim);">含运费 ${fmt(totalShipping)} + 清关 ${fmt(totalCustoms)}</div>` : ''}
       </div>
       <div style="text-align:right;">
-        <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;">均价</div>
+        <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.2px;text-transform:uppercase;">真实均价</div>
         <div style="font-size:14px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;">£${avgPrice.toFixed(2)}</div>
       </div>
       <button class="btn ghost sm" onclick="event.stopPropagation();openHeleraSupplierEdit('${s.id}')" title="编辑">✎</button>
@@ -14218,18 +14282,27 @@ function renderHeleraPurchasesList() {
   if (!tb) return;
   const list = (state.helera.purchases || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   if (list.length === 0) {
-    tb.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-dim);">还没有进货记录</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-dim);">还没有进货记录</td></tr>`;
     return;
   }
   tb.innerHTML = list.map(p => {
     const sup = (state.helera.suppliers || []).find(s => s.id === p.supplierId);
+    const flag = sup ? _heleraCountryFlag(sup.country) : '';
+    const pieces = +(p.pieces || 0) || 0;
+    const truePerPiece = pieces > 0 ? (+(p.totalCost || 0)) / pieces : 0;
+    const ship = +(p.shippingCost || 0) || 0;
+    const cust = +(p.customsCost || 0) || 0;
+    const hugoAmt = +(p.hugoAmount || 0) || 0;
     return `<tr>
       <td>${p.date}</td>
-      <td><b>${sup ? escapeHtml(sup.name) : '<i style="color:var(--rose);">(供货商已删除)</i>'}</b></td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${(+(p.pieces || 0) || 0).toLocaleString('en-GB')}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">£${(+(p.unitPrice || 0) || 0).toFixed(2)}</td>
+      <td><b>${flag} ${sup ? escapeHtml(sup.name) : '<i style="color:var(--rose);">(已删除)</i>'}</b>${p.notes ? `<div style="font-size:10.5px;color:var(--text-dim);">${escapeHtml(p.notes)}</div>` : ''}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pieces.toLocaleString('en-GB')}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">£${(+(p.unitPrice || 0)).toFixed(2)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:${ship > 0 ? 'var(--text)' : 'var(--text-dim)'};">${ship > 0 ? fmt(ship) : '—'}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:${cust > 0 ? 'var(--text)' : 'var(--text-dim)'};">${cust > 0 ? fmt(cust) : '—'}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;color:${hugoAmt > 0 ? 'var(--amber)' : 'var(--text-dim)'};">${hugoAmt > 0 ? fmt(hugoAmt) : '—'}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--amber);">${fmt(p.totalCost)}</td>
-      <td style="color:var(--text-dim);font-size:11px;">${escapeHtml(p.notes || '')}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:var(--green);">£${truePerPiece.toFixed(2)}</td>
       <td style="text-align:right;"><button class="btn sm danger ghost" onclick="delHeleraPurchase('${p.id}')" title="删除">×</button></td>
     </tr>`;
   }).join('');
@@ -14244,23 +14317,24 @@ function renderHeleraHugoTab() {
   document.getElementById('helera-hugo-paid').textContent = fmt(paid);
   document.getElementById('helera-hugo-balance').textContent = fmt(acc - paid);
 
-  // Combine accruals (from sales) + settlements
-  const rate = +(state.helera.params.hugoRate || 0) || 0;
+  // Hugo accruals come from hugoLedger (purchase time, per-supplier rate)
+  // Settlements also in hugoLedger
   const rows = [];
-  for (const c of (state.helera.customers || [])) {
-    for (const e of (c.ledger || [])) {
-      if (e.type !== 'sale') continue;
-      const r = e.hugoRate != null ? +e.hugoRate : rate;
+  for (const r of (state.helera.hugoLedger || [])) {
+    if (r.type === 'accrue') {
       rows.push({
-        date: e.date, kind: 'accrue', pieces: +(e.pieces || 0) || 0, rate: r,
-        amount: (+(e.pieces || 0) || 0) * r,
-        notes: `销售给 ${c.name}${e.notes ? ' · ' + e.notes : ''}`
+        date: r.date, kind: 'accrue',
+        pieces: +(r.pieces || 0) || 0, rate: +(r.rate || 0) || 0,
+        amount: +(r.amount || 0) || 0,
+        notes: r.notes || '进货累计'
       });
-    }
-  }
-  for (const s of (state.helera.hugoLedger || [])) {
-    if (s.type === 'settle') {
-      rows.push({ date: s.date, kind: 'settle', pieces: '—', rate: '—', amount: -(+(s.amount || 0) || 0), notes: s.notes || '结算 Hugo' });
+    } else if (r.type === 'settle') {
+      rows.push({
+        date: r.date, kind: 'settle',
+        pieces: '—', rate: '—',
+        amount: -(+(r.amount || 0) || 0),
+        notes: r.notes || '结算 Hugo'
+      });
     }
   }
   rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -14281,14 +14355,35 @@ function renderHeleraHugoTab() {
 // ============ CRUD: Suppliers ============
 function openHeleraSupplierEdit(id) {
   const isEdit = !!id;
-  const s = isEdit ? (state.helera.suppliers || []).find(x => x.id === id) : { name: '', contact: '', phone: '', email: '', address: '', notes: '' };
+  const params = state.helera.params || {};
+  const s = isEdit ? (state.helera.suppliers || []).find(x => x.id === id) : {
+    name: '', contact: '', phone: '', email: '', address: '', notes: '',
+    country: 'UK', currency: 'GBP',
+    defaultBuyPrice: +(params.defaultBuyPrice || 1.0),
+    defaultHugoRate: +(params.hugoRate || 0),
+    defaultShippingCost: 0,
+    defaultCustomsCost: 0
+  };
   if (isEdit && !s) return;
+  const countryOpts = HELERA_COUNTRIES.map(c =>
+    `<option value="${c.code}" ${(s.country || 'UK') === c.code ? 'selected' : ''}>${c.flag} ${c.name} (${c.cur})</option>`
+  ).join('');
+  const currencyOpts = ['GBP', 'EUR', 'USD', 'CNY'].map(c =>
+    `<option value="${c}" ${(s.currency || 'GBP') === c ? 'selected' : ''}>${c}</option>`
+  ).join('');
   _showHeleraModal({
     title: isEdit ? '编辑供货商' : '新供货商',
     icon: '🏭',
     color: '#f59e0b',
+    intro: '<b style="color:#fb923c;">提示</b>: 进货录入时, 单价 / 运费 / 清关费 / Hugo 提成会自动填入下面的默认值, 但你每次可以单独覆盖。',
     fields: [
       { id: 'h-sup-name', label: '名称 *', value: s.name, required: true },
+      { id: 'h-sup-country', label: '国家', html: `<select id="h-sup-country" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid #f59e0b40;border-radius:8px;color:var(--text);font-size:13px;">${countryOpts}</select>` },
+      { id: 'h-sup-currency', label: '报价币种', html: `<select id="h-sup-currency" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid #f59e0b40;border-radius:8px;color:var(--text);font-size:13px;">${currencyOpts}</select><div style="font-size:10.5px;color:var(--text-dim);margin-top:4px;">⚠ 所有金额最终以 <b>£ (GBP)</b> 存储 — 你填的时候请已换算成 £</div>` },
+      { id: 'h-sup-price', label: '默认进价 £/件 *', value: (+(s.defaultBuyPrice || 0)).toFixed(2), type: 'number', step: '0.01', required: true },
+      { id: 'h-sup-hugo', label: 'Hugo 提成 £/件 (这个供货商专属)', value: (+(s.defaultHugoRate || 0)).toFixed(2), type: 'number', step: '0.01' },
+      { id: 'h-sup-shipping', label: '默认运费 £/批 (一次进货的总运费)', value: (+(s.defaultShippingCost || 0)).toFixed(2), type: 'number', step: '0.01' },
+      { id: 'h-sup-customs', label: '默认清关费 £/批', value: (+(s.defaultCustomsCost || 0)).toFixed(2), type: 'number', step: '0.01' },
       { id: 'h-sup-contact', label: '联系人', value: s.contact || '' },
       { id: 'h-sup-phone', label: '电话', value: s.phone || '' },
       { id: 'h-sup-email', label: '邮箱', value: s.email || '' },
@@ -14298,8 +14393,16 @@ function openHeleraSupplierEdit(id) {
     onSave: () => {
       const name = document.getElementById('h-sup-name').value.trim();
       if (!name) { alert('请填写名称'); return; }
+      const price = parseFloat(document.getElementById('h-sup-price').value);
+      if (!(price >= 0)) { alert('默认进价必须 ≥ 0'); return; }
       const data = {
         name,
+        country: document.getElementById('h-sup-country').value || 'UK',
+        currency: document.getElementById('h-sup-currency').value || 'GBP',
+        defaultBuyPrice: price,
+        defaultHugoRate: parseFloat(document.getElementById('h-sup-hugo').value) || 0,
+        defaultShippingCost: parseFloat(document.getElementById('h-sup-shipping').value) || 0,
+        defaultCustomsCost: parseFloat(document.getElementById('h-sup-customs').value) || 0,
         contact: document.getElementById('h-sup-contact').value.trim(),
         phone: document.getElementById('h-sup-phone').value.trim(),
         email: document.getElementById('h-sup-email').value.trim(),
@@ -14307,7 +14410,7 @@ function openHeleraSupplierEdit(id) {
         notes: document.getElementById('h-sup-notes').value.trim()
       };
       if (isEdit) Object.assign(s, data);
-      else state.helera.suppliers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ledger: [], ...data });
+      else state.helera.suppliers.push({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), ...data });
       save(); renderHelera();
       _closeHeleraModal();
     },
@@ -14460,16 +14563,24 @@ function openHeleraCustomerDetail(id) {
 function openHeleraPurchase(presetSupplierId) {
   const sups = (state.helera.suppliers || []);
   if (sups.length === 0) { alert('先建一个供货商'); openHeleraSupplierEdit(); return; }
-  const supplierOpts = sups.map(s => `<option value="${s.id}" ${presetSupplierId === s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+  const initSupId = presetSupplierId || sups[0].id;
+  const initSup = sups.find(x => x.id === initSupId) || sups[0];
+  const supplierOpts = sups.map(s =>
+    `<option value="${s.id}" ${initSupId === s.id ? 'selected' : ''}>${_heleraCountryFlag(s.country)} ${escapeHtml(s.name)} (£${(+(s.defaultBuyPrice || 0)).toFixed(2)}/件)</option>`
+  ).join('');
   _showHeleraModal({
     title: '+ 进货录入',
     icon: '📦',
     color: '#f59e0b',
+    intro: '选供货商 → 单价 / 运费 / 清关费 / Hugo 自动填默认值, 可单独覆盖',
     fields: [
       { id: 'h-purch-date', label: '日期 *', value: new Date().toISOString().slice(0, 10), type: 'date', required: true },
-      { id: 'h-purch-supplier', label: '供货商 *', html: `<select id="h-purch-supplier" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(245,158,11,0.30);border-radius:8px;color:var(--text);font-size:13px;">${supplierOpts}</select>` },
+      { id: 'h-purch-supplier', label: '供货商 *', html: `<select id="h-purch-supplier" onchange="_heleraOnPurchaseSupplierChange()" style="width:100%;padding:9px 10px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(245,158,11,0.30);border-radius:8px;color:var(--text);font-size:13px;">${supplierOpts}</select>` },
       { id: 'h-purch-pieces', label: '件数 *', value: '', type: 'number', required: true },
-      { id: 'h-purch-unit', label: '单价 £/件 *', value: state.helera.params.defaultBuyPrice || 1.0, type: 'number', step: '0.01', required: true },
+      { id: 'h-purch-unit', label: '单价 £/件 *', value: (+(initSup.defaultBuyPrice || 0)).toFixed(2), type: 'number', step: '0.01', required: true },
+      { id: 'h-purch-shipping', label: '运费 £ (本批)', value: (+(initSup.defaultShippingCost || 0)).toFixed(2), type: 'number', step: '0.01' },
+      { id: 'h-purch-customs', label: '清关费 £ (本批)', value: (+(initSup.defaultCustomsCost || 0)).toFixed(2), type: 'number', step: '0.01' },
+      { id: 'h-purch-hugo', label: 'Hugo 提成 £/件 (这个供货商)', value: (+(initSup.defaultHugoRate || 0)).toFixed(2), type: 'number', step: '0.01' },
       { id: 'h-purch-notes', label: '备注', value: '', textarea: true }
     ],
     onSave: () => {
@@ -14477,18 +14588,51 @@ function openHeleraPurchase(presetSupplierId) {
       const supplierId = document.getElementById('h-purch-supplier').value;
       const pieces = parseInt(document.getElementById('h-purch-pieces').value, 10);
       const unitPrice = parseFloat(document.getElementById('h-purch-unit').value);
-      if (!date || !supplierId || !(pieces > 0) || !(unitPrice > 0)) { alert('请填完整'); return; }
+      const shippingCost = parseFloat(document.getElementById('h-purch-shipping').value) || 0;
+      const customsCost  = parseFloat(document.getElementById('h-purch-customs').value)  || 0;
+      const hugoRate     = parseFloat(document.getElementById('h-purch-hugo').value)     || 0;
+      if (!date || !supplierId || !(pieces > 0) || !(unitPrice >= 0)) { alert('请填完整'); return; }
+      const productCost = pieces * unitPrice;
+      const totalCost = Math.round((productCost + shippingCost + customsCost) * 100) / 100;
+      const hugoAmount = Math.round(pieces * hugoRate * 100) / 100;
+      const purchaseId = crypto.randomUUID();
       state.helera.purchases.push({
-        id: crypto.randomUUID(),
+        id: purchaseId,
         date, supplierId, pieces, unitPrice,
-        totalCost: Math.round(pieces * unitPrice * 100) / 100,
+        shippingCost, customsCost,
+        hugoRate, hugoAmount,
+        totalCost,
         notes: document.getElementById('h-purch-notes').value.trim(),
         createdAt: new Date().toISOString()
       });
+      // Auto-accrue Hugo at purchase time (per-supplier rate)
+      if (hugoAmount > 0) {
+        const sup = (state.helera.suppliers || []).find(x => x.id === supplierId);
+        state.helera.hugoLedger.push({
+          id: crypto.randomUUID(),
+          date, type: 'accrue',
+          supplierId, pieces, rate: hugoRate, amount: hugoAmount,
+          notes: '进货自动累计 · ' + (sup ? sup.name : '?'),
+          linkedPurchaseId: purchaseId,
+          createdAt: new Date().toISOString()
+        });
+      }
       save(); renderHelera(); _closeHeleraModal();
-      flash('✓ 进货已录入 · 库存 +' + pieces + ' 件');
+      const truePerPiece = pieces > 0 ? totalCost / pieces : 0;
+      flash(`✓ 进货 +${pieces} 件 · 总成本 ${fmt(totalCost)} (含运 ${fmt(shippingCost)} + 关 ${fmt(customsCost)}) · 真实均价 £${truePerPiece.toFixed(2)}/件${hugoAmount > 0 ? ' · Hugo +' + fmt(hugoAmount) : ''}`);
     }
   });
+}
+
+// 切换供货商时, 自动填充该供货商的默认参数
+function _heleraOnPurchaseSupplierChange() {
+  const id = document.getElementById('h-purch-supplier').value;
+  const s = (state.helera.suppliers || []).find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('h-purch-unit').value     = (+(s.defaultBuyPrice || 0)).toFixed(2);
+  document.getElementById('h-purch-shipping').value = (+(s.defaultShippingCost || 0)).toFixed(2);
+  document.getElementById('h-purch-customs').value  = (+(s.defaultCustomsCost || 0)).toFixed(2);
+  document.getElementById('h-purch-hugo').value     = (+(s.defaultHugoRate || 0)).toFixed(2);
 }
 
 function openHeleraSale(presetCustomerId) {
@@ -14523,7 +14667,7 @@ function openHeleraSale(presetCustomerId) {
         id: crypto.randomUUID(),
         date, type: 'sale',
         pieces, unitPrice, amount,
-        hugoRate: +(state.helera.params.hugoRate || 0) || 0,
+        // Hugo no longer accrued at sale (now per-supplier at PURCHASE time)
         notes: document.getElementById('h-sale-notes').value.trim(),
         createdAt: new Date().toISOString()
       });
@@ -14617,10 +14761,13 @@ function openHeleraSettings() {
 function delHeleraPurchase(id) {
   const p = (state.helera.purchases || []).find(x => x.id === id);
   if (!p) return;
-  if (!confirm(`删除 ${p.date} 的进货 ${p.pieces} 件 (${fmt(p.totalCost)})?\n\n库存会回退 ${p.pieces} 件。`)) return;
+  const hugoAmt = +(p.hugoAmount || 0) || 0;
+  if (!confirm(`删除 ${p.date} 的进货 ${p.pieces} 件 (${fmt(p.totalCost)})?\n\n库存回退 ${p.pieces} 件${hugoAmt > 0 ? ' · Hugo 应付减少 ' + fmt(hugoAmt) : ''}。`)) return;
   state.helera.purchases = state.helera.purchases.filter(x => x.id !== id);
+  // 同步删除连带的 Hugo accrue 行
+  state.helera.hugoLedger = (state.helera.hugoLedger || []).filter(r => r.linkedPurchaseId !== id);
   save(); renderHelera();
-  flash('✓ 进货已删除');
+  flash('✓ 进货已删除' + (hugoAmt > 0 ? ' · Hugo 累计 -' + fmt(hugoAmt) : ''));
 }
 function delHeleraLedger(customerId, ledgerId) {
   const c = (state.helera.customers || []).find(x => x.id === customerId);
