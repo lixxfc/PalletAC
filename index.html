@@ -3492,7 +3492,13 @@ function buildDrilldownData(key) {
 
   return null;
 }
-function fmt0(v) { return Math.round(v).toLocaleString('en-GB'); }
+function fmt0(v) {
+  // P2 batch 6 fix (2026-06-09): NaN/undefined defense — return '0' instead
+  // of 'NaN' which used to leak into drilldown / KPI cards.
+  const n = +v;
+  if (!isFinite(n)) return '0';
+  return Math.round(n).toLocaleString('en-GB');
+}
 
 function drilldownCopy() {
   if (!_drilldownData) return;

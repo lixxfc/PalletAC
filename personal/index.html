@@ -3509,6 +3509,9 @@ async function saveUserDataNow() {
   } catch (err) {
     console.error('Save failed:', err);
     setSyncStatus('error');
+    // P2 batch 6 fix (2026-06-09): rethrow so callers' catch() actually triggers
+    // (previously silently swallowed → callers' fallback branches were dead code).
+    throw err;
   }
 }
 
@@ -6869,15 +6872,26 @@ async function deleteCustomer() {
   const depositTotal = deposits.reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
   const refundTotal = refunds.reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
   const netInflow = depositTotal - refundTotal;
+  // P2 batch 6 fix (2026-06-09): mirror customerDepositsSinceSwitch() — only
+  // post-switch deposits/refunds actually affect the合伙账 cash pool. The dialog
+  // previously over-stated the pool decrease using full-history total.
+  const sw = (typeof newModeStartDate === 'function') ? newModeStartDate() : null;
+  let poolDepositPost = 0, poolRefundPost = 0;
+  for (const e of deposits) { if (!sw || (e.date && e.date >= sw)) poolDepositPost += (+(e.amount || 0) || 0); }
+  for (const e of refunds)  { if (!sw || (e.date && e.date >= sw)) poolRefundPost  += (+(e.amount || 0) || 0); }
+  const poolNetInflow = poolDepositPost - poolRefundPost;
   const invs = (state.invoices || []).filter(i => i.customerId === currentCustomer && i.status !== 'void');
   const recs = (state.receipts || []).filter(r => r.customerId === currentCustomer && r.status !== 'cancelled');
 
+  const swLine = sw
+    ? `· 退回 ${deposits.length} 条 deposit (合伙账资金池 ${poolNetInflow >= 0 ? '减少' : '增加'} ${fmt(Math.abs(poolNetInflow))} · 仅切换日 ${sw} 之后部分影响资金池)\n`
+    : `· 退回 ${deposits.length} 条 deposit (合伙账资金池 ${netInflow >= 0 ? '减少' : '增加'} ${fmt(Math.abs(netInflow))})\n`;
   const msg =
     `删除客户「${c.name}」?\n\n这将:\n` +
     `· 撤销 ${pickups.length} 条取货流水 (合伙账 SSS / Hugo 自动重算)\n` +
     `· 作废 ${invs.length} 张未作废 INV\n` +
     `· 作废 ${recs.length} 张未作废 REC\n` +
-    `· 退回 ${deposits.length} 条 deposit (合伙账资金池 ${netInflow >= 0 ? '减少' : '增加'} ${fmt(Math.abs(netInflow))})\n` +
+    swLine +
     `· 清除 dailySupply 中所有相关卡车\n\n` +
     `此操作不可撤销。`;
   if (!confirm(msg)) return;
@@ -7505,6 +7519,10 @@ function _smartAlertsCompute() {
   let _emmaAccrued = 0;
   for (const c of (state.customers || [])) {
     for (const e of (c.ledger || [])) {
+      // P2 batch 6 fix (2026-06-09): skip soft-deleted entries (future-proof
+      // even though personal-app delLedger currently hard-splices — keeps the
+      // accrual correct if/when we switch to soft delete model).
+      if (e.deleted) continue;
       if (e.type === 'pickup' && e._emmaTransferDay) {
         const ttN = +(e._emmaTransferTTPallets || 0);
         if (ttN > 0) _emmaAccrued += ttN * EMMA_TRANSFER_RATE;
@@ -8604,7 +8622,28 @@ async function saveLedgerEdit() {
   // exist (migration removes them). The pickup row's _emmaTransferTTPallets
   // marker (updated above) is the only source of truth for the weekly bill.
 
-  save(); renderAll();
+  // P2 batch 6 fix (2026-06-09): for non-pickup edits (deposit / refund / etc.),
+  // we never entered the partnership sync block above, so there was no rollback
+  // path if the immediate persist failed. Use saveUserDataNow for symmetry —
+  // on failure, restore the pre-edit snapshot.
+  if (!isPickup) {
+    try {
+      await saveUserDataNow();
+    } catch (err) {
+      console.error('[saveLedgerEdit deposit/refund] save failed:', err);
+      e.date   = oldSnap.date;
+      e.amount = oldSnap.amount;
+      e.note   = oldSnap.note;
+      if (linkedInvForRollback && invSnap) Object.assign(linkedInvForRollback, invSnap);
+      if (linkedRecForRollback && recSnap) Object.assign(linkedRecForRollback, recSnap);
+      alert('保存失败, 本地修改已撤回:' + (err.message || err));
+      renderAll();
+      return;
+    }
+  } else {
+    save();
+  }
+  renderAll();
   closeLedgerEdit();
   flash('修改已保存' + ((linkedInv || linkedRec) ? ' · 关联单据已同步' : '') + partnershipSyncMsg + supplyTruckMsg);
 }
