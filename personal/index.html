@@ -6372,6 +6372,10 @@ function _mcChurnRisks() {
     const days = Math.floor((new Date(today + 'T00:00:00') - new Date(lastDate + 'T00:00:00')) / 86400000);
     if (days < 15) continue;
     const bal = customerBalance(c);
+    // FIX (agent audit P1, 2026-06-09): "long quiet + zero balance" likely means
+    // they paid out and left — not actually a churn risk. Only flag if balance ≠ 0
+    // OR they've been gone >60 days (then it's a "really gone" alert regardless).
+    if (Math.abs(bal) < 1 && days < 60) continue;
     arr.push({ id: c.id, name: c.name, daysQuiet: days, balance: bal, lastDate });
   }
   arr.sort((a, b) => b.daysQuiet - a.daysQuiet);
@@ -6385,7 +6389,10 @@ function _mcCashPoolForecast() {
   const pc = (typeof _partnershipCache !== 'undefined' && _partnershipCache) || null;
   if (!pc || !Array.isArray(pc.events)) return null;
   const params = pc.params || {};
-  const sw = params.newModeStart || (params.newModeStartDate);
+  // FIX (agent audit P0, 2026-06-09): partnership stores it as `partnershipNewModeDate`.
+  // Previously was reading wrong field names → sw=undefined → no filtering →
+  // included pre-switch events, breaking the pool number completely.
+  const sw = (typeof _seNewModeStartDate === 'function') ? _seNewModeStartDate() : (params.partnershipNewModeDate || null);
   // Current pool balance (mirror cashPoolBalance — out-emma-transfer EXCLUDED)
   const cashOpening = +(params.cashPoolOpeningBalance) || 0;
   let inEmma = 0, inCustManual = 0, outSup = 0, outHugo = 0;
@@ -6611,7 +6618,7 @@ function renderMissionControl() {
     churnEl.innerHTML = top.map(x => {
       const sev = x.daysQuiet > 30 ? '🚨' : '⚠';
       const sevColor = x.daysQuiet > 30 ? 'var(--rose)' : 'var(--amber)';
-      return `<div style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background='rgba(251,191,36,0.10)'" onmouseout="this.style.background=''" onclick="(function(){currentCustomer='${x.id}';renderAll();})()">
+      return `<div style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background='rgba(251,191,36,0.10)'" onmouseout="this.style.background=''" onclick="(function(){currentCustomer='${x.id}';const n=document.querySelector('[data-view=customers]');if(n&&n.click)n.click();else renderAll();})()">
         <span style="font-size:13px;">${sev}</span>
         <span style="flex:1;font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.name)}</span>
         <span style="font-size:11px;color:${sevColor};font-weight:700;">${x.daysQuiet} 天</span>
@@ -6664,10 +6671,15 @@ function renderMissionControl() {
       });
       const summary = document.getElementById('mc-forecast-summary');
       const endVal = forecast.values[forecast.values.length - 1];
-      if (zeroDay > 0) {
+      // FIX (agent audit P1, 2026-06-09): when pool is ALREADY negative, don't
+      // show '节奏健康' or negative-days messages. Prioritise that case first.
+      if (forecast.currentPool < 0) {
+        summary.innerHTML = `🚨 资金池已透支 <b style="color:var(--rose);">${fmt(Math.abs(forecast.currentPool))}</b> · 30 天后预计 ${fmt(endVal)} (${endVal >= forecast.currentPool ? '↑ 在恢复' : '↓ 继续恶化'})`;
+      } else if (zeroDay > 0) {
         summary.innerHTML = `⚠ 按当前节奏 <b style="color:var(--rose);">${zeroDay} 天后</b> 资金池将归零 (${forecast.days[zeroDay]}) · 30 天后约 ${fmt(endVal)}`;
-      } else if (endVal < forecast.currentPool) {
-        summary.innerHTML = `▼ 30 天后预计 ${fmt(endVal)} · 还能撑 ${Math.floor((forecast.currentPool || 0) / Math.max(1, Math.abs(forecast.dailyNet)))} 天`;
+      } else if (endVal < forecast.currentPool && forecast.dailyNet < 0) {
+        const daysLeft = Math.floor(forecast.currentPool / Math.abs(forecast.dailyNet));
+        summary.innerHTML = `▼ 30 天后预计 ${fmt(endVal)} · 按当前节奏还能撑 ${daysLeft} 天`;
       } else {
         summary.innerHTML = `▲ 30 天后预计 ${fmt(endVal)} · 节奏健康`;
       }
@@ -13621,7 +13633,7 @@ function switchView(name) {
   if (name === 'customers') closeCustomerDetail();
   // When entering supply view, render its charts (only here, to avoid flicker)
   if (name === 'supply' && typeof renderSupply === 'function') renderSupply();
-  if (name === 'dashboard' && typeof renderCharts === 'function') { renderCharts(); if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory(); if (typeof renderSmartAlerts === 'function') renderSmartAlerts(); }
+  if (name === 'dashboard' && typeof renderCharts === 'function') { renderCharts(); if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory(); if (typeof renderSmartAlerts === 'function') renderSmartAlerts(); if (typeof renderMissionControl === 'function') renderMissionControl(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
