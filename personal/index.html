@@ -1779,6 +1779,90 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
       </div>
 
+      <!-- 🎯 MISSION CONTROL — single-glance daily ops card (2026-06-09) -->
+      <!-- Pure additive view, reads existing state, modifies nothing -->
+      <div id="mission-control-card" class="card mb-4" style="background:linear-gradient(135deg,rgba(11,18,42,0.85) 0%,rgba(20,30,55,0.85) 100%);border:1px solid rgba(139,92,246,0.32);box-shadow:0 8px 40px rgba(139,92,246,0.12);padding:0;overflow:hidden;">
+        <!-- TOP STRIP — date + trial countdown -->
+        <div style="display:flex;align-items:center;gap:16px;padding:14px 22px;background:linear-gradient(90deg,rgba(139,92,246,0.18),rgba(0,229,255,0.06));border-bottom:1px solid rgba(139,150,255,0.18);flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:22px;">🎯</span>
+            <div>
+              <div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:0.4px;">Mission Control</div>
+              <div style="font-size:10.5px;color:var(--text-dim);letter-spacing:0.3px;" id="mc-today-line">—</div>
+            </div>
+          </div>
+          <div id="mc-trial-strip" style="margin-left:auto;display:none;align-items:center;gap:10px;padding:6px 14px;background:linear-gradient(135deg,rgba(244,114,182,0.18),rgba(244,114,182,0.06));border:1px solid rgba(244,114,182,0.40);border-radius:999px;">
+            <span style="font-size:14px;">🤝</span>
+            <span id="mc-trial-text" style="font-size:11.5px;font-weight:700;color:#f9a8d4;letter-spacing:0.3px;">Emma 转售试行</span>
+          </div>
+        </div>
+
+        <!-- 3 BIG NUMBERS -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:rgba(139,150,255,0.10);">
+          <div style="padding:18px 22px;background:rgba(11,18,42,0.50);">
+            <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.5px;font-weight:700;text-transform:uppercase;">💰 资金池</div>
+            <div style="font-size:30px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin-top:4px;" id="mc-pool-value">£0</div>
+            <div style="font-size:11px;margin-top:3px;" id="mc-pool-sub">—</div>
+          </div>
+          <div style="padding:18px 22px;background:rgba(11,18,42,0.50);">
+            <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.5px;font-weight:700;text-transform:uppercase;">📈 本周净利</div>
+            <div style="font-size:30px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin-top:4px;color:var(--cyan);" id="mc-week-value">£0</div>
+            <div style="font-size:11px;margin-top:3px;" id="mc-week-sub">—</div>
+          </div>
+          <div style="padding:18px 22px;background:rgba(11,18,42,0.50);">
+            <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.5px;font-weight:700;text-transform:uppercase;">🤝 待付 Emma</div>
+            <div style="font-size:30px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin-top:4px;color:var(--pink);" id="mc-emma-owed">£0</div>
+            <div style="font-size:11px;margin-top:3px;" id="mc-emma-sub">—</div>
+          </div>
+        </div>
+
+        <!-- TWO-COLUMN: ranking + churn -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1px;background:rgba(139,150,255,0.10);border-top:1px solid rgba(139,150,255,0.10);">
+          <div style="padding:18px 22px;background:rgba(11,18,42,0.50);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+              <span style="font-size:14px;">🏆</span>
+              <span style="font-size:12px;font-weight:700;color:var(--text);letter-spacing:0.5px;">客户价值 · 本月</span>
+              <span style="font-size:10px;color:var(--text-dim);margin-left:auto;" id="mc-rank-meta">—</span>
+            </div>
+            <div id="mc-customer-rank" style="display:flex;flex-direction:column;gap:7px;">
+              <div style="font-size:11px;color:var(--text-dim);">尚无本月数据</div>
+            </div>
+          </div>
+          <div style="padding:18px 22px;background:rgba(11,18,42,0.50);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+              <span style="font-size:14px;">⚠</span>
+              <span style="font-size:12px;font-weight:700;color:var(--amber);letter-spacing:0.5px;">流失预警 · 15+ 天没取</span>
+              <span style="font-size:10px;color:var(--text-dim);margin-left:auto;" id="mc-churn-meta">—</span>
+            </div>
+            <div id="mc-churn-list" style="display:flex;flex-direction:column;gap:7px;">
+              <div style="font-size:11px;color:var(--text-dim);">无活跃客户超过 15 天没取货 ✓</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CASH POOL FORECAST -->
+        <div style="padding:18px 22px;background:rgba(11,18,42,0.50);border-top:1px solid rgba(139,150,255,0.10);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <span style="font-size:14px;">📈</span>
+            <span style="font-size:12px;font-weight:700;color:var(--text);letter-spacing:0.5px;">资金池 30 天预测</span>
+            <span style="font-size:10px;color:var(--text-dim);margin-left:auto;" id="mc-forecast-meta">基于过去 4 周节奏</span>
+          </div>
+          <canvas id="mc-forecast-chart" style="max-height:140px;width:100%;"></canvas>
+          <div id="mc-forecast-summary" style="margin-top:8px;font-size:11.5px;color:var(--text-dim);line-height:1.6;">—</div>
+        </div>
+
+        <!-- EMMA TRIAL PNL — only shows during trial -->
+        <div id="mc-trial-pnl" style="display:none;padding:18px 22px;background:linear-gradient(135deg,rgba(244,114,182,0.06),rgba(139,92,246,0.06));border-top:1px solid rgba(244,114,182,0.18);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="font-size:14px;">🤝</span>
+            <span style="font-size:12px;font-weight:700;color:#f9a8d4;letter-spacing:0.5px;">Emma 试行实时盈亏</span>
+            <span style="font-size:10px;color:var(--text-dim);margin-left:auto;" id="mc-trial-day">—</span>
+          </div>
+          <div id="mc-trial-breakdown" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;"></div>
+          <div id="mc-trial-decision" style="margin-top:12px;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.6;"></div>
+        </div>
+      </div>
+
       <!-- 📦 SSS Supply Overview — yellow banner (all-time, live) -->
       <div class="card mb-4" id="supply-overview-card" style="background:linear-gradient(135deg,rgba(251,191,36,0.10) 0%,rgba(251,191,36,0.04) 60%,rgba(244,114,182,0.04) 100%);border:1px solid rgba(251,191,36,0.32);box-shadow:0 4px 24px rgba(251,191,36,0.08);">
         <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
@@ -6120,6 +6204,416 @@ function drilldownExportCsv() {
   a.download = (_drilldownData.title || 'data') + '-' + new Date().toISOString().slice(0,10) + '.csv';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 100);
+}
+
+// ============================================================
+// MISSION CONTROL — analytics + render (additive, 2026-06-09)
+// Pure read-only computations from existing state. Does NOT modify
+// any data, formulas, or business logic. Charts use Chart.js (already
+// loaded for other charts on dashboard).
+// ============================================================
+
+// 1) Last-week totals (calendar week before this one) — for week-over-week %
+function _mcLastWeekTotals() {
+  const thisWk = thisWeekTotals();
+  const monThis = thisWk.week;  // Monday YYYY-MM-DD
+  const d = new Date(monThis + 'T12:00:00');
+  d.setDate(d.getDate() - 7);
+  const monLast = d.toISOString().slice(0, 10);
+  const sunLast = (() => { const e = new Date(d); e.setDate(e.getDate() + 6); return e.toISOString().slice(0, 10); })();
+  let pallets = 0, profit = 0, customers = new Set();
+  for (const r of allPickups()) {
+    if (!r.date || r.date < monLast || r.date > sunLast) continue;
+    const m = pickupMetrics(r);
+    pallets += r.pallets; profit += m.profit;
+    if (r.customerId) customers.add(r.customerId);
+  }
+  return { week: monLast, pallets, profit, customerCount: customers.size };
+}
+
+// 2) Per-customer net profit for the current calendar month (ranking)
+function _mcCustomerMonthRanking() {
+  const ym = new Date().toISOString().slice(0, 7);
+  const arr = [];
+  for (const c of (state.customers || [])) {
+    let pallets = 0, profit = 0, lastDate = null;
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'pickup') continue;
+      if (!e.date || !e.date.startsWith(ym)) continue;
+      const m = pickupMetrics({ ...e, customerId: c.id });
+      pallets += (e.pallets || 0); profit += m.profit;
+      if (!lastDate || e.date > lastDate) lastDate = e.date;
+    }
+    if (pallets > 0) arr.push({ id: c.id, name: c.name, pallets, profit, lastDate });
+  }
+  // last month comparison for trend arrows
+  const lmDate = new Date(); lmDate.setMonth(lmDate.getMonth() - 1);
+  const lmYm = lmDate.toISOString().slice(0, 7);
+  const lmMap = {};
+  for (const c of (state.customers || [])) {
+    let profit = 0;
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'pickup' || !e.date || !e.date.startsWith(lmYm)) continue;
+      const m = pickupMetrics({ ...e, customerId: c.id });
+      profit += m.profit;
+    }
+    lmMap[c.id] = profit;
+  }
+  for (const x of arr) {
+    const last = lmMap[x.id] || 0;
+    x.deltaPct = last > 0 ? ((x.profit - last) / last * 100) : null;
+  }
+  arr.sort((a, b) => b.profit - a.profit);
+  return arr;
+}
+
+// 3) Customers at churn risk — last pickup > 15 days ago + non-zero balance
+function _mcChurnRisks() {
+  const today = new Date().toISOString().slice(0, 10);
+  const arr = [];
+  for (const c of (state.customers || [])) {
+    let lastDate = null, hasAny = false;
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'pickup') continue;
+      hasAny = true;
+      if (!lastDate || (e.date && e.date > lastDate)) lastDate = e.date;
+    }
+    if (!hasAny || !lastDate) continue;
+    const days = Math.floor((new Date(today + 'T00:00:00') - new Date(lastDate + 'T00:00:00')) / 86400000);
+    if (days < 15) continue;
+    const bal = customerBalance(c);
+    arr.push({ id: c.id, name: c.name, daysQuiet: days, balance: bal, lastDate });
+  }
+  arr.sort((a, b) => b.daysQuiet - a.daysQuiet);
+  return arr;
+}
+
+// 4) Cash pool 30-day forecast using last-4-weeks burn rate.
+//    Returns { days: [...], values: [...] } — 30 daily projected balances.
+//    Uses the partnership cache when available (cashPoolBalance is partnership-side).
+function _mcCashPoolForecast() {
+  const pc = (typeof _partnershipCache !== 'undefined' && _partnershipCache) || null;
+  if (!pc || !Array.isArray(pc.events)) return null;
+  const params = pc.params || {};
+  const sw = params.newModeStart || (params.newModeStartDate);
+  // Current pool balance (mirror cashPoolBalance — out-emma-transfer EXCLUDED)
+  const cashOpening = +(params.cashPoolOpeningBalance) || 0;
+  let inEmma = 0, inCustManual = 0, outSup = 0, outHugo = 0;
+  for (const e of pc.events) {
+    if (e.deleted || !e.date) continue;
+    if (sw && e.date < sw) continue;
+    const amt = +(e.amount || 0) || 0;
+    if (e.type === 'in-emma') inEmma += amt;
+    else if (e.type === 'in-customer') inCustManual += amt;
+    else if (e.type === 'out-supplier') outSup += amt;
+    else if (e.type === 'out-hugo')     outHugo += amt;
+  }
+  let custNet = 0;
+  if (sw) {
+    for (const c of (state.customers || [])) {
+      for (const e of (c.ledger || [])) {
+        if (!e.date || e.date < sw) continue;
+        const a = +(e.amount || 0) || 0;
+        if (!isFinite(a)) continue;
+        if (e.type === 'deposit') custNet += a;
+        else if (e.type === 'refund') custNet -= a;
+      }
+    }
+  }
+  const currentPool = cashOpening + inEmma + inCustManual + custNet - outSup - outHugo;
+
+  // Compute 28-day net flow rate (post-switch events + customer deposits in last 28 days)
+  const todayD = new Date();
+  const ago = new Date(todayD); ago.setDate(ago.getDate() - 28);
+  const agoStr = ago.toISOString().slice(0, 10);
+  let recentIn = 0, recentOut = 0;
+  for (const e of pc.events) {
+    if (e.deleted || !e.date || e.date < agoStr) continue;
+    const amt = +(e.amount || 0) || 0;
+    if (e.type === 'in-emma' || e.type === 'in-customer') recentIn += amt;
+    else if (e.type === 'out-supplier' || e.type === 'out-hugo') recentOut += amt;
+  }
+  for (const c of (state.customers || [])) {
+    for (const e of (c.ledger || [])) {
+      if (!e.date || e.date < agoStr) continue;
+      const a = +(e.amount || 0) || 0;
+      if (!isFinite(a)) continue;
+      if (e.type === 'deposit') recentIn += a;
+      else if (e.type === 'refund') recentOut += a;
+    }
+  }
+  const dailyNet = (recentIn - recentOut) / 28;
+
+  const days = [], values = [];
+  for (let i = 0; i <= 30; i++) {
+    const d = new Date(todayD); d.setDate(d.getDate() + i);
+    days.push(d.toISOString().slice(5, 10));
+    values.push(Math.round(currentPool + dailyNet * i));
+  }
+  return { days, values, currentPool, dailyNet, recentIn, recentOut };
+}
+
+// 5) Emma trial running P&L — from trial start to today
+function _mcEmmaTrialRunning() {
+  if (typeof EMMA_TRANSFER_TRIAL_START === 'undefined') return null;
+  const trialStart = EMMA_TRANSFER_TRIAL_START;
+  const trialEnd = (state.params && state.params.emmaTransferExtendedEnd) ||
+                   (typeof _partnershipCache !== 'undefined' && _partnershipCache && _partnershipCache.params && _partnershipCache.params.emmaTransferExtendedEnd) ||
+                   EMMA_TRANSFER_TRIAL_END;
+  const today = new Date().toISOString().slice(0, 10);
+  if (today < trialStart) return { status: 'pre', trialStart, trialEnd };
+
+  let ttPallets = 0, amzGifted = 0, ttSwapBonus = 0, ttBaseProfit = 0, amzProfit = 0;
+  let trialDays = 0;
+  const daysSeen = new Set();
+  const sellPrice = state.params.sellPrice || 265;
+  const myFee    = state.params.myFee     || 31;
+  const buyPrice = state.params.buyPrice  || 245;
+  const swapPrem = swapTtPremium();
+  const perPallet = sellPrice + myFee - buyPrice;
+
+  for (const c of (state.customers || [])) {
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'pickup' || !e._emmaTransferDay) continue;
+      if (!e.date || e.date < trialStart) continue;
+      if (e.date > today) continue;
+      daysSeen.add(e.date);
+      const tt = +(e._emmaTransferTTPallets || 0);
+      const pallets = +(e.pallets || 0);
+      if (tt > 0) {
+        ttPallets += tt;
+        ttSwapBonus += tt * swapPrem;
+        ttBaseProfit += tt * perPallet;
+      }
+      const amz = pallets - tt;
+      if (amz > 0) {
+        amzGifted += amz;
+        amzProfit += amz * perPallet;
+      }
+    }
+  }
+  trialDays = daysSeen.size;
+  const emmaOwed = ttPallets * (typeof EMMA_TRANSFER_RATE !== 'undefined' ? EMMA_TRANSFER_RATE : 25);
+  const grossGain = ttBaseProfit + ttSwapBonus + amzProfit;
+  const netGain   = grossGain;  // £25 in / £25 out nets to 0, so trial net = gross profit on transferred pickups
+
+  const elapsedDays = Math.max(1, Math.floor((new Date(today + 'T00:00:00') - new Date(trialStart + 'T00:00:00')) / 86400000) + 1);
+  const totalTrialDays = Math.max(1, Math.floor((new Date(trialEnd + 'T00:00:00') - new Date(trialStart + 'T00:00:00')) / 86400000) + 1);
+  const remainingDays = Math.max(0, Math.floor((new Date(trialEnd + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000));
+  const status = (today > trialEnd) ? 'ended' : 'active';
+
+  return {
+    status, trialStart, trialEnd, elapsedDays, totalTrialDays, remainingDays,
+    ttPallets, amzGifted, ttBaseProfit, ttSwapBonus, amzProfit, emmaOwed,
+    grossGain, netGain,
+    dailyAvg: netGain / elapsedDays,
+    projectedFullTrial: (netGain / elapsedDays) * totalTrialDays
+  };
+}
+
+// ─── Render ───
+let _mcForecastChart = null;
+function renderMissionControl() {
+  if (currentViewName !== 'dashboard') return;
+  const card = document.getElementById('mission-control-card');
+  if (!card) return;
+
+  // Header strip
+  const today = new Date();
+  const weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
+  const todayStr = today.toISOString().slice(0, 10);
+  document.getElementById('mc-today-line').textContent =
+    `${todayStr} ${weekdays[today.getDay()]} · 系统实时数据 · 不动算法不动数据 (Mission Control 只读)`;
+
+  // Trial countdown
+  const trial = _mcEmmaTrialRunning();
+  const trialStripEl = document.getElementById('mc-trial-strip');
+  const trialTextEl = document.getElementById('mc-trial-text');
+  if (trial && trial.status === 'active') {
+    trialStripEl.style.display = 'flex';
+    trialTextEl.textContent = `Emma 转售试行 Day ${trial.elapsedDays}/${trial.totalTrialDays} · 还剩 ${trial.remainingDays} 天`;
+  } else if (trial && trial.status === 'ended') {
+    trialStripEl.style.display = 'flex';
+    trialTextEl.textContent = `Emma 转售试行已结束 · 共 ${trial.totalTrialDays} 天`;
+  } else {
+    trialStripEl.style.display = 'none';
+  }
+
+  // Big numbers — cash pool (use forecast.currentPool if cache loaded, else show — )
+  const forecast = _mcCashPoolForecast();
+  const poolEl = document.getElementById('mc-pool-value');
+  const poolSubEl = document.getElementById('mc-pool-sub');
+  if (forecast) {
+    poolEl.textContent = fmt(forecast.currentPool);
+    poolEl.style.color = forecast.currentPool < 0 ? 'var(--rose)' : (forecast.currentPool > 0 ? 'var(--green)' : 'var(--text)');
+    const dn = forecast.dailyNet;
+    const sign = dn >= 0 ? '+' : '−';
+    const dnColor = dn >= 0 ? 'var(--green)' : 'var(--rose)';
+    poolSubEl.innerHTML = `近 4 周平均 <span style="color:${dnColor};font-weight:700;">${sign}${fmt(Math.abs(dn))}</span>/天`;
+  } else {
+    poolEl.textContent = '£—';
+    poolSubEl.textContent = '合伙账缓存加载中…';
+  }
+
+  // Big numbers — this week net profit
+  const wk = thisWeekTotals();
+  const lwk = _mcLastWeekTotals();
+  document.getElementById('mc-week-value').textContent = fmt(wk.profit);
+  const wkSubEl = document.getElementById('mc-week-sub');
+  if (lwk.profit > 0) {
+    const pct = ((wk.profit - lwk.profit) / lwk.profit * 100);
+    const arrow = pct >= 0 ? '↑' : '↓';
+    const color = pct >= 0 ? 'var(--green)' : 'var(--rose)';
+    wkSubEl.innerHTML = `${wk.pallets} 托 · ${wk.customerCount} 客户 <span style="color:${color};">${arrow} ${Math.abs(pct).toFixed(1)}% vs 上周</span>`;
+  } else {
+    wkSubEl.textContent = `${wk.pallets} 托 · ${wk.customerCount} 客户`;
+  }
+
+  // Big numbers — Emma owed
+  const emmaEl = document.getElementById('mc-emma-owed');
+  const emmaSubEl = document.getElementById('mc-emma-sub');
+  if (trial && trial.status !== 'pre' && trial.emmaOwed >= 0) {
+    emmaEl.textContent = fmt(trial.emmaOwed);
+    emmaSubEl.innerHTML = trial.ttPallets > 0
+      ? `${trial.ttPallets} TT × £${typeof EMMA_TRANSFER_RATE !== 'undefined' ? EMMA_TRANSFER_RATE : 25} · 待月底结算`
+      : '尚无代取 TT';
+  } else {
+    emmaEl.textContent = '£0';
+    emmaSubEl.textContent = '试行未启动';
+  }
+
+  // Customer ranking
+  const rank = _mcCustomerMonthRanking();
+  const rankEl = document.getElementById('mc-customer-rank');
+  document.getElementById('mc-rank-meta').textContent = rank.length > 0 ? `${rank.length} 个活跃` : '';
+  if (rank.length === 0) {
+    rankEl.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">本月尚无取货</div>';
+  } else {
+    const top = rank.slice(0, 5);
+    rankEl.innerHTML = top.map((x, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `<span style="display:inline-block;width:18px;color:var(--text-dim);font-weight:700;">${i+1}.</span>`;
+      let arrow = '';
+      if (x.deltaPct != null) {
+        if (x.deltaPct > 10)        arrow = '<span style="color:var(--green);font-size:11px;font-weight:700;">🔥 +' + Math.abs(x.deltaPct).toFixed(0) + '%</span>';
+        else if (x.deltaPct < -10)  arrow = '<span style="color:var(--rose);font-size:11px;font-weight:700;">↓ ' + Math.abs(x.deltaPct).toFixed(0) + '%</span>';
+        else                        arrow = '<span style="color:var(--text-dim);font-size:11px;">→ ' + (x.deltaPct >= 0 ? '+' : '') + x.deltaPct.toFixed(0) + '%</span>';
+      } else {
+        arrow = '<span style="color:var(--cyan);font-size:10px;font-weight:700;">NEW</span>';
+      }
+      return `<div style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background='rgba(139,92,246,0.10)'" onmouseout="this.style.background=''" onclick="(function(){currentCustomer='${x.id}';renderAll();document.querySelector('[data-view=customers]').click&&document.querySelector('[data-view=customers]').click();})()">
+        <span style="font-size:13px;">${medal}</span>
+        <span style="flex:1;font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.name)}</span>
+        <span style="font-size:11px;color:var(--text-dim);">${x.pallets} 托</span>
+        <span style="font-size:12.5px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums;min-width:54px;text-align:right;">${fmt(x.profit)}</span>
+        <span style="min-width:54px;text-align:right;">${arrow}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Churn risks
+  const churn = _mcChurnRisks();
+  const churnEl = document.getElementById('mc-churn-list');
+  document.getElementById('mc-churn-meta').textContent = churn.length > 0 ? `${churn.length} 个客户` : '0 个';
+  if (churn.length === 0) {
+    churnEl.innerHTML = '<div style="font-size:11px;color:var(--green);">无活跃客户超过 15 天没取货 ✓</div>';
+  } else {
+    const top = churn.slice(0, 5);
+    churnEl.innerHTML = top.map(x => {
+      const sev = x.daysQuiet > 30 ? '🚨' : '⚠';
+      const sevColor = x.daysQuiet > 30 ? 'var(--rose)' : 'var(--amber)';
+      return `<div style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 6px;border-radius:5px;transition:background 0.15s;" onmouseover="this.style.background='rgba(251,191,36,0.10)'" onmouseout="this.style.background=''" onclick="(function(){currentCustomer='${x.id}';renderAll();})()">
+        <span style="font-size:13px;">${sev}</span>
+        <span style="flex:1;font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.name)}</span>
+        <span style="font-size:11px;color:${sevColor};font-weight:700;">${x.daysQuiet} 天</span>
+        <span style="font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums;min-width:52px;text-align:right;">余 ${fmt(x.balance)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Cash pool forecast chart
+  if (forecast && typeof Chart !== 'undefined') {
+    const ctx = document.getElementById('mc-forecast-chart');
+    if (ctx) {
+      if (_mcForecastChart) _mcForecastChart.destroy();
+      // Find when projection crosses zero
+      let zeroDay = -1;
+      for (let i = 0; i < forecast.values.length; i++) {
+        if (forecast.values[i] < 0) { zeroDay = i; break; }
+      }
+      _mcForecastChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: forecast.days,
+          datasets: [{
+            data: forecast.values,
+            borderColor: forecast.values[forecast.values.length - 1] >= 0 ? '#22d3a5' : '#fb7185',
+            backgroundColor: ctx2 => {
+              const v = forecast.values[forecast.values.length - 1];
+              return v >= 0 ? 'rgba(34,211,165,0.10)' : 'rgba(251,113,133,0.10)';
+            },
+            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx2 => '池余 £' + ctx2.parsed.y.toLocaleString('en-GB') } }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 }, maxRotation: 0 } },
+            y: { grid: { color: 'rgba(139,150,255,0.08)' }, ticks: { color: '#64748b', font: { size: 9 }, callback: v => '£' + (v/1000).toFixed(0) + 'k' } }
+          }
+        }
+      });
+      const summary = document.getElementById('mc-forecast-summary');
+      const endVal = forecast.values[forecast.values.length - 1];
+      if (zeroDay > 0) {
+        summary.innerHTML = `⚠ 按当前节奏 <b style="color:var(--rose);">${zeroDay} 天后</b> 资金池将归零 (${forecast.days[zeroDay]}) · 30 天后约 ${fmt(endVal)}`;
+      } else if (endVal < forecast.currentPool) {
+        summary.innerHTML = `▼ 30 天后预计 ${fmt(endVal)} · 还能撑 ${Math.floor((forecast.currentPool || 0) / Math.max(1, Math.abs(forecast.dailyNet)))} 天`;
+      } else {
+        summary.innerHTML = `▲ 30 天后预计 ${fmt(endVal)} · 节奏健康`;
+      }
+    }
+  }
+
+  // Emma trial PnL panel
+  const pnlEl = document.getElementById('mc-trial-pnl');
+  if (trial && (trial.status === 'active' || trial.status === 'ended')) {
+    pnlEl.style.display = '';
+    document.getElementById('mc-trial-day').textContent = `Day ${trial.elapsedDays}/${trial.totalTrialDays}`;
+    const cells = [
+      { label: 'TT 净利 (基础)', value: fmt(trial.ttBaseProfit), color: 'var(--text)', sub: `${trial.ttPallets} 托 × £${state.params.sellPrice + state.params.myFee - state.params.buyPrice}` },
+      { label: 'TT Swap 加成', value: fmt(trial.ttSwapBonus), color: 'var(--cyan)', sub: `${trial.ttPallets} 托 × £${swapTtPremium()}` },
+      { label: 'AMZ 净利 (Emma 让利)', value: fmt(trial.amzProfit), color: 'var(--green)', sub: `${trial.amzGifted} 托 × £${state.params.sellPrice + state.params.myFee - state.params.buyPrice}` },
+      { label: '应付 Emma (TT)', value: '−' + fmt(trial.emmaOwed), color: 'var(--pink)', sub: `${trial.ttPallets} TT × £${typeof EMMA_TRANSFER_RATE !== 'undefined' ? EMMA_TRANSFER_RATE : 25} (off-pool)` }
+    ];
+    document.getElementById('mc-trial-breakdown').innerHTML = cells.map(c => `
+      <div style="padding:10px 12px;background:rgba(11,18,42,0.45);border-radius:8px;border:1px solid rgba(139,150,255,0.10);">
+        <div style="font-size:9.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;font-weight:700;">${c.label}</div>
+        <div style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;color:${c.color};margin-top:3px;">${c.value}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">${c.sub}</div>
+      </div>
+    `).join('');
+    // Decision aid (£25 in/out nets zero — net = base + swap + amz)
+    const decisionEl = document.getElementById('mc-trial-decision');
+    const verdict = trial.dailyAvg > 0
+      ? { c: 'var(--green)', bg: 'rgba(34,211,165,0.08)', b: 'rgba(34,211,165,0.30)', e: '✓', t: '试行划得来' }
+      : { c: 'var(--rose)',  bg: 'rgba(251,113,133,0.08)', b: 'rgba(251,113,133,0.30)', e: '✗', t: '试行亏本' };
+    decisionEl.style.background = verdict.bg;
+    decisionEl.style.border = '1px solid ' + verdict.b;
+    decisionEl.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:16px;color:${verdict.c};font-weight:800;">${verdict.e} ${verdict.t}</span>
+        <span style="color:var(--text-dim);">日均 <b style="color:${verdict.c};">${trial.dailyAvg >= 0 ? '+' : ''}${fmt(trial.dailyAvg)}</b>/天</span>
+        <span style="color:var(--text-dim);">·</span>
+        <span style="color:var(--text-dim);">预计整个试行期净增 <b style="color:${verdict.c};">${trial.projectedFullTrial >= 0 ? '+' : ''}${fmt(trial.projectedFullTrial)}</b></span>
+      </div>
+    `;
+  } else {
+    pnlEl.style.display = 'none';
+  }
 }
 
 function renderKpis() {
@@ -12968,6 +13462,7 @@ function renderAll() {
   renderInsights();
   // Only render dashboard charts when on dashboard — prevents flicker
   if (currentViewName === 'dashboard') {
+    renderMissionControl();   // NEW (2026-06-09): single-glance ops card
     renderCharts();
     renderMonthlyHistory();
     renderSmartAlerts();
