@@ -6546,7 +6546,16 @@ function renderMissionControl() {
     const dn = forecast.dailyNet;
     const sign = dn >= 0 ? '+' : '−';
     const dnColor = dn >= 0 ? 'var(--green)' : 'var(--rose)';
-    poolSubEl.innerHTML = `近 4 周平均 <span style="color:${dnColor};font-weight:700;">${sign}${fmt(Math.abs(dn))}</span>/天`;
+    // 2026-06-09: if pool is negative but trend is positive, surface the
+    // most common cause (cashPoolOpeningBalance not set) so Michael doesn't
+    // panic about "fronting money" he never fronted.
+    const pcParams = (typeof _partnershipCache !== 'undefined' && _partnershipCache && _partnershipCache.params) || {};
+    const opening = +(pcParams.cashPoolOpeningBalance) || 0;
+    if (forecast.currentPool < 0 && opening === 0 && dn >= 0) {
+      poolSubEl.innerHTML = `<span style="color:var(--amber);">⚠ 切换日银行期初未填</span> · 近 4 周 <span style="color:${dnColor};font-weight:700;">${sign}${fmt(Math.abs(dn))}</span>/天 (业务在赚钱)<br><span style="font-size:10.5px;color:var(--text-dim);">→ 合伙账 设置 → 切换日银行期初 填进去 (大约 £28,280)</span>`;
+    } else {
+      poolSubEl.innerHTML = `近 4 周平均 <span style="color:${dnColor};font-weight:700;">${sign}${fmt(Math.abs(dn))}</span>/天${opening > 0 ? ' · 含切换日期初 ' + fmt(opening) : ''}`;
+    }
   } else {
     poolEl.textContent = '£—';
     poolSubEl.textContent = '合伙账缓存加载中…';
