@@ -6620,9 +6620,15 @@ function renderMissionControl() {
     }).join('');
   }
 
-  // Cash pool forecast chart
-  if (forecast && typeof Chart !== 'undefined') {
+  // Cash pool forecast chart — show loading placeholder if cache not yet fetched
+  if (!forecast) {
     const ctx = document.getElementById('mc-forecast-chart');
+    if (ctx) ctx.style.display = 'none';
+    const summary = document.getElementById('mc-forecast-summary');
+    if (summary) summary.innerHTML = '<span style="color:var(--text-dim);">⏳ 合伙账缓存加载中… (首次进仪表盘需 1-2 秒)</span>';
+  } else if (typeof Chart !== 'undefined') {
+    const ctx = document.getElementById('mc-forecast-chart');
+    if (ctx) ctx.style.display = '';
     if (ctx) {
       if (_mcForecastChart) _mcForecastChart.destroy();
       // Find when projection crosses zero
@@ -13636,6 +13642,9 @@ function _ensurePartnershipCacheForAlerts() {
       _personalCleanupStalePartnershipDeletes();
     }
     if (typeof renderSmartAlerts === 'function') renderSmartAlerts();
+    // 2026-06-09 fix: re-render Mission Control once partnership cache loads
+    // (resolves the "£— 合伙账缓存加载中…" placeholder + empty forecast chart).
+    if (typeof renderMissionControl === 'function') renderMissionControl();
   });
 }
 
