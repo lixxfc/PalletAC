@@ -3933,12 +3933,23 @@ async function saveUserDataNow() {
     return;
   }
   // 🩹 P0 SAFETY (2026-06-09 v2): DATA SHRINK PROTECTION
-  // Compare current customer count to last known good count. If shrunk > 50%,
-  // refuse to save + emergency snapshot the suspect state + alert user.
+  // P2 fix: when localStorage is cleared (privacy mode / new device / cleared cache),
+  // fallback to reading last known good from IndexedDB latest non-emergency snapshot.
   const currentCount = (state.customers || []).length;
   const ledgerCount = (state.customers || []).reduce((s, c) => s + ((c.ledger || []).length), 0);
-  const lastGoodCount = +localStorage.getItem('_pac_last_save_count') || 0;
-  const lastGoodLedger = +localStorage.getItem('_pac_last_save_ledger') || 0;
+  let lastGoodCount = +localStorage.getItem('_pac_last_save_count') || 0;
+  let lastGoodLedger = +localStorage.getItem('_pac_last_save_ledger') || 0;
+  if (lastGoodCount === 0 && lastGoodLedger === 0) {
+    try {
+      const lastList = await _pacListBackups();
+      const lastGoodSnap = lastList.find(s => !s.isEmergency && (s.customerCount || 0) > 0);
+      if (lastGoodSnap) {
+        lastGoodCount = lastGoodSnap.customerCount || 0;
+        lastGoodLedger = lastGoodSnap.ledgerCount || 0;
+        console.log('[save] localStorage empty, fallback to IndexedDB baseline:', lastGoodCount, 'cust /', lastGoodLedger, 'ledger');
+      }
+    } catch (_) {}
+  }
   const customerShrunk = lastGoodCount > 0 && (currentCount < lastGoodCount * 0.5);
   const ledgerShrunk = lastGoodLedger > 0 && (ledgerCount < lastGoodLedger * 0.5);
   if (customerShrunk || ledgerShrunk) {
@@ -3953,10 +3964,12 @@ async function saveUserDataNow() {
       `⚠ 数据收缩检测!\n\n` +
       `客户: ${lastGoodCount} → ${currentCount} ${customerShrunk ? '(⚠ 缩水 >50%)' : ''}\n` +
       `流水: ${lastGoodLedger} → ${ledgerCount} ${ledgerShrunk ? '(⚠ 缩水 >50%)' : ''}\n\n` +
-      `这可能是数据丢失. 拒绝同步到云端可以保护你的备份.\n\n` +
-      `· 确认: 仍然推到云端 (如果你确实大批删了客户/数据)\n` +
-      `· 取消: 不推送 (推荐) — 然后从备份恢复\n\n` +
-      `点击 [💾 备份历史] 可以恢复昨天的数据.`
+      `如果你刚刚:\n` +
+      `· 批量删除客户 → 点 [确定] 即可 (这是正常的)\n` +
+      `· 删除整个品牌 → 点 [确定] 即可\n` +
+      `· 没主动删任何东西 → 点 [取消]! (可能数据丢失, 先从备份恢复)\n\n` +
+      `取消会自动备份当前状态到 emergency 快照, 不会丢失.\n` +
+      `点击 [💾 备份历史] 可以查看 / 恢复.`
     );
     if (!proceed) {
       setSyncStatus('error');
@@ -13406,10 +13419,12 @@ async function _pacSnapshotIfNeeded() {
     console.warn('[backup] skipping snapshot: state appears empty (0 customers, 0 ledger)');
     return;
   }
-  // 🩹 P0 (2026-06-09 v2): refuse if data shrunk dramatically vs last snapshot
+  // 🩹 P0+P1 (2026-06-09 v2): refuse if data shrunk dramatically vs last DAILY snapshot.
+  // P1 fix: filter out emergency snapshots — they sort BEFORE date keys alphabetically
+  // ('emergency-...' > '2026-...') so .find() was picking pre-mig instead of yesterday.
   try {
     const lastList = await _pacListBackups();
-    const lastGood = lastList.find(s => (s.customerCount || 0) > 0);
+    const lastGood = lastList.find(s => !s.isEmergency && (s.customerCount || 0) > 0);
     if (lastGood) {
       const shrunk = custCount < lastGood.customerCount * _PAC_SHRINK_THRESHOLD ||
                      ledgerCount < lastGood.ledgerCount * _PAC_SHRINK_THRESHOLD;
@@ -13497,6 +13512,7 @@ async function _pacRotate() {
     const db = await _pacOpenDb();
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - _PAC_KEEP_DAYS);
     const cutoffStr = cutoff.toLocaleDateString('en-CA');
+    // Pass 1: rotate non-emergency daily snapshots older than 30 days
     await new Promise(resolve => {
       const tx = db.transaction(_PAC_STORE, 'readwrite');
       const store = tx.objectStore(_PAC_STORE);
@@ -13504,7 +13520,6 @@ async function _pacRotate() {
       req.onsuccess = (e) => {
         const cur = e.target.result;
         if (!cur) { resolve(); return; }
-        // 🩹 P0 (2026-06-09 v2): NEVER rotate emergency snapshots
         if (cur.value && !cur.value.isEmergency && cur.value.date < cutoffStr) {
           cur.delete();
         }
@@ -13512,6 +13527,34 @@ async function _pacRotate() {
       };
       tx.oncomplete = resolve;
     });
+    // Pass 2 (P2 fix 2026-06-09 v3): cap emergency snapshots per tag at 10 most recent
+    // — prevents unbounded accumulation over time (was永久保留 → IndexedDB 容量风险)
+    const all = await new Promise(r => {
+      const tx = db.transaction(_PAC_STORE, 'readonly');
+      const req = tx.objectStore(_PAC_STORE).getAll();
+      req.onsuccess = () => r(req.result || []);
+      req.onerror = () => r([]);
+    });
+    const emergencyByTag = {};
+    for (const s of all) {
+      if (!s.isEmergency) continue;
+      const tag = s.tag || 'other';
+      if (!emergencyByTag[tag]) emergencyByTag[tag] = [];
+      emergencyByTag[tag].push(s);
+    }
+    for (const tag of Object.keys(emergencyByTag)) {
+      emergencyByTag[tag].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const toDelete = emergencyByTag[tag].slice(10);  // keep 10 most recent per tag
+      if (toDelete.length === 0) continue;
+      await new Promise(r => {
+        const tx = db.transaction(_PAC_STORE, 'readwrite');
+        const store = tx.objectStore(_PAC_STORE);
+        for (const s of toDelete) store.delete(s.date);
+        tx.oncomplete = r;
+        tx.onerror = r;
+      });
+      console.log('[backup] rotated', toDelete.length, 'emergency snapshots for tag:', tag);
+    }
   } catch (e) { console.warn('[backup] rotate failed:', e); }
 }
 
@@ -13625,7 +13668,9 @@ async function restoreBackup(date) {
     });
     if (!snap || !snap.data) { alert('找不到这个备份'); return; }
     // ATOMIC RESTORE: only overwrite state AFTER successful Supabase write
-    const prevState = state;
+    // P3 fix (2026-06-09 v3): deep clone prevState — defensive guard so the
+    // rollback object is FROZEN at this point (snap.data IS already cloned).
+    const prevState = JSON.parse(JSON.stringify(state));
     state = snap.data;
     // Bypass the shrink protection (restore is intentional)
     delete state._unsavedFromLoad;
