@@ -2390,7 +2390,7 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
           </div>
           <div id="breakdown-pane-self" class="hide">
-            <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 真实数字:£51/托 净利 + £7 Hugo + £2 V + Swap TT 加成 £30/托 + <span style="color:#db2777;">🤝 Emma 转售: 客户 +£25 入 / 给 Emma -£25 出 (净 0)</span> · 点 <b>📋 每笔明细</b> 看每一车展开</div>
+            <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 净利 £51/托 = <b style="color:#a855f7;">£20 隐藏加价</b> + <b style="color:var(--green);">£30 客户费</b> + <b style="color:var(--amber);">£3 Hugo 差价</b> − <b style="color:var(--rose);">£2 V</b> + Swap +£30/托 + <span style="color:#db2777;">🤝 Emma 转售 ±£25 (净 0)</span></div>
             <div class="table-wrap mt-4 breakdown-table">
               <table>
                 <thead>
@@ -15550,6 +15550,23 @@ const CLIENT_HUGO_PER_PALLET = 10;     // 给客人说的"Hugo 费用" / 托
 function selfProfitPerPallet() { return perPalletProfit(); }
 function selfHugoPerPallet()   { return state.params.hugoFee != null ? state.params.hugoFee : 7; }
 function selfVPerPallet()      { return state.params.vFee   != null ? state.params.vFee   : 2; }
+// 2026-06-09 v2 — 净利 £51/托 拆解显示 (4 个组成部分, 数学等价):
+//   £51 净利 = £20 隐藏加价 + £30 客户费 + £3 Hugo 差价 − £2 V
+//   INVARIANT: selfHiddenMarkup + selfClientFee + selfHugoSpread − selfV === selfProfitPerPallet()
+//   不改 weekNet 公式, 只是展开显示让 Michael 看清 £51 由什么组成.
+function selfHiddenMarkupPerPallet() {
+  // £20 = sellPrice − buyPrice. 客户认为你的进价是 £265 (sellPrice), 实际 SSS £245 (buyPrice).
+  return (+(state.params.sellPrice) || 0) - (+(state.params.buyPrice) || 0);
+}
+function selfClientFeePerPallet() {
+  // £30 = 客户版 "我的费用" — 跟 CLIENT_PROFIT_PER_PALLET 同源
+  return (typeof CLIENT_PROFIT_PER_PALLET !== 'undefined') ? CLIENT_PROFIT_PER_PALLET : 30;
+}
+function selfHugoSpreadPerPallet() {
+  // £3 = 客户付你 £10 Hugo 费 − 你付 Hugo £7 现金
+  const clientHugo = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
+  return clientHugo - selfHugoPerPallet();
+}
 
 let currentBreakdownTab = 'client';
 function setBreakdownTab(tab) {
@@ -15694,6 +15711,15 @@ function renderSelfBreakdown(customer) {
     const profit51 = w.totalPallets * selfProfitPerPallet();
     const hugo7    = w.totalPallets * selfHugoPerPallet();
     const v2       = w.totalPallets * selfVPerPallet();
+    // 2026-06-09 v2 — £51 净利的 4 个组成部分 (数学等价, 仅展示)
+    const hiddenMarkup = w.totalPallets * selfHiddenMarkupPerPallet();   // £20 × N
+    const clientFee    = w.totalPallets * selfClientFeePerPallet();      // £30 × N
+    const hugoSpread   = w.totalPallets * selfHugoSpreadPerPallet();     // £3 × N
+    // INVARIANT 自检: hiddenMarkup + clientFee + hugoSpread − v2 === profit51
+    const _invariantDelta = profit51 - (hiddenMarkup + clientFee + hugoSpread - v2);
+    if (Math.abs(_invariantDelta) > 0.01) {
+      console.warn('[周度明细] INVARIANT 破裂!', { profit51, hiddenMarkup, clientFee, hugoSpread, v2, delta: _invariantDelta, hint: '参数 sellPrice/buyPrice/myFee/hugoFee/vFee 可能改过' });
+    }
     const swapBonus = w.swapPallets * swapTtPremium();
     // Emma 转售费 — 入: 客户付来 £25 × TT, 出: 给 Emma £25 × TT, 净 0 (Michael 不赚不赔)
     const _trxTT = w.emmaTransferTTPallets || 0;
@@ -15715,11 +15741,17 @@ function renderSelfBreakdown(customer) {
       palletRows.push(`<div class="bd-pallet-row" style="background:rgba(244,114,182,0.10);border-radius:6px;padding:2px 6px;margin-top:4px;"><span class="label" style="color:#db2777;">🤝</span><span class="val" style="color:#9d174d;font-weight:600;">${_trxTT} 托 Emma 转售 (代取)</span></div>`);
     }
 
-    // Income breakdown — base profit, Hugo, V, Swap bonus, Emma transfer (in & out)
+    // 2026-06-09 v2: 把 £51 展开成 4 项可见明细 + 小计
+    // INVARIANT: 4 项之和 = £51 × pallets = profit51 (math unchanged)
+    const _sellP = state.params.sellPrice || 265;
+    const _buyP  = state.params.buyPrice  || 245;
+    const _clientHugo = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
     const chargeRows = [
-      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(profit51)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(hugo7)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V</span><span class="v">${fmt(v2)}</span></div>`,
+      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${w.totalPallets} × £${selfHiddenMarkupPerPallet()} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(卖 £${_sellP} − 进 £${_buyP})</span></span><span class="v">${fmt(hiddenMarkup)}</span></div>`,
+      `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfClientFeePerPallet()} 客户费 <span style="font-size:9.5px;color:var(--text-dim);">(你收客户的中介费)</span></span><span class="v">${fmt(clientFee)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${w.totalPallets} × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(收 £${_clientHugo} − 付 £${selfHugoPerPallet()})</span></span><span class="v">${fmt(hugoSpread)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V 付出 <span style="font-size:9.5px;opacity:0.7;">(你付 V 现金)</span></span><span class="v">−${fmt(v2)}</span></div>`,
+      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${selfProfitPerPallet()}/托 × ${w.totalPallets}</span><span class="v">= ${fmt(profit51)}</span></div>`,
       swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : '',
       _trxTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${_trxTT} × £${EMMA_TRANSFER_RATE} 🤝 客户转售费 (入)</span><span class="v">+${fmt(_trxFeeIn)}</span></div>` : '',
       _trxTT > 0 ? `<div class="bd-charge-row" style="color:#9333ea;"><span class="k">− ${_trxTT} × £${EMMA_TRANSFER_RATE} 给 Emma 转售提成 (出)</span><span class="v">−${fmt(_trxFeeOut)}</span></div>` : '',
@@ -15793,10 +15825,19 @@ function renderSelfBreakdown(customer) {
   }).join('');
 
   if (tf) {
+    // 合计也展开 £51 成 4 项 (与周行保持一致)
+    const totHiddenMarkup = totPallets * selfHiddenMarkupPerPallet();
+    const totClientFee    = totPallets * selfClientFeePerPallet();
+    const totHugoSpread   = totPallets * selfHugoSpreadPerPallet();
+    const _sellP_t = state.params.sellPrice || 265;
+    const _buyP_t  = state.params.buyPrice  || 245;
+    const _clientHugo_t = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
     const totalRows = [
-      `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfProfitPerPallet()} 净利</span><span class="v">${fmt(totProfit)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfHugoPerPallet()} Hugo</span><span class="v">${fmt(totHugo)}</span></div>`,
-      `<div class="bd-charge-row muted"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V</span><span class="v">${fmt(totV)}</span></div>`,
+      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${totPallets} 托 × £${selfHiddenMarkupPerPallet()} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(£${_sellP_t}−£${_buyP_t})</span></span><span class="v">${fmt(totHiddenMarkup)}</span></div>`,
+      `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfClientFeePerPallet()} 客户费</span><span class="v">${fmt(totClientFee)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${totPallets} 托 × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(£${_clientHugo_t}收−£${selfHugoPerPallet()}付)</span></span><span class="v">${fmt(totHugoSpread)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V 付出</span><span class="v">−${fmt(totV)}</span></div>`,
+      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${selfProfitPerPallet()}/托 × ${totPallets}</span><span class="v">= ${fmt(totProfit)}</span></div>`,
       totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : '',
       totEmmaTransferTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${totEmmaTransferTT} 托 × £${EMMA_TRANSFER_RATE} 🤝 转售费 (入/出抵销)</span><span class="v">+${fmt(totEmmaTransferFee)} / -${fmt(totEmmaTransferFee)}</span></div>` : ''
     ].filter(Boolean).join('');
