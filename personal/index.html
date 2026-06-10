@@ -2391,6 +2391,34 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
           <div id="breakdown-pane-self" class="hide">
             <div class="page-sub mt-2" style="font-size:11px;">仅你看 · 净利 £51/托 = <b style="color:#a855f7;">£20 隐藏加价</b> + <b style="color:var(--green);">£30 客户费</b> + <b style="color:var(--amber);">£3 Hugo 差价</b> − <b style="color:var(--rose);">£2 V</b> + Swap +£30/托 + <span style="color:#db2777;">🤝 Emma 转售 ±£25 (净 0)</span></div>
+
+            <!-- 对账总结卡 (2026-06-09): 客户账单 vs 你的净利 -->
+            <div id="bd-self-reconcile" style="margin-top:14px;padding:0;background:linear-gradient(135deg,rgba(168,85,247,0.06),rgba(34,211,165,0.06));border:1px solid rgba(168,85,247,0.25);border-radius:12px;overflow:hidden;display:none;">
+              <div style="padding:10px 16px;background:linear-gradient(90deg,rgba(168,85,247,0.18),rgba(34,211,165,0.10));border-bottom:1px solid rgba(168,85,247,0.20);display:flex;align-items:center;gap:10px;">
+                <span style="font-size:18px;">📊</span>
+                <div style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:0.4px;">对账总结</div>
+                <span id="bd-self-reconcile-range" style="font-size:10.5px;color:var(--text-dim);margin-left:auto;"></span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(139,150,255,0.10);">
+                <!-- LEFT: 客户付你 -->
+                <div style="padding:14px 18px;background:rgba(11,18,42,0.55);">
+                  <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;font-weight:700;">📥 客户付你 (周度账单)</div>
+                  <div id="bd-self-recon-gross" style="font-size:24px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums;margin-top:4px;letter-spacing:-0.5px;">£0</div>
+                  <div id="bd-self-recon-gross-sub" style="font-size:10.5px;color:var(--text-dim);margin-top:4px;line-height:1.65;"></div>
+                </div>
+                <!-- RIGHT: 你净赚 -->
+                <div style="padding:14px 18px;background:rgba(11,18,42,0.55);">
+                  <div style="font-size:10px;color:#10b981;letter-spacing:1.5px;text-transform:uppercase;font-weight:700;">💰 你的真实净利</div>
+                  <div id="bd-self-recon-net" style="font-size:24px;font-weight:800;color:#10b981;font-variant-numeric:tabular-nums;margin-top:4px;letter-spacing:-0.5px;">£0</div>
+                  <div id="bd-self-recon-net-sub" style="font-size:10.5px;color:var(--text-dim);margin-top:4px;line-height:1.65;"></div>
+                </div>
+              </div>
+              <div style="padding:10px 16px;background:rgba(11,18,42,0.40);border-top:1px solid rgba(168,85,247,0.18);font-size:11px;line-height:1.75;color:var(--text-dim);">
+                <span style="color:var(--text);font-weight:700;">📌 为什么不一样:</span>
+                <span id="bd-self-recon-explain"></span>
+              </div>
+            </div>
+
             <div class="table-wrap mt-4 breakdown-table">
               <table>
                 <thead>
@@ -15847,6 +15875,52 @@ function renderSelfBreakdown(customer) {
       <td>${totalRows}</td>
       <td style="text-align:right;"><div class="bd-total-foot">${fmt(totNet)}</div></td>
     </tr>`;
+  }
+
+  // 对账总结卡 (2026-06-09) — 客户付的钱 vs 你真实净利
+  // 客户付的 (周度账单) = totPallets × (£30 + £10) + swapPallets × £30 + emmaTransferTT × £25
+  // INVARIANT: gross − 给Hugo − 给V − 给Emma + 隐藏加价 = totNet
+  const recCard = document.getElementById('bd-self-reconcile');
+  if (recCard && totPallets > 0) {
+    recCard.style.display = '';
+    const _clientHugoP = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
+    const _clientFeeP  = (typeof CLIENT_PROFIT_PER_PALLET !== 'undefined') ? CLIENT_PROFIT_PER_PALLET : 30;
+    const grossClient = totPallets * (_clientFeeP + _clientHugoP) + totSwapPallets * swapTtPremium() + totEmmaTransferFee;
+    const paidHugo    = totHugo;                            // totPallets × £7
+    const paidV       = totV;                               // totPallets × £2
+    const paidEmma    = totEmmaTransferFee;                 // 给 Emma
+    const hiddenMk    = totPallets * selfHiddenMarkupPerPallet();
+    const expectedNet = grossClient - paidHugo - paidV - paidEmma + hiddenMk;
+    // INVARIANT check
+    const reconDelta = totNet - expectedNet;
+    if (Math.abs(reconDelta) > 0.5) {
+      console.warn('[对账总结] INVARIANT 破裂', { totNet, expectedNet, delta: reconDelta });
+    }
+    document.getElementById('bd-self-reconcile-range').textContent =
+      `${weeks.length} 周 · ${totPallets} 托`;
+    document.getElementById('bd-self-recon-gross').textContent = fmt(grossClient);
+    document.getElementById('bd-self-recon-gross-sub').innerHTML =
+      `<b style="color:var(--green);">${fmt(totPallets * _clientFeeP)}</b> 我的费用` +
+      ` · <b style="color:var(--amber);">${fmt(totPallets * _clientHugoP)}</b> Hugo` +
+      (totSwapPallets > 0 ? ` · <b style="color:var(--pink);">${fmt(totSwapPallets * swapTtPremium())}</b> Swap` : '') +
+      (totEmmaTransferFee > 0 ? ` · <b style="color:#db2777;">${fmt(totEmmaTransferFee)}</b> Emma 转售` : '');
+    document.getElementById('bd-self-recon-net').textContent = fmt(totNet);
+    const _v = (n) => fmt(Math.abs(n));
+    document.getElementById('bd-self-recon-net-sub').innerHTML =
+      `客户付 ${fmt(grossClient)}` +
+      ` <span style="color:var(--amber);">− ${_v(paidHugo)} Hugo</span>` +
+      ` <span style="color:var(--rose);">− ${_v(paidV)} V</span>` +
+      (paidEmma > 0 ? ` <span style="color:#db2777;">− ${_v(paidEmma)} Emma</span>` : '') +
+      ` <span style="color:#a855f7;">+ ${_v(hiddenMk)} 隐藏加价</span>`;
+    const diff = grossClient - totNet;
+    document.getElementById('bd-self-recon-explain').innerHTML =
+      `客户账单 <b>${fmt(grossClient)}</b> 包含你要转给 <b style="color:var(--amber);">Hugo ${_v(paidHugo)}</b> + <b style="color:var(--rose);">V ${_v(paidV)}</b>` +
+      (paidEmma > 0 ? ` + <b style="color:#db2777;">Emma ${_v(paidEmma)}</b>` : '') +
+      ` · 同时<b style="color:#a855f7;">隐藏加价 ${_v(hiddenMk)}</b> 来自托盘款池子 (不在账单上) → 真实净利 <b style="color:#10b981;">${fmt(totNet)}</b>` +
+      (diff > 0 ? ` <span style="color:var(--text-dim);">(客户账单比净利多 ${_v(diff)}, 因为账单含要付别人的, 但不含隐藏加价)</span>` :
+       diff < 0 ? ` <span style="color:var(--text-dim);">(净利比客户账单多 ${_v(-diff)}, 因为隐藏加价超过了支出)</span>` : '');
+  } else if (recCard) {
+    recCard.style.display = 'none';
   }
 }
 
