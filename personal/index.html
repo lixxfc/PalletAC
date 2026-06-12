@@ -16064,6 +16064,29 @@ function exportClientBreakdown(weekMon) {
   tr.grand td { background: var(--ink); color: #fff !important; padding: 22px 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
   tr.grand td.total { font-size: 22px; letter-spacing: -0.3px; }
 
+  /* ── Daily Pickup Detail (2026-06-12 additive) ── */
+  .day-detail-wrap { margin-top: 12px; padding: 36px 64px 8px; }
+  .day-detail-table { width: 100%; border-collapse: collapse; }
+  .day-detail-table thead th { text-align: left; padding: 12px 8px; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
+  .day-detail-table thead th.num { text-align: right; }
+  .day-detail-table tbody td { padding: 12px 8px; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; vertical-align: middle; line-height: 1.5; }
+  .day-detail-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .day-detail-table tbody td.date-cell { font-weight: 700; color: var(--ink); font-size: 13px; white-space: nowrap; }
+  .day-detail-table tbody tr.day-end td { border-bottom: 1px dashed rgba(15,76,117,0.18); }
+  .day-detail-table tbody tr.day-subtotal td { background: linear-gradient(90deg, var(--accent-soft), #fff); padding: 10px 8px; font-size: 11.5px; font-weight: 700; color: var(--accent); letter-spacing: 0.3px; border-bottom: 1px solid var(--accent); }
+  .day-detail-table tbody tr.day-subtotal td.num { color: var(--accent); font-size: 14px; }
+  .day-detail-table tbody tr.grand-day td { background: var(--ink); color: #fff !important; padding: 22px 8px; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; }
+  .day-detail-table tbody tr.grand-day td.total { font-size: 22px; letter-spacing: -0.3px; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; }
+  .pill-tt    { background: rgba(99,102,241,0.12); color: #3730a3; }
+  .pill-amz   { background: rgba(14,165,233,0.12); color: #0e7490; }
+  .pill-other { background: rgba(100,116,139,0.12); color: #475569; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; margin-right: 4px; }
+  .tag-swap   { background: rgba(244,114,182,0.12); color: #be185d; border: 1px solid rgba(244,114,182,0.30); }
+  .tag-emma   { background: rgba(168,85,247,0.12); color: #7c2d92; border: 1px solid rgba(168,85,247,0.30); }
+  .tag-cell { white-space: nowrap; }
+  .tag-none { color: #cbd5e1; font-style: italic; font-size: 11px; }
+
   .bottom { padding: 24px 64px; background: var(--ink); color: rgba(255,255,255,0.65); font-size: 11px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.3px; }
   .bottom .thanks { font-family: 'Playfair Display', Georgia, serif; color: #fff; font-size: 14px; font-style: italic; font-weight: 400; }
 
@@ -16105,6 +16128,16 @@ function exportClientBreakdown(weekMon) {
     td.total { font-size: 14px !important; }
     tr.grand td { padding: 12px 6px !important; font-size: 12px !important; }
     tr.grand td.total { font-size: 17px !important; }
+    /* Daily Pickup Detail print compaction */
+    .day-detail-wrap { padding: 14px 32px 0 !important; margin-top: 0 !important; }
+    .day-detail-table thead th { padding: 7px 5px !important; font-size: 8.5px !important; }
+    .day-detail-table tbody td { padding: 7px 5px !important; font-size: 9.5px !important; }
+    .day-detail-table tbody tr.day-subtotal td { padding: 6px 5px !important; font-size: 9px !important; }
+    .day-detail-table tbody tr.day-subtotal td.num { font-size: 11px !important; }
+    .day-detail-table tbody tr.grand-day td { padding: 10px 5px !important; font-size: 11px !important; }
+    .day-detail-table tbody tr.grand-day td.total { font-size: 15px !important; }
+    .pill { padding: 2px 7px !important; font-size: 8.5px !important; }
+    .tag  { padding: 1px 6px !important; font-size: 8px !important; }
     .bottom { padding: 14px 32px !important; font-size: 9.5px !important; }
     .bottom .thanks { font-size: 12px !important; }
   }
@@ -16202,6 +16235,106 @@ function exportClientBreakdown(weekMon) {
         ${rowsHtml}
         <tr class="grand">
           <td colspan="3">TOTAL DUE · ${grandPallets} pallets &middot; ${grandTrucks} truck${grandTrucks===1?'':'s'}</td>
+          <td class="num total">${money(grandTotal)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <!-- DAILY PICKUP DETAIL — per-truck list for this week           -->
+  <!-- ADDITIVE 2026-06-12 — no logic/math change, only display     -->
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <div class="tx-wrap day-detail-wrap" style="margin-top:8px;">
+    <div class="tx-title">Daily Pickup Detail</div>
+    <table class="day-detail-table">
+      <thead>
+        <tr>
+          <th style="width:16%;">Date</th>
+          <th style="width:11%;">Type</th>
+          <th style="width:12%;text-align:center;">Truck</th>
+          <th class="num" style="width:11%;">Pallets</th>
+          <th style="width:22%;">Tags</th>
+          <th class="num" style="width:13%;">Per Pallet</th>
+          <th class="num" style="width:15%;">Subtotal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(() => {
+          // Collect all per-truck entries across all weeks in this statement, sort by date
+          const allEntries = [];
+          for (const w of weeks) {
+            for (const e of (w.entries || [])) allEntries.push(e);
+          }
+          allEntries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+          if (allEntries.length === 0) return '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8;font-style:italic;">No pickups recorded</td></tr>';
+          // Group by date — show date once per day (rowspan)
+          const byDate = {};
+          for (const e of allEntries) {
+            if (!byDate[e.date]) byDate[e.date] = [];
+            byDate[e.date].push(e);
+          }
+          const dates = Object.keys(byDate).sort();
+          const rows = [];
+          let truckSeq = 0;
+          const swapPrem = swapTtPremium();
+          for (const dt of dates) {
+            const dayEntries = byDate[dt];
+            // Day-level subtotal across the day
+            let daySubtotal = 0;
+            for (const e of dayEntries) {
+              const isSw = !!e.isSwap;
+              const palletType = e.palletType || (isSw ? 'TT' : 'Mixed');
+              const isTT = palletType.toUpperCase() === 'TT' || isSw;
+              const isAMZ = palletType.toUpperCase() === 'AMAZON' || palletType.toUpperCase() === 'AMZ';
+              const perPallet = CLIENT_PROFIT_PER_PALLET + CLIENT_HUGO_PER_PALLET
+                              + (isSw ? swapPrem : 0)
+                              + ((e._emmaTransferDay && e.emmaTransferTTPallets > 0) ? EMMA_TRANSFER_RATE : 0);
+              daySubtotal += (e.pallets || 0) * perPallet;
+            }
+            // Render rows for this day
+            dayEntries.forEach((e, idx) => {
+              truckSeq++;
+              const isSw = !!e.isSwap;
+              const palletType = e.palletType || (isSw ? 'TT' : 'Mixed');
+              const isTT = palletType.toUpperCase() === 'TT' || isSw;
+              const isAMZ = palletType.toUpperCase() === 'AMAZON' || palletType.toUpperCase() === 'AMZ';
+              const isEmmaTr = !!e._emmaTransferDay && (e.emmaTransferTTPallets || 0) > 0;
+              const perPallet = CLIENT_PROFIT_PER_PALLET + CLIENT_HUGO_PER_PALLET
+                              + (isSw ? swapPrem : 0)
+                              + (isEmmaTr ? EMMA_TRANSFER_RATE : 0);
+              const lineSubtotal = (e.pallets || 0) * perPallet;
+              const typePill = isAMZ
+                ? '<span class="pill pill-amz">AMAZON</span>'
+                : isTT
+                  ? '<span class="pill pill-tt">TT</span>'
+                  : '<span class="pill pill-other">' + esc(palletType) + '</span>';
+              const tags = [];
+              if (isSw)      tags.push('<span class="tag tag-swap">🔁 SWAP</span>');
+              if (isEmmaTr)  tags.push('<span class="tag tag-emma">🤝 EMMA TRANSFER</span>');
+              if (tags.length === 0) tags.push('<span class="tag-none">—</span>');
+              const isFirstOfDay = idx === 0;
+              const isLastOfDay  = idx === dayEntries.length - 1;
+              return rows.push(`<tr class="${isLastOfDay ? 'day-end' : ''}">
+                <td class="date-cell">${isFirstOfDay ? fmtDate(dt) : ''}</td>
+                <td>${typePill}</td>
+                <td style="text-align:center;font-weight:600;color:#475569;font-variant-numeric:tabular-nums;">#${truckSeq}</td>
+                <td class="num">${(e.pallets || 0).toLocaleString('en-GB')}</td>
+                <td class="tag-cell">${tags.join(' ')}</td>
+                <td class="num"><span style="color:#0f4c75;font-weight:700;">${money(perPallet)}</span></td>
+                <td class="num"><b>${money(lineSubtotal)}</b></td>
+              </tr>`);
+            });
+            // Insert day-subtotal row
+            rows.push(`<tr class="day-subtotal">
+              <td colspan="6" style="text-align:right;">${fmtDate(dt)} Subtotal · ${dayEntries.length} truck${dayEntries.length===1?'':'s'} · ${dayEntries.reduce((s, x) => s + (x.pallets || 0), 0)} pallets</td>
+              <td class="num"><b>${money(daySubtotal)}</b></td>
+            </tr>`);
+          }
+          return rows.join('');
+        })()}
+        <tr class="grand-day">
+          <td colspan="6">DAILY TOTAL · ${grandTrucks} truck${grandTrucks===1?'':'s'} · ${grandPallets} pallets</td>
           <td class="num total">${money(grandTotal)}</td>
         </tr>
       </tbody>
