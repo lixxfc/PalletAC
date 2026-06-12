@@ -16250,13 +16250,11 @@ function exportClientBreakdown(weekMon) {
     <table class="day-detail-table">
       <thead>
         <tr>
-          <th style="width:16%;">Date</th>
-          <th style="width:11%;">Type</th>
-          <th style="width:12%;text-align:center;">Truck</th>
-          <th class="num" style="width:11%;">Pallets</th>
-          <th style="width:22%;">Tags</th>
-          <th class="num" style="width:13%;">Per Pallet</th>
-          <th class="num" style="width:15%;">Subtotal</th>
+          <th style="width:22%;">Date</th>
+          <th style="width:15%;">Type</th>
+          <th style="width:15%;text-align:center;">Truck</th>
+          <th class="num" style="width:15%;">Pallets</th>
+          <th style="width:33%;">Tags</th>
         </tr>
       </thead>
       <tbody>
@@ -16267,8 +16265,8 @@ function exportClientBreakdown(weekMon) {
             for (const e of (w.entries || [])) allEntries.push(e);
           }
           allEntries.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-          if (allEntries.length === 0) return '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8;font-style:italic;">No pickups recorded</td></tr>';
-          // Group by date — show date once per day (rowspan)
+          if (allEntries.length === 0) return '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8;font-style:italic;">No pickups recorded</td></tr>';
+          // Group by date — show date once per day
           const byDate = {};
           for (const e of allEntries) {
             if (!byDate[e.date]) byDate[e.date] = [];
@@ -16277,21 +16275,9 @@ function exportClientBreakdown(weekMon) {
           const dates = Object.keys(byDate).sort();
           const rows = [];
           let truckSeq = 0;
-          const swapPrem = swapTtPremium();
           for (const dt of dates) {
             const dayEntries = byDate[dt];
-            // Day-level subtotal across the day
-            let daySubtotal = 0;
-            for (const e of dayEntries) {
-              const isSw = !!e.isSwap;
-              const palletType = e.palletType || (isSw ? 'TT' : 'Mixed');
-              const isTT = palletType.toUpperCase() === 'TT' || isSw;
-              const isAMZ = palletType.toUpperCase() === 'AMAZON' || palletType.toUpperCase() === 'AMZ';
-              const perPallet = CLIENT_PROFIT_PER_PALLET + CLIENT_HUGO_PER_PALLET
-                              + (isSw ? swapPrem : 0)
-                              + ((e._emmaTransferDay && e.emmaTransferTTPallets > 0) ? EMMA_TRANSFER_RATE : 0);
-              daySubtotal += (e.pallets || 0) * perPallet;
-            }
+            const dayPallets = dayEntries.reduce((s, x) => s + (x.pallets || 0), 0);
             // Render rows for this day
             dayEntries.forEach((e, idx) => {
               truckSeq++;
@@ -16300,10 +16286,6 @@ function exportClientBreakdown(weekMon) {
               const isTT = palletType.toUpperCase() === 'TT' || isSw;
               const isAMZ = palletType.toUpperCase() === 'AMAZON' || palletType.toUpperCase() === 'AMZ';
               const isEmmaTr = !!e._emmaTransferDay && (e.emmaTransferTTPallets || 0) > 0;
-              const perPallet = CLIENT_PROFIT_PER_PALLET + CLIENT_HUGO_PER_PALLET
-                              + (isSw ? swapPrem : 0)
-                              + (isEmmaTr ? EMMA_TRANSFER_RATE : 0);
-              const lineSubtotal = (e.pallets || 0) * perPallet;
               const typePill = isAMZ
                 ? '<span class="pill pill-amz">AMAZON</span>'
                 : isTT
@@ -16321,21 +16303,17 @@ function exportClientBreakdown(weekMon) {
                 <td style="text-align:center;font-weight:600;color:#475569;font-variant-numeric:tabular-nums;">#${truckSeq}</td>
                 <td class="num">${(e.pallets || 0).toLocaleString('en-GB')}</td>
                 <td class="tag-cell">${tags.join(' ')}</td>
-                <td class="num"><span style="color:#0f4c75;font-weight:700;">${money(perPallet)}</span></td>
-                <td class="num"><b>${money(lineSubtotal)}</b></td>
               </tr>`);
             });
-            // Insert day-subtotal row
+            // Insert day-subtotal row (counts only, no money)
             rows.push(`<tr class="day-subtotal">
-              <td colspan="6" style="text-align:right;">${fmtDate(dt)} Subtotal · ${dayEntries.length} truck${dayEntries.length===1?'':'s'} · ${dayEntries.reduce((s, x) => s + (x.pallets || 0), 0)} pallets</td>
-              <td class="num"><b>${money(daySubtotal)}</b></td>
+              <td colspan="5" style="text-align:right;">${fmtDate(dt)} · ${dayEntries.length} truck${dayEntries.length===1?'':'s'} · ${dayPallets} pallet${dayPallets===1?'':'s'}</td>
             </tr>`);
           }
           return rows.join('');
         })()}
         <tr class="grand-day">
-          <td colspan="6">DAILY TOTAL · ${grandTrucks} truck${grandTrucks===1?'':'s'} · ${grandPallets} pallets</td>
-          <td class="num total">${money(grandTotal)}</td>
+          <td colspan="5" style="text-align:center;">DAILY TOTAL · ${grandTrucks} truck${grandTrucks===1?'':'s'} · ${grandPallets} pallet${grandPallets===1?'':'s'}</td>
         </tr>
       </tbody>
     </table>
