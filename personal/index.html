@@ -4119,11 +4119,13 @@ function customerTotalPallets(c) {
   return (c.ledger || []).filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0);
 }
 function customerProfit(c) {
+  // 2026-07-03: date-aware — sum each pickup at its date's per-pallet profit
   // Base profit (per-pallet margin) + any swap-TT bonus (£30/pallet for tagged pickups)
-  let base = customerTotalPallets(c) * perPalletProfit();
-  let bonus = 0;
+  let base = 0, bonus = 0;
   for (const e of (c.ledger || [])) {
-    if (e.type === 'pickup' && e.isSwap) bonus += (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium());
+    if (e.type !== 'pickup') continue;
+    base += (e.pallets || 0) * perPalletProfit(e.date);
+    if (e.isSwap) bonus += (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium());
   }
   return base + bonus;
 }
@@ -6096,7 +6098,10 @@ function closeDrilldown() {
 function buildDrilldownData(key) {
   const today = new Date().toISOString().slice(0, 10);
   const ymStr = today.slice(0, 7);
-  const perP = perPalletProfit();
+  // 2026-07-03: perP is date-context-dependent — use per-entry perPalletProfit(e.date)
+  // Legacy `perP = perPalletProfit()` returned today's rate globally and
+  // would misrepresent pre-cutover entries. Kept only for a few dead spots.
+  const perP_today = perPalletProfit(today);   // for "current" display only (KPI, calc, AI, alerts)
 
   // === 本周利润 ===
   if (key === 'week-profit') {
@@ -6104,22 +6109,32 @@ function buildDrilldownData(key) {
     const wkMon = wk.week;
     const swapPrem = swapTtPremium();
     const rows = [];
+    let sumWeightedPerP = 0, sumPallets = 0;
+    const rateSet = new Set();
     for (const r of allPickups()) {
       if (weekStartOf(r.date) !== wkMon) continue;
       const m = pickupMetrics(r);
+      const rate = perPalletProfit(r.date);   // date-aware per entry
+      rateSet.add(rate);
+      sumWeightedPerP += rate * (r.pallets || 0);
+      sumPallets += (r.pallets || 0);
       const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : '';
       rows.push({
         date: r.date,
-        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' (' + r.palletType + ')' : ''}<br><span class="dim" style="font-size:11px;">利润 = ${r.pallets} × £${perP}${r.isSwap ? ' + ' + r.pallets + ' × £' + (r.swapPremium || swapPrem) + ' Swap' : ''}</span>`,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' (' + r.palletType + ')' : ''}<br><span class="dim" style="font-size:11px;">利润 = ${r.pallets} × £${rate}${r.isSwap ? ' + ' + r.pallets + ' × £' + (r.swapPremium || swapPrem) + ' Swap' : ''}</span>`,
         amount: m.profit
       });
     }
     rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    // 2026-07-03: header 每托盘净利 — single rate if all entries same, else "混合"
+    const headerPerP = rateSet.size <= 1
+      ? (sumPallets > 0 ? Math.round(sumWeightedPerP / sumPallets) : perP_today)
+      : (sumPallets > 0 ? '~' + Math.round(sumWeightedPerP / sumPallets) + ' 混合' : perP_today);
     return {
       title: '本周利润 · 数据来源',
       sub: `${weekLabelShort(wkMon)} · 周一 → 周日 · 跟上周比 ${wk.lastProfit > 0 ? ((wk.profit - wk.lastProfit) / wk.lastProfit * 100).toFixed(1) + '%' : '—'}`,
       formula: `<div><span class="k">本周托盘</span><span class="v" style="float:right;">${wk.pallets} 托</span></div>
-                <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${perP}</span></div>
+                <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${headerPerP}</span></div>
                 ${rows.some(r => /SWAP/.test(r.desc)) ? `<div><span class="k">+ Swap TT 加成</span><span class="v" style="float:right;color:var(--pink);">已分摊到每条</span></div>` : ''}
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本周净利合计</span><span class="v total" style="float:right;">${fmt(wk.profit)}</span></div>`,
       rows,
@@ -6686,19 +6701,27 @@ function buildDrilldownData(key) {
       const baseProfit = profit - swapBonusTotal;
       const totalPallets = customerTotalPallets(c);
       const pickups = allEntries.filter(e => e.type === 'pickup');
+      // 2026-07-03: date-aware per entry
+      let weightedRate = 0;
+      const rateSet = new Set();
       const rows = pickups.map(e => {
-        const palletProfit = (e.pallets || 0) * perPalletProfit();
+        const rateForEntry = perPalletProfit(e.date);
+        rateSet.add(rateForEntry);
+        weightedRate += rateForEntry * (e.pallets || 0);
+        const palletProfit = (e.pallets || 0) * rateForEntry;
         const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapPrem) : 0;
         return {
           date: e.date,
-          desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${perPalletProfit()}${swapBonus > 0 ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
+          desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${rateForEntry}${swapBonus > 0 ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
           amount: palletProfit + swapBonus
         };
       });
+      const avgRate = totalPallets > 0 ? Math.round(weightedRate / totalPallets) : perP_today;
+      const rateLabel = rateSet.size <= 1 ? '£' + avgRate : '~£' + avgRate + ' 混合';
       return {
         title: c.name + ' · 累计利润',
         sub: `${pickups.length} 笔取货 · 共 ${totalPallets} 托`,
-        formula: `<div><span class="k">基础利润 (${totalPallets} × £${perPalletProfit()})</span><span class="v" style="float:right;">${fmt(baseProfit)}</span></div>
+        formula: `<div><span class="k">基础利润 (${totalPallets} × ${rateLabel})</span><span class="v" style="float:right;">${fmt(baseProfit)}</span></div>
                   ${swapBonusTotal > 0 ? `<div><span class="k">+ Swap TT 加成</span><span class="v" style="float:right;color:var(--pink);">+${fmt(swapBonusTotal)}</span></div>` : ''}
                   <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">累计利润</span><span class="v total" style="float:right;">${fmt(profit)}</span></div>`,
         rows,
