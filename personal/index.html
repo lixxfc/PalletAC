@@ -8707,7 +8707,9 @@ function effectiveUnitPrice(isSwap) { return state.params.sellPrice + (isSwap ? 
 //   • AMZ pallets get a marker `_emmaGiftedAmz` for audit; no money flows.
 // ============================================================
 const EMMA_TRANSFER_TRIAL_START = '2026-06-08';   // Monday 2026-06-08
-const EMMA_TRANSFER_TRIAL_END   = '2026-07-08';   // 1 month trial
+// 2026-07-03: Emma 转售试行提前终止 (业务变化 — TT 断货, 各自 SSS 各自结, 6/29 起 Michael Mon/Wed/Fri, Emma Tue/Thu)
+// 试行期实际运行 2026-06-08 ~ 2026-06-28。历史数据保留 (£25/托 结算依然可用)。
+const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';   // ended early
 const EMMA_TRANSFER_RATE        = 25;             // £ per TT pallet
 const EMMA_TRANSFER_FEE_TYPE    = 'emma-transfer-fee';  // customer ledger entry type
 

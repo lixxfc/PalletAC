@@ -2219,7 +2219,10 @@ function newModeStartDate() { return state && state.params && state.params.partn
 //     there). All other formulas and event-type handlers are unchanged.
 // ============================================================
 const EMMA_TRANSFER_TRIAL_START = '2026-06-08';
-const EMMA_TRANSFER_TRIAL_END   = '2026-07-08';
+// 2026-07-03: Emma 转售试行提前终止 — 业务变化 (TT 断货 + 各自 SSS 各自结)
+// 试行期实际运行 2026-06-08 ~ 2026-06-28。历史数据保留 (£25/托 结算依然可用)。
+// 6/29 (周一) 起, isInEmmaTransferTrialPeriod() 返回 false, saveSmartPickup 不再自动打 emma-transfer 标签。
+const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';
 const EMMA_TRANSFER_RATE        = 25;
 const EMMA_TRANSFER_SETTLEMENT_TYPE = 'out-emma-transfer';
 
