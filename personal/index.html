@@ -3789,8 +3789,9 @@ function migrateDailyToLedger() {
     fallback = { id: crypto.randomUUID(), name: '未分类', createdAt: new Date().toISOString(), ledger: [] };
     state.customers.push(fallback);
   }
-  const sell = state.params.sellPrice || 265;
+  // 2026-07-03: one-time migration — use per-event date-aware sell price
   for (const r of state.daily) {
+    const sell = sellPriceOn(r.date);
     fallback.ledger.push({
       id: r.id || crypto.randomUUID(),
       date: r.date,
@@ -4024,7 +4025,16 @@ async function saveUserDataNow() {
 // ============ COMPUTE ============
 // P2 #21 fix (2026-06-08): NaN defense — any undefined param defaults to 0
 // (was returning NaN that propagated through customerProfit / customerSwapBonus).
-const perPalletProfit = () => ((+state.params.sellPrice || 0) + (+state.params.myFee || 0) - (+state.params.buyPrice || 0));
+// 2026-07-03: date-aware. Falls back to today when date is omitted so legacy
+// call sites (dashboards, forecasts, insights) still return the current-rate
+// per-pallet profit. Post-cutover math:
+//   pre-7/1:   sell 265 + myFee 31 − buy 245 = £51
+//   7/1~7/5:  sell 265 + myFee 31 − buy 200 = £96 (£45 windfall — client not told yet)
+//   7/6+:     sell 220 + myFee 31 − buy 200 = £51 (back to normal spread)
+const perPalletProfit = (date) => {
+  const d = date || new Date().toISOString().slice(0,10);
+  return (sellPriceOn(d) || 0) + (+state.params.myFee || 0) - (buyPriceOn(d) || 0);
+};
 // fmt: format any number as a £-prefixed integer string. Defensive against
 // NaN / undefined so a single corrupt amount doesn't render '£NaN'.
 const fmt = v => {
@@ -4072,11 +4082,12 @@ function allPickups() {
 function pickupMetrics(row) {
   // Effective unit price = base sellPrice + swap premium (if any).
   // Use stored unitPrice on the row when present (snapshot), else compute live.
-  const base = state.params.sellPrice;
+  // 2026-07-03: fallback base and cost are date-aware based on row.date
+  const base = sellPriceOn(row.date);
   const premium = row.isSwap ? (row.swapPremium != null ? row.swapPremium : swapTtPremium()) : 0;
   const effective = (row.unitPrice != null) ? row.unitPrice : (base + premium);
   const revenue = row.pallets * effective;
-  const cost = row.pallets * state.params.buyPrice;
+  const cost = row.pallets * buyPriceOn(row.date);
   const fee = row.pallets * state.params.myFee;
   const swapBonus = row.pallets * premium;  // extra profit from swap-TT
   const profit = revenue + fee - cost;
@@ -4494,7 +4505,8 @@ function openSmartEntry() {
     _seTrucks[0].customerId = customers[0].id;
   }
 
-  document.getElementById('se-swap-price-hint').textContent = (state.params.sellPrice || 265) + swapTtPremium();
+  // 2026-07-03: use today's sell price in the swap price hint
+  document.getElementById('se-swap-price-hint').textContent = sellPriceOn(new Date().toISOString().slice(0,10)) + swapTtPremium();
 
   // Listen for default customer change → propagate to trucks
   sel.onchange = () => {
@@ -4586,15 +4598,17 @@ function initUnifiedFormDates() {
     sel.innerHTML = '<option value="">— 请选客户 —</option>'
       + customers.map(c => `<option value="${c.id}">${escapeHtml(c.name || '?')}</option>`).join('');
   }
-  // Update buy price hint
+  // 2026-07-03: hint shows today's buy price
   const hint = document.getElementById('ue-emma-buy-hint');
-  if (hint) hint.textContent = state.params.buyPrice || 245;
+  if (hint) hint.textContent = buyPriceOn(new Date().toISOString().slice(0,10));
 }
 
 // Auto-calc amount when pallets entered (Emma transfer)
 function onUnifiedEmmaPalletsChange() {
   const p = parseInt(document.getElementById('ue-emma-pallets').value);
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware based on form date
+  const _d = (document.getElementById('ue-emma-date') && document.getElementById('ue-emma-date').value) || new Date().toISOString().slice(0,10);
+  const buy = buyPriceOn(_d);
   if (p > 0) {
     document.getElementById('ue-emma-amount').value = (p * buy).toFixed(2);
   }
@@ -4602,7 +4616,9 @@ function onUnifiedEmmaPalletsChange() {
 }
 function onUnifiedSssPalletsChange() {
   const p = parseInt(document.getElementById('ue-sss-pallets').value);
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware based on form date
+  const _d = (document.getElementById('ue-sss-date') && document.getElementById('ue-sss-date').value) || new Date().toISOString().slice(0,10);
+  const buy = buyPriceOn(_d);
   if (p > 0) {
     document.getElementById('ue-sss-amount').value = (p * buy).toFixed(2);
   }
@@ -4689,7 +4705,8 @@ async function _ueWritePartnershipEvent(eventObj, autoInvoiceFn) {
 
 // Build SINV-Emma invoice object (in personal app context — counterparty snapshot from partnership state)
 function _ueBuildSinvForEmmaEvent(ev, partnershipState) {
-  const buy = (partnershipState.params && partnershipState.params.buyPrice) || (state.params.buyPrice || 245);
+  // 2026-07-03: date-aware buy price
+  const buy = buyPriceOn(ev.date);
   const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
   const co = partnershipState.company || {};
   const emma = partnershipState.emma || {};
@@ -4722,7 +4739,8 @@ function _ueBuildSinvForEmmaEvent(ev, partnershipState) {
 }
 
 function _ueBuildPinvForSssEvent(ev, partnershipState) {
-  const buy = (partnershipState.params && partnershipState.params.buyPrice) || (state.params.buyPrice || 245);
+  // 2026-07-03: date-aware buy price
+  const buy = buyPriceOn(ev.date);
   const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
   const co = partnershipState.company || {};
   const sss = partnershipState.sss || {};
@@ -5044,9 +5062,11 @@ function _updateEmmaTransferPreview() {
     if (isEmmaTransferTTEligible(t.type, t.isSwap)) tt += pallets;
     else if (isEmmaTransferAMZEligible(t.type, t.isSwap)) amz += pallets;
   }
-  const sellP = state.params.sellPrice || 265;
+  // 2026-07-03: date-aware pricing based on smart-entry form date
+  const _seDate = (document.getElementById('se-date') && document.getElementById('se-date').value) || new Date().toISOString().slice(0,10);
+  const sellP = sellPriceOn(_seDate);
   const swapP = swapTtPremium();
-  const buyP  = state.params.buyPrice || 245;
+  const buyP  = buyPriceOn(_seDate);
   const myFee = state.params.myFee || 31;
   const hugoF = state.params.hugoFee || 7;
   const vF    = state.params.vFee || 2;
@@ -5168,7 +5188,9 @@ function updateSmartEntryTruck(idx, field, val) {
 function renderSmartEntryTrucks() {
   const tb = document.getElementById('se-trucks-body');
   if (!tb) return;
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: date-aware sell price based on form date
+  const _seDateForPricing = (document.getElementById('se-date') && document.getElementById('se-date').value) || new Date().toISOString().slice(0,10);
+  const sellPrice = sellPriceOn(_seDateForPricing);
   const swapPrem = swapTtPremium();
   const customers = (state.customers || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const custOptions = (selectedId) =>
@@ -5383,8 +5405,9 @@ function updateSmartEntryPreview() {
   if (totalPallets === 0) { box.style.display = 'none'; return; }
 
   const date = document.getElementById('se-date').value;
-  const buyPrice = state.params.buyPrice || 245;
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: date-aware pricing
+  const buyPrice = buyPriceOn(date);
+  const sellPrice = sellPriceOn(date);
   const myFee = state.params.myFee || 31;
   const hugoFeeRate = state.params.hugoFee || 7;
   const vFeeRate = state.params.vFee || 2;
@@ -5668,7 +5691,8 @@ function _seDetectAnomalies(date, trucks) {
     }
 
     // 3) Customer balance will go deeply negative
-    const sellPrice = state.params.sellPrice || 265;
+    // 2026-07-03: date-aware sell price
+    const sellPrice = sellPriceOn(date);
     const swapPrem  = swapTtPremium();
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     const charge = palletsN * unit;
@@ -5766,8 +5790,12 @@ async function saveSmartPickup() {
   }
 
   const linkId = crypto.randomUUID();
-  const sellPrice = state.params.sellPrice || 265;
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware pricing (helpers in header)
+  //   pre-7/1  buy £245 sell £265 (£20 hidden)
+  //   7/1~7/5  buy £200 sell £265 (£65 windfall — customer not told yet)
+  //   7/6+     buy £200 sell £220 (£20 hidden — back to normal)
+  const sellPrice = sellPriceOn(date);
+  const buyPrice = buyPriceOn(date);
   const swapPrem = swapTtPremium();
   const userEmail = (currentUser && currentUser.email) ? currentUser.email : 'harreds.ceo@gmail.com';
 
@@ -6173,8 +6201,10 @@ function buildDrilldownData(key) {
 
   // === 每托盘毛利 ===
   if (key === 'per-pallet-margin') {
-    const sell = state.params.sellPrice;
-    const buy = state.params.buyPrice;
+    // 2026-07-03: current formula — today's rates
+    const _today = new Date().toISOString().slice(0,10);
+    const sell = sellPriceOn(_today);
+    const buy = buyPriceOn(_today);
     const myFee = state.params.myFee;
     return {
       title: '每托盘毛利 · 公式',
@@ -6289,7 +6319,7 @@ function buildDrilldownData(key) {
       const pallets = customerTotalPallets(c);
       return {
         date: '',
-        desc: `<b>${escapeHtml(c.name)}</b><br><span class="dim" style="font-size:11px;">累计取货 ${pallets} 托 · 余额能再买 ${state.params.sellPrice > 0 ? Math.floor(Math.max(0, bal) / state.params.sellPrice) : 0} 托</span>`,
+        desc: `<b>${escapeHtml(c.name)}</b><br><span class="dim" style="font-size:11px;">累计取货 ${pallets} 托 · 余额能再买 ${sellPriceOn(new Date().toISOString().slice(0,10)) > 0 ? Math.floor(Math.max(0, bal) / sellPriceOn(new Date().toISOString().slice(0,10))) : 0} 托</span>`,
         amount: bal
       };
     }).sort((a, b) => b.amount - a.amount);
@@ -6312,7 +6342,7 @@ function buildDrilldownData(key) {
       const tag = r.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁</span>' : '';
       return {
         date: r.date,
-        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' · ' + r.palletType : ''}<br><span class="dim" style="font-size:11px;">${r.pallets} × £${(r.unitPrice || state.params.sellPrice)} 营收 + £${state.params.myFee} myFee</span>`,
+        desc: `<b>${escapeHtml(r.customerName)}</b>${tag} · ${r.pallets} 托${r.palletType ? ' · ' + r.palletType : ''}<br><span class="dim" style="font-size:11px;">${r.pallets} × £${(r.unitPrice || sellPriceOn(r.date))} 营收 + £${state.params.myFee} myFee</span>`,
         amount: m.revenue + m.fee
       };
     });
@@ -6521,7 +6551,8 @@ function buildDrilldownData(key) {
     const c = state.customers.find(x => x.id === currentCustomer);
     if (!c) return { title: '客户不存在', formula: '', rows: [], empty: '' };
 
-    const sellPrice = state.params.sellPrice || 265;
+    // 2026-07-03: customer drilldown "how many pallets can they still buy" uses today's price
+    const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
     const swapPrem = swapTtPremium();
     const allEntries = [...(c.ledger || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
@@ -6878,6 +6909,8 @@ function _mcEmmaTrialRunning() {
   let ttPallets = 0, amzGifted = 0, ttSwapBonus = 0, ttBaseProfit = 0, amzProfit = 0;
   let trialDays = 0;
   const daysSeen = new Set();
+  // 2026-07-03: Emma transfer trial ran 2026-06-08 ~ 2026-06-28, entirely
+  // before the 2026-07-01 SSS price cutover, so legacy £245/£265 are correct.
   const sellPrice = state.params.sellPrice || 265;
   const myFee    = state.params.myFee     || 31;
   const buyPrice = state.params.buyPrice  || 245;
@@ -7206,7 +7239,7 @@ function renderKpis() {
     <div class="kpi v6">
       <div class="kpi-head"><div class="kpi-label">每托盘毛利</div><div class="kpi-icon">★</div></div>
       <div class="kpi-value">${fmt(perP)}</div>
-      <div class="kpi-sub">${(perP / (state.params.sellPrice + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
+      <div class="kpi-sub">${(perP / (sellPriceOn(new Date().toISOString().slice(0,10)) + state.params.myFee) * 100).toFixed(1)}% 利润率</div>
       <button class="kpi-info" title="数据来源" onclick="openDrilldown('per-pallet-margin')">ⓘ</button>
     </div>
     <div class="kpi v3">
@@ -7262,8 +7295,10 @@ function renderKpis() {
 
 function renderDaily() {
   // Update sell price display in page header hint
+  // 2026-07-03: date-aware — use form date or today
   const sellEl = document.getElementById('d-sell');
-  if (sellEl) sellEl.textContent = state.params.sellPrice;
+  const _dDate = (document.getElementById('d-date') && document.getElementById('d-date').value) || new Date().toISOString().slice(0,10);
+  if (sellEl) sellEl.textContent = sellPriceOn(_dDate);
 
   // Populate customer <select>
   const sel = document.getElementById('d-customer');
@@ -7342,7 +7377,8 @@ function renderCustomerDetail() {
   fillCustomerProfile(c);
 
   const bal = customerBalance(c);
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: "still can buy N pallets" uses today's sell price
+  const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
   document.getElementById('cd-balance').textContent = fmt(bal);
   document.getElementById('cd-deposit').textContent = fmt(customerTotalDeposit(c));
 
@@ -7708,7 +7744,9 @@ function updatePickupPreview() {
   if (!c) return;
   const swapEl = document.getElementById('d-swap');
   const isSwap = !!(swapEl && swapEl.checked);
-  const unitPrice = effectiveUnitPrice(isSwap);          // £265 or £295
+  // 2026-07-03: use form date for unit price (falls back to today)
+  const _pDate = (document.getElementById('d-date') && document.getElementById('d-date').value) || null;
+  const unitPrice = effectiveUnitPrice(isSwap, _pDate);   // £265 / £220 / +£30 swap
   const deduction = pallets * unitPrice;
   const bal = customerBalance(c);
   const after = bal - deduction;
@@ -7741,7 +7779,8 @@ function addPickup() {
   if (!c) { alert('客户不存在'); return; }
   const swapEl = document.getElementById('d-swap');
   const isSwap = !!(swapEl && swapEl.checked);
-  const unitPrice = effectiveUnitPrice(isSwap);
+  // 2026-07-03: date-aware sell price
+  const unitPrice = effectiveUnitPrice(isSwap, date);
   const amount = pallets * unitPrice;
   const palletType = (document.getElementById('d-type') ? document.getElementById('d-type').value : 'TT') || 'TT';
   c.ledger.push({
@@ -7826,7 +7865,8 @@ function updateQuickQuote() {
   const pallets = parseInt(raw, 10);
   if (!isFinite(pallets) || pallets < 0) { box.innerHTML = '<div class="qq-empty">请输入正整数</div>'; return; }
 
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: quick quote = "what if they buy now" → today's sell price
+  const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
   const balance = customerBalance(c);
   const totalCost = pallets * sellPrice;
   const owe = totalCost - balance;  // > 0 = customer needs to pay, < 0 = leftover credit, = 0 = perfect
@@ -8187,8 +8227,9 @@ function _smartAlertsCompute() {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const yesterdayStr = new Date(today.getTime() - 86400000).toISOString().slice(0, 10);
-  const sellPrice = state.params.sellPrice || 265;
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: smart alerts run on current data → today's prices
+  const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const hugoRate = state.params.hugoFee || 7;
   const monthTarget = +(state.params.monthlyProfitTarget || 45000);
 
@@ -8688,7 +8729,12 @@ function cyclePalletType(entryId) {
 // Swap-TT premium per pallet (defaults to £30, configurable via state.params.swapPremium)
 function swapTtPremium() { return (state.params && state.params.swapPremium != null) ? state.params.swapPremium : 30; }
 // Effective unit price for a pickup (factors in swap premium)
-function effectiveUnitPrice(isSwap) { return state.params.sellPrice + (isSwap ? swapTtPremium() : 0); }
+// 2026-07-03: date-aware. Callers should pass the pickup date; falls back to
+// today when omitted (legacy call sites in previews / on-the-fly quotes).
+function effectiveUnitPrice(isSwap, date) {
+  const base = sellPriceOn(date || new Date().toISOString().slice(0,10));
+  return base + (isSwap ? swapTtPremium() : 0);
+}
 
 // ============================================================
 // EMMA TRANSFER MODE (trial: 2026-06-08 ~ 2026-07-08)
@@ -8710,6 +8756,25 @@ const EMMA_TRANSFER_TRIAL_START = '2026-06-08';   // Monday 2026-06-08
 // 2026-07-03: Emma 转售试行提前终止 (业务变化 — TT 断货, 各自 SSS 各自结, 6/29 起 Michael Mon/Wed/Fri, Emma Tue/Thu)
 // 试行期实际运行 2026-06-08 ~ 2026-06-28。历史数据保留 (£25/托 结算依然可用)。
 const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';   // ended early
+
+// ═════════════════════════════════════════════════════════════════════
+// PRICE SCHEDULE (2026-07-03 added — Amazon SSS price drop)
+// ═════════════════════════════════════════════════════════════════════
+//   before 2026-07-01: buy £245 · sell £265 (£20 hidden spread)
+//   2026-07-01 ~ 07-05: buy £200 · sell £265 (£65 windfall — client not told yet)
+//   2026-07-06 onwards: buy £200 · sell £220 (£20 hidden spread)
+const PRICE_SSS_CUTOVER    = '2026-07-01';   // SSS drops buy price
+const PRICE_CLIENT_CUTOVER = '2026-07-06';   // Michael tells client (Monday)
+function buyPriceOn(date) {
+  const legacy = (state && state.params && state.params.buyPrice) || 245;
+  if (!date || date < PRICE_SSS_CUTOVER) return legacy;
+  return 200;
+}
+function sellPriceOn(date) {
+  const legacy = (state && state.params && state.params.sellPrice) || 265;
+  if (!date || date < PRICE_CLIENT_CUTOVER) return legacy;
+  return 220;
+}
 const EMMA_TRANSFER_RATE        = 25;             // £ per TT pallet
 const EMMA_TRANSFER_FEE_TYPE    = 'emma-transfer-fee';  // customer ledger entry type
 
@@ -8755,7 +8820,9 @@ function updateLedgerPreview() {
     if (!pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
     const swapEl = document.getElementById('lg-swap');
     const isSwap = !!(swapEl && swapEl.checked);
-    const unitPrice = effectiveUnitPrice(isSwap);
+    // 2026-07-03: use form date for unit price
+    const _lgDate = (document.getElementById('lg-date') && document.getElementById('lg-date').value) || null;
+    const unitPrice = effectiveUnitPrice(isSwap, _lgDate);
     delta = -pallets * unitPrice;
     label = isSwap
       ? `🔁 Swap TT 取货 ${pallets} × £${unitPrice} (+£${swapTtPremium()}/托盘)`
@@ -8777,7 +8844,7 @@ function updateLedgerPreview() {
   const overdraft = after < 0;
   box.classList.add('show');
   box.classList.toggle('danger', overdraft);
-  const afterCls = overdraft ? 'neg' : (after < state.params.sellPrice * 3 ? 'warn' : 'pos');
+  const afterCls = overdraft ? 'neg' : (after < sellPriceOn(new Date().toISOString().slice(0,10)) * 3 ? 'warn' : 'pos');
   const deltaCls = delta < 0 ? 'neg' : 'pos';
   box.innerHTML = `
     <div class="pv-row"><span class="pv-k">${label}</span><span class="pv-v ${deltaCls}">${delta >= 0 ? '+' : ''}${fmt(delta)}</span></div>
@@ -8805,7 +8872,8 @@ async function addLedger() {
     if (!pallets || pallets <= 0) { alert('取货请填托盘数 (>0)'); return; }
     const swapEl = document.getElementById('lg-swap');
     const isSwap = !!(swapEl && swapEl.checked);
-    const unitPrice = effectiveUnitPrice(isSwap);
+    // 2026-07-03: date-aware sell price for the customer ledger row
+    const unitPrice = effectiveUnitPrice(isSwap, date);
     const palletType = (document.getElementById('lg-type-select') ? document.getElementById('lg-type-select').value : 'TT') || 'TT';
     const linkId = crypto.randomUUID();
     const pickupUid = crypto.randomUUID();  // 1:1 per-truck sync key (2026-05-27 fix)
@@ -8875,7 +8943,8 @@ async function addLedger() {
 
     // Build the partnership pickup event
     const userEmail = (currentUser && currentUser.email) ? currentUser.email : 'harreds.ceo@gmail.com';
-    const buyPrice = state.params.buyPrice || 245;
+    // 2026-07-03: date-aware buy price for partnership event amount
+    const buyPrice = buyPriceOn(entry.date);
     const partnershipEvent = {
       id: crypto.randomUUID(),
       type: 'pickup',
@@ -9325,7 +9394,8 @@ function openLedgerEdit(entryId) {
   document.getElementById('le-swap').checked = !!e.isSwap;
   document.getElementById('le-note').value = e.note || '';
   const swapPriceEl = document.getElementById('le-swap-price');
-  if (swapPriceEl) swapPriceEl.textContent = (state.params.sellPrice || 265) + swapTtPremium();
+  // 2026-07-03: date-aware — show sell price at event date (fallback today)
+  if (swapPriceEl) swapPriceEl.textContent = sellPriceOn(e.date || new Date().toISOString().slice(0,10)) + swapTtPremium();
 
   const linkedHtmlParts = [];
   if (linkedInv) linkedHtmlParts.push(`<b>📄 关联发票:</b> ${escapeHtml(linkedInv.number)} <span style="color:${linkedInv.status === 'void' ? 'var(--rose)' : 'var(--cyan)'};">[${linkedInv.status}]</span> · ${fmt(linkedInv.total || 0)}`);
@@ -9364,7 +9434,9 @@ function updateLedgerEditPreview() {
     // historical pricing to today's sellPrice.
     const isSwap = !!document.getElementById('le-swap').checked;
     const oldUnitPrice = +(orig.unitPrice || 0);
-    const sellLive = state.params.sellPrice || 265;
+    // 2026-07-03: date-aware "live" price at edited date (falls back to today)
+    const _leDate = (document.getElementById('le-date') && document.getElementById('le-date').value) || orig.date || new Date().toISOString().slice(0,10);
+    const sellLive = sellPriceOn(_leDate);
     const swapLive = swapTtPremium();
     const liveUnitPrice = isSwap ? (sellLive + swapLive) : sellLive;
     const unitPrice = (!!orig.isSwap === isSwap && oldUnitPrice > 0) ? oldUnitPrice : liveUnitPrice;
@@ -9413,7 +9485,8 @@ async function saveLedgerEdit() {
     // actually changed isSwap. Otherwise just editing the date/note/truck
     // silently rewrites the historical sell price (broke old INV totals).
     const oldUnitPrice = +(e.unitPrice || 0);
-    const sellLive = state.params.sellPrice || 265;
+    // 2026-07-03: date-aware — price the "live" fallback at the edited date
+    const sellLive = sellPriceOn(newDate);
     const swapLive = swapTtPremium();
     const liveUnitPrice = newIsSwap ? (sellLive + swapLive) : sellLive;
     if (!!e.isSwap === newIsSwap && oldUnitPrice > 0) {
@@ -9499,7 +9572,8 @@ async function saveLedgerEdit() {
     linkedRec.date = newDate;
     linkedRec.amount = newAmount;
     linkedRec.note = newNote;
-    const sellP = state.params.sellPrice || 265;
+    // 2026-07-03: date-aware sell price
+    const sellP = sellPriceOn(newDate);
     linkedRec.palletsRef = sellP > 0 ? Math.floor(newAmount / sellP) : 0;
     linkedRec.unitPriceRef = sellP;
     linkedRec.updatedAt = new Date().toISOString();
@@ -9516,7 +9590,8 @@ async function saveLedgerEdit() {
         .from('partnership_data').select('data').eq('workspace_id', 'main').maybeSingle();
       if (readErr) throw new Error('读 partnership_data 失败:' + readErr.message);
       const latestData = (latestRow && latestRow.data) || { events: [], params: {} };
-      const buyPrice = (latestData.params && latestData.params.buyPrice) || state.params.buyPrice || 245;
+      // 2026-07-03: date-aware buy price for the partnership event amount
+      const buyPrice = buyPriceOn(newDate);
       // Find matches by oldSnap (1:1 strict)
       const matches = (latestData.events || []).filter(pev =>
         pev.type === 'pickup' && !pev.deleted && (
@@ -9902,7 +9977,9 @@ function generateStatement() {
   if (from > to) { alert('开始日期不能晚于结束日期'); return; }
 
   const company = state.company || {};
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: statement display unit price = today's rate;
+  // per-row prices fall back to e.unitPrice (which is date-aware at save).
+  const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
 
   // Sort ledger by date
   const sorted = [...c.ledger].sort((a, b) => a.date.localeCompare(b.date));
@@ -10531,9 +10608,10 @@ function openInvoiceEditor(opts) {
       const pickup = (customer.ledger || []).find(e => e.id === opts.fromPickup);
       if (pickup) {
         const isSwap = !!pickup.isSwap;
+        // 2026-07-03: fallback uses date-aware sellPriceOn(pickup.date)
         const unitPrice = pickup.unitPrice != null
           ? pickup.unitPrice
-          : (isSwap ? (state.params.sellPrice + swapTtPremium()) : state.params.sellPrice);
+          : (isSwap ? (sellPriceOn(pickup.date) + swapTtPremium()) : sellPriceOn(pickup.date));
         inv.lineItems.push({
           description: (isSwap ? 'Pallets (Swap TT)' : 'Pallets') + (pickup.truck ? ' (Vehicle ' + pickup.truck + ')' : ''),
           qty: pickup.pallets || 0,
@@ -10550,7 +10628,8 @@ function openInvoiceEditor(opts) {
       inv.lineItems.push({
         description: 'Pallets',
         qty: 0,
-        unitPrice: state.params.sellPrice || 265
+        // 2026-07-03: date-aware — use invoice date's sell price
+        unitPrice: sellPriceOn(inv.issueDate || new Date().toISOString().slice(0,10))
       });
     }
     inv.dueDate = computeDueDate(inv.issueDate, inv.paymentTerms, inv.customDays);
@@ -10604,7 +10683,9 @@ function updateInvoiceLineItem(idx, field, value) {
   recomputeInvoiceTotals();
 }
 function addInvoiceLineItem() {
-  invoiceDraftItems.push({ description: '', qty: 0, unitPrice: state.params.sellPrice || 265 });
+  // 2026-07-03: date-aware default — use invoice's issue date
+  const invDate = (document.getElementById('inv-date') && document.getElementById('inv-date').value) || new Date().toISOString().slice(0,10);
+  invoiceDraftItems.push({ description: '', qty: 0, unitPrice: sellPriceOn(invDate) });
   renderInvoiceItems();
 }
 function removeInvoiceLineItem(idx) {
@@ -11625,7 +11706,8 @@ function generateReceiptForDeposit(customer, depositEntry, sourceTag) {
   ensureReceiptsArray();
   if (!customer || !depositEntry) return null;
   if (state.receipts.some(r => r.linkedDepositId === depositEntry.id)) return null;
-  const sellPrice = state.params.sellPrice || 265;
+  // 2026-07-03: date-aware sell price for palletsRef estimate
+  const sellPrice = sellPriceOn(depositEntry.date);
   const palletsRef = sellPrice > 0 ? Math.floor((depositEntry.amount || 0) / sellPrice) : 0;
   const co = state.company || {};
   const rec = {
@@ -11665,9 +11747,11 @@ function generateInvoiceForPickup(customer, pickupEntry, sourceTag) {
   if (!customer || !pickupEntry) return null;
   if (state.invoices.some(i => i.linkedPickupId === pickupEntry.id)) return null;
   const isSwap = !!pickupEntry.isSwap;
+  // 2026-07-03: date-aware fallback (usually pickupEntry.unitPrice is set already)
+  const _pSellP = sellPriceOn(pickupEntry.date);
   const unitPrice = pickupEntry.unitPrice != null
     ? pickupEntry.unitPrice
-    : (isSwap ? (state.params.sellPrice + swapTtPremium()) : state.params.sellPrice);
+    : (isSwap ? (_pSellP + swapTtPremium()) : _pSellP);
   const desc = (isSwap ? 'Pallets (Swap TT)' : 'Pallets')
              + (pickupEntry.palletType && !isSwap ? ' (' + pickupEntry.palletType + ')' : '')
              + (pickupEntry.truck ? ' [Vehicle ' + pickupEntry.truck + ']' : '');
@@ -11812,13 +11896,14 @@ function migrateInvoicesAndReceiptsToNewFormat() {
     daySeq[k] = (daySeq[k] || 0) + 1;
   }
 
-  const sellPrice = state.params.sellPrice || 265;
   const co = state.company || {};
   for (const { customer, entry } of pendingDeposits) {
     const key = _ddmmyyyyKey(entry.date);
     if (!key) continue;
     daySeq[key] = (daySeq[key] || 0) + 1;
     const number = 'REC-' + key + '-' + String(daySeq[key]).padStart(3, '0');
+    // 2026-07-03: per-entry date-aware sell price
+    const sellPrice = sellPriceOn(entry.date);
     const palletsRef = sellPrice > 0 ? Math.floor((entry.amount || 0) / sellPrice) : 0;
     state.receipts.push({
       id: crypto.randomUUID(),
@@ -11895,9 +11980,11 @@ function migrateInvoicesAndReceiptsToNewFormat() {
     invDaySeq[key] = (invDaySeq[key] || 0) + 1;
     const number = 'INV-' + key + '-' + String(invDaySeq[key]).padStart(3, '0');
     const isSwap = !!entry.isSwap;
+    // 2026-07-03: date-aware fallback based on pickup entry date
+    const _entrySellP = sellPriceOn(entry.date);
     const unitPrice = entry.unitPrice != null
       ? entry.unitPrice
-      : (isSwap ? ((state.params.sellPrice || 265) + swapTtPremium()) : (state.params.sellPrice || 265));
+      : (isSwap ? (_entrySellP + swapTtPremium()) : _entrySellP);
     const desc = (isSwap ? 'Pallets (Swap TT)' : 'Pallets')
                + (entry.palletType && !isSwap ? ' (' + entry.palletType + ')' : '')
                + (entry.truck ? ' [Vehicle ' + entry.truck + ']' : '');
@@ -13743,10 +13830,12 @@ function analyzeRules() {
   const agg = monthlyAgg();
   const insights = [];
 
+  // 2026-07-03: insights are about "now" → today's sell price
+  const _todaySellP = sellPriceOn(new Date().toISOString().slice(0,10));
   for (const c of state.customers) {
     const b = customerBalance(c);
     if (b < 0) insights.push({ type: 'bad', title: `${c.name} 透支 ${fmt(-b)}`, text: '该客户取货金额已超过预付。请尽快催款或停止出货。' });
-    else if (b > 0 && b < state.params.sellPrice * 5) insights.push({ type: 'warn', title: `${c.name} 余额偏低 (${fmt(b)})`, text: '只够买 ' + Math.floor(b / state.params.sellPrice) + ' 个托盘，建议提前提醒客户续预付。' });
+    else if (b > 0 && b < _todaySellP * 5) insights.push({ type: 'warn', title: `${c.name} 余额偏低 (${fmt(b)})`, text: '只够买 ' + Math.floor(b / _todaySellP) + ' 个托盘，建议提前提醒客户续预付。' });
   }
 
   const last7 = allPickups().sort((a,b) => b.date.localeCompare(a.date)).slice(0, 7);
@@ -13756,7 +13845,7 @@ function analyzeRules() {
     else if (avg >= 25) insights.push({ type: 'good', title: `装载率很好（均 ${avg.toFixed(1)} 托盘）`, text: '保持这个节奏，一周多 £' + Math.round(avg * 7 * perPalletProfit()).toLocaleString() + ' 利润。' });
   }
 
-  const margin = perPalletProfit() / (state.params.sellPrice + state.params.myFee) * 100;
+  const margin = perPalletProfit() / (_todaySellP + state.params.myFee) * 100;
   if (margin < 15) insights.push({ type: 'warn', title: `利润率偏低 (${margin.toFixed(1)}%)`, text: '和 SSS 谈谈批发价，或考虑逐步提升卖价 £5-10。' });
   else insights.push({ type: 'good', title: `利润率健康 (${margin.toFixed(1)}%)`, text: `每托盘净赚 £${perPalletProfit()}。` });
 
@@ -13996,7 +14085,7 @@ function aiSystemPrompt() {
   return `你是 Michael 的私人业务顾问 AI,他在英国做托盘批发(从 SSS 进货,卖给客户,还有合作伙伴 Emma 和中间人 Hugo)。
 
 【业务模型(2026-05-20 起,新模式)】
-- Michael 自己付钱给 SSS 进货 (£${state.params.buyPrice}/托) → 卖给客户 (£${state.params.sellPrice}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
+- Michael 自己付钱给 SSS 进货 (£${buyPriceOn(new Date().toISOString().slice(0,10))}/托) → 卖给客户 (£${sellPriceOn(new Date().toISOString().slice(0,10))}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
 - 资金流向: 客户预付 + Emma 转账 → Michael → SSS。Michael 是唯一付 SSS 的人。
 - SSS 池被分成两份: Michael 份额 + Emma 份额。每次取货只消耗取货人那一边的份额。
 - 客户先预付款给 Michael(进客户余额),Michael 取货时按 sellPrice 扣客户账本
@@ -14147,10 +14236,12 @@ function calcCopy() {
 }
 function calcPreset(key) {
   let expr = '';
-  if (key === 'profit-24') expr = '24 * ' + perPalletProfit();
-  if (key === 'profit-26') expr = '26 * ' + perPalletProfit();
-  if (key === 'deduct-24') expr = '24 * ' + state.params.sellPrice;
-  if (key === 'deduct-26') expr = '26 * ' + state.params.sellPrice;
+  // 2026-07-03: calculator presets use today's rates
+  const _todayForCalc = new Date().toISOString().slice(0,10);
+  if (key === 'profit-24') expr = '24 * ' + perPalletProfit(_todayForCalc);
+  if (key === 'profit-26') expr = '26 * ' + perPalletProfit(_todayForCalc);
+  if (key === 'deduct-24') expr = '24 * ' + sellPriceOn(_todayForCalc);
+  if (key === 'deduct-26') expr = '26 * ' + sellPriceOn(_todayForCalc);
   document.getElementById('calc-input').value = expr; calcEval();
 }
 
@@ -15577,16 +15668,21 @@ function setWeeklyView(n) {
 const CLIENT_PROFIT_PER_PALLET = 30;   // 给客人说的"我的利润" / 托
 const CLIENT_HUGO_PER_PALLET = 10;     // 给客人说的"Hugo 费用" / 托
 // SELF_* 改成读 live params,这样改设置后所有地方同步更新
-function selfProfitPerPallet() { return perPalletProfit(); }
+// 2026-07-03: all now date-aware; call sites can pass an event date.
+function selfProfitPerPallet(date) { return perPalletProfit(date); }
 function selfHugoPerPallet()   { return state.params.hugoFee != null ? state.params.hugoFee : 7; }
 function selfVPerPallet()      { return state.params.vFee   != null ? state.params.vFee   : 2; }
 // 2026-06-09 v2 — 净利 £51/托 拆解显示 (4 个组成部分, 数学等价):
 //   £51 净利 = £20 隐藏加价 + £30 客户费 + £3 Hugo 差价 − £2 V
 //   INVARIANT: selfHiddenMarkup + selfClientFee + selfHugoSpread − selfV === selfProfitPerPallet()
 //   不改 weekNet 公式, 只是展开显示让 Michael 看清 £51 由什么组成.
-function selfHiddenMarkupPerPallet() {
-  // £20 = sellPrice − buyPrice. 客户认为你的进价是 £265 (sellPrice), 实际 SSS £245 (buyPrice).
-  return (+(state.params.sellPrice) || 0) - (+(state.params.buyPrice) || 0);
+// 2026-07-03: hidden markup now date-aware:
+//   pre-7/1:   265 − 245 = £20
+//   7/1~7/5:  265 − 200 = £65 (windfall — client not told yet)
+//   7/6+:     220 − 200 = £20 (back to normal)
+function selfHiddenMarkupPerPallet(date) {
+  const d = date || new Date().toISOString().slice(0,10);
+  return (sellPriceOn(d) || 0) - (buyPriceOn(d) || 0);
 }
 function selfClientFeePerPallet() {
   // £30 = 客户版 "我的费用" — 跟 CLIENT_PROFIT_PER_PALLET 同源
@@ -15738,13 +15834,17 @@ function renderSelfBreakdown(customer) {
   tb.innerHTML = reversed.map(w => {
     const wkNum = isoWeekNum(w.week);
     const isCurrent = w.week === todayWk;
-    const profit51 = w.totalPallets * selfProfitPerPallet();
+    // 2026-07-03: per-entry date-aware profit/markup (weeks that straddle 7/1
+    // or 7/6 mix different rates; summing per-pickup keeps the invariant true)
+    let profit51 = 0, hiddenMarkup = 0;
+    for (const en of (w.entries || [])) {
+      profit51     += (en.pallets || 0) * selfProfitPerPallet(en.date);
+      hiddenMarkup += (en.pallets || 0) * selfHiddenMarkupPerPallet(en.date);
+    }
     const hugo7    = w.totalPallets * selfHugoPerPallet();
     const v2       = w.totalPallets * selfVPerPallet();
-    // 2026-06-09 v2 — £51 净利的 4 个组成部分 (数学等价, 仅展示)
-    const hiddenMarkup = w.totalPallets * selfHiddenMarkupPerPallet();   // £20 × N
-    const clientFee    = w.totalPallets * selfClientFeePerPallet();      // £30 × N
-    const hugoSpread   = w.totalPallets * selfHugoSpreadPerPallet();     // £3 × N
+    const clientFee    = w.totalPallets * selfClientFeePerPallet();      // £30 × N (fixed)
+    const hugoSpread   = w.totalPallets * selfHugoSpreadPerPallet();     // £3 × N (fixed)
     // INVARIANT 自检: hiddenMarkup + clientFee + hugoSpread − v2 === profit51
     const _invariantDelta = profit51 - (hiddenMarkup + clientFee + hugoSpread - v2);
     if (Math.abs(_invariantDelta) > 0.01) {
@@ -15772,16 +15872,24 @@ function renderSelfBreakdown(customer) {
     }
 
     // 2026-06-09 v2: 把 £51 展开成 4 项可见明细 + 小计
-    // INVARIANT: 4 项之和 = £51 × pallets = profit51 (math unchanged)
-    const _sellP = state.params.sellPrice || 265;
-    const _buyP  = state.params.buyPrice  || 245;
+    // 2026-07-03: hidden markup may vary within a week (7/1 cutover) — show avg
     const _clientHugo = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
+    const _wkAvgHiddenMk  = w.totalPallets > 0 ? (hiddenMarkup / w.totalPallets) : 0;
+    const _wkAvgProfit    = w.totalPallets > 0 ? (profit51     / w.totalPallets) : 0;
+    // Sample entry's sell/buy price for the "卖 £X − 进 £Y" caption
+    const _wkSample = (w.entries && w.entries[0]) ? w.entries[0] : null;
+    const _wkSampleDate = _wkSample ? _wkSample.date : new Date().toISOString().slice(0,10);
+    const _sellP = sellPriceOn(_wkSampleDate);
+    const _buyP  = buyPriceOn(_wkSampleDate);
+    // Detect mixed-rate week (any two entries with different buy prices)
+    const _mixedRate = (w.entries || []).some(en => buyPriceOn(en.date) !== _buyP || sellPriceOn(en.date) !== _sellP);
+    const _mixTag = _mixedRate ? ' <span style="font-size:9.5px;color:var(--amber);">(本周含 7/1 切换)</span>' : '';
     const chargeRows = [
-      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${w.totalPallets} × £${selfHiddenMarkupPerPallet()} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(卖 £${_sellP} − 进 £${_buyP})</span></span><span class="v">${fmt(hiddenMarkup)}</span></div>`,
+      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${w.totalPallets} × £${_wkAvgHiddenMk.toFixed(_mixedRate ? 2 : 0)} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(卖 £${_sellP} − 进 £${_buyP})${_mixTag}</span></span><span class="v">${fmt(hiddenMarkup)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfClientFeePerPallet()} 客户费 <span style="font-size:9.5px;color:var(--text-dim);">(你收客户的中介费)</span></span><span class="v">${fmt(clientFee)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${w.totalPallets} × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(收 £${_clientHugo} − 付 £${selfHugoPerPallet()})</span></span><span class="v">${fmt(hugoSpread)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V 付出 <span style="font-size:9.5px;opacity:0.7;">(你付 V 现金)</span></span><span class="v">−${fmt(v2)}</span></div>`,
-      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${selfProfitPerPallet()}/托 × ${w.totalPallets}</span><span class="v">= ${fmt(profit51)}</span></div>`,
+      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${_wkAvgProfit.toFixed(_mixedRate ? 2 : 0)}/托 × ${w.totalPallets}</span><span class="v">= ${fmt(profit51)}</span></div>`,
       swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : '',
       _trxTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${_trxTT} × £${EMMA_TRANSFER_RATE} 🤝 客户转售费 (入)</span><span class="v">+${fmt(_trxFeeIn)}</span></div>` : '',
       _trxTT > 0 ? `<div class="bd-charge-row" style="color:#9333ea;"><span class="k">− ${_trxTT} × £${EMMA_TRANSFER_RATE} 给 Emma 转售提成 (出)</span><span class="v">−${fmt(_trxFeeOut)}</span></div>` : '',
@@ -15792,7 +15900,8 @@ function renderSelfBreakdown(customer) {
     const expandId = `bd-self-detail-${w.week.replace(/-/g,'')}`;
     const entries = (w.entries || []).slice().sort((a,b) => a.date.localeCompare(b.date));
     const detailRows = entries.map((en, idx) => {
-      const enProfit = (en.pallets || 0) * selfProfitPerPallet();
+      // 2026-07-03: per-entry date-aware profit
+      const enProfit = (en.pallets || 0) * selfProfitPerPallet(en.date);
       const enHugo = (en.pallets || 0) * selfHugoPerPallet();
       const enV = (en.pallets || 0) * selfVPerPallet();
       const enSwap = (en.isSwap ? (en.pallets || 0) : 0) * swapTtPremium();
@@ -15840,7 +15949,7 @@ function renderSelfBreakdown(customer) {
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:left;">日期</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:left;">类型</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">托盘</th>
-              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">净利 £${selfProfitPerPallet()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">净利/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Hugo £${selfHugoPerPallet()}/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">V £${selfVPerPallet()}/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Swap £${swapTtPremium()}/托</th>
@@ -15854,20 +15963,27 @@ function renderSelfBreakdown(customer) {
     </tr>`;
   }).join('');
 
+  // 2026-07-03: totals also per-entry date-aware (weeks span 7/1 cutover) —
+  // hoisted out of the `if (tf)` block so the reconcile card below can reuse it.
+  let totHiddenMarkup = 0;
+  for (const wk of weeks) {
+    for (const en of (wk.entries || [])) {
+      totHiddenMarkup += (en.pallets || 0) * selfHiddenMarkupPerPallet(en.date);
+    }
+  }
+
   if (tf) {
-    // 合计也展开 £51 成 4 项 (与周行保持一致)
-    const totHiddenMarkup = totPallets * selfHiddenMarkupPerPallet();
     const totClientFee    = totPallets * selfClientFeePerPallet();
     const totHugoSpread   = totPallets * selfHugoSpreadPerPallet();
-    const _sellP_t = state.params.sellPrice || 265;
-    const _buyP_t  = state.params.buyPrice  || 245;
     const _clientHugo_t = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
+    const _totAvgHiddenMk = totPallets > 0 ? (totHiddenMarkup / totPallets) : 0;
+    const _totAvgProfit   = totPallets > 0 ? (totProfit       / totPallets) : 0;
     const totalRows = [
-      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${totPallets} 托 × £${selfHiddenMarkupPerPallet()} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(£${_sellP_t}−£${_buyP_t})</span></span><span class="v">${fmt(totHiddenMarkup)}</span></div>`,
+      `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${totPallets} 托 × 均 £${_totAvgHiddenMk.toFixed(2)} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(按每笔日期分段)</span></span><span class="v">${fmt(totHiddenMarkup)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfClientFeePerPallet()} 客户费</span><span class="v">${fmt(totClientFee)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${totPallets} 托 × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(£${_clientHugo_t}收−£${selfHugoPerPallet()}付)</span></span><span class="v">${fmt(totHugoSpread)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V 付出</span><span class="v">−${fmt(totV)}</span></div>`,
-      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${selfProfitPerPallet()}/托 × ${totPallets}</span><span class="v">= ${fmt(totProfit)}</span></div>`,
+      `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 均 £${_totAvgProfit.toFixed(2)}/托 × ${totPallets}</span><span class="v">= ${fmt(totProfit)}</span></div>`,
       totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : '',
       totEmmaTransferTT > 0 ? `<div class="bd-charge-row" style="color:#db2777;"><span class="k">+ ${totEmmaTransferTT} 托 × £${EMMA_TRANSFER_RATE} 🤝 转售费 (入/出抵销)</span><span class="v">+${fmt(totEmmaTransferFee)} / -${fmt(totEmmaTransferFee)}</span></div>` : ''
     ].filter(Boolean).join('');
@@ -15891,7 +16007,8 @@ function renderSelfBreakdown(customer) {
     const paidHugo    = totHugo;                            // totPallets × £7
     const paidV       = totV;                               // totPallets × £2
     const paidEmma    = totEmmaTransferFee;                 // 给 Emma
-    const hiddenMk    = totPallets * selfHiddenMarkupPerPallet();
+    // 2026-07-03: use the per-entry date-aware total we already computed above
+    const hiddenMk    = totHiddenMarkup;
     const expectedNet = grossClient - paidHugo - paidV - paidEmma + hiddenMk;
     // INVARIANT check
     const reconDelta = totNet - expectedNet;

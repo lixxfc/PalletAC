@@ -2223,6 +2223,34 @@ const EMMA_TRANSFER_TRIAL_START = '2026-06-08';
 // 试行期实际运行 2026-06-08 ~ 2026-06-28。历史数据保留 (£25/托 结算依然可用)。
 // 6/29 (周一) 起, isInEmmaTransferTrialPeriod() 返回 false, saveSmartPickup 不再自动打 emma-transfer 标签。
 const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';
+
+// ═════════════════════════════════════════════════════════════════════
+// PRICE SCHEDULE (2026-07-03 added)
+// ═════════════════════════════════════════════════════════════════════
+// Business change (2026-07-01): SSS dropped Amazon buy price to compensate
+// for TT discontinuation. Michael keeps £20/pallet spread as before.
+//
+//   Period            SSS buy (Michael pays)   Client sell (Michael charges)
+//   before 2026-07-01           £245                     £265           (£20 hidden)
+//   2026-07-01 ~ 07-05          £200                     £265           (£65 windfall — 5-day gap
+//                                                                        before Michael informed client)
+//   2026-07-06 onwards          £200                     £220           (£20 hidden — back to normal)
+//
+// Legacy state.params.buyPrice (245) / state.params.sellPrice (265) are
+// treated as DEFAULTS for pre-2026-07-01 data. Callers that need per-event
+// pricing MUST use buyPriceOn(date) / sellPriceOn(date).
+const PRICE_SSS_CUTOVER    = '2026-07-01';   // SSS drops buy price
+const PRICE_CLIENT_CUTOVER = '2026-07-06';   // Michael tells client (Monday)
+function buyPriceOn(date) {
+  const legacy = (state && state.params && state.params.buyPrice) || 245;
+  if (!date || date < PRICE_SSS_CUTOVER) return legacy;
+  return 200;
+}
+function sellPriceOn(date) {
+  const legacy = (state && state.params && state.params.sellPrice) || 265;
+  if (!date || date < PRICE_CLIENT_CUTOVER) return legacy;
+  return 220;
+}
 const EMMA_TRANSFER_RATE        = 25;
 const EMMA_TRANSFER_SETTLEMENT_TYPE = 'out-emma-transfer';
 
@@ -2376,11 +2404,11 @@ function cashPoolBalance() {
 // in emmaSssShare / michaelSssShare via the `to` field.
 function sssBalance() {
   const evs = _newModeEvents();
-  const buyPrice = state.params.buyPrice || 245;
   let paid = 0, used = 0, refunded = 0;
   for (const e of evs) {
     if (e.type === 'out-supplier') paid += (e.amount || 0);
-    else if (e.type === 'pickup') used += (e.pallets || 0) * buyPrice;
+    // 2026-07-03: date-aware buyPrice — <7/1 £245, ≥7/1 £200
+    else if (e.type === 'pickup') used += (e.pallets || 0) * buyPriceOn(e.date);
     else if (e.type === 'sss-refund') refunded += (e.amount || 0);
   }
   const opening = state.params.sssOpeningCredit || 0;
@@ -2398,12 +2426,12 @@ function sssBalance() {
 //   Sum of both = sssBalance() always.
 function emmaSssShare() {
   if (!isNewMode()) return { in: 0, used: 0, remaining: 0, refunded: 0 };
-  const buyPrice = state.params.buyPrice || 245;
   const opening = state.params.emmaOpeningCredit || 0;   // POSITIVE = Emma's prepay credit at switch
   let inAmt = 0, usedAmt = 0, refundedToEmma = 0;
   for (const e of _newModeEvents()) {
     if (e.type === 'in-emma') inAmt += (e.amount || 0);
-    else if (e.type === 'pickup' && !isMichaelPickup(e)) usedAmt += (e.pallets || 0) * buyPrice;
+    // 2026-07-03: date-aware buyPrice
+    else if (e.type === 'pickup' && !isMichaelPickup(e)) usedAmt += (e.pallets || 0) * buyPriceOn(e.date);
     // sss-refund (2026-06-06): SSS refunded part of the pool BACK to a partner.
     // If to='emma' it drains Emma's share. If to='michael' it doesn't touch her.
     else if (e.type === 'sss-refund' && e.to === 'emma') refundedToEmma += (e.amount || 0);
@@ -2413,7 +2441,6 @@ function emmaSssShare() {
 }
 function michaelSssShare() {
   if (!isNewMode()) return { in: 0, used: 0, remaining: 0, refunded: 0 };
-  const buyPrice = state.params.buyPrice || 245;
   const sssOpening = state.params.sssOpeningCredit || 0;
   const emmaOpening = state.params.emmaOpeningCredit || 0;
   const michaelOpening = sssOpening - emmaOpening;        // Michael's share of the £3,170 SSS pot
@@ -2421,7 +2448,8 @@ function michaelSssShare() {
   for (const e of _newModeEvents()) {
     if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
     else if (e.type === 'in-emma') inEmma += (e.amount || 0);
-    else if (e.type === 'pickup' && isMichaelPickup(e)) michaelUsed += (e.pallets || 0) * buyPrice;
+    // 2026-07-03: date-aware buyPrice
+    else if (e.type === 'pickup' && isMichaelPickup(e)) michaelUsed += (e.pallets || 0) * buyPriceOn(e.date);
     else if (e.type === 'sss-refund' && e.to === 'michael') refundedToMichael += (e.amount || 0);
   }
   // Michael's in = his portion of opening + (out-supplier − Emma's contribution flowing through)
@@ -2435,12 +2463,12 @@ function michaelSssShare() {
 // emmaOpeningCredit is now POSITIVE = her prepay credit at switch.
 function emmaBalanceNew() {
   const evs = _newModeEvents();
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware buyPrice (was flat state.params.buyPrice)
   let transferred = 0, used = 0;
   for (const e of evs) {
     if (e.type === 'in-emma') transferred += (e.amount || 0);
     else if (e.type === 'pickup' && (e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk')) {
-      used += (e.pallets || 0) * buyPrice;
+      used += (e.pallets || 0) * buyPriceOn(e.date);
     }
   }
   const opening = state.params.emmaOpeningCredit || 0;
@@ -2806,8 +2834,10 @@ function renderKpis() {
     trend = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
     trendTxt = (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
   }
-  const maxPallets = Math.ceil(bal / state.params.buyPrice);
-  const balCls = bal < 0 ? 'neg' : bal < state.params.buyPrice * 5 ? '' : 'pos';
+  // 2026-07-03: date-aware — current context uses today's buyPrice
+  const _currentBuy = buyPriceOn(new Date().toISOString().slice(0,10));
+  const maxPallets = Math.ceil(bal / _currentBuy);
+  const balCls = bal < 0 ? 'neg' : bal < _currentBuy * 5 ? '' : 'pos';
 
   const ht = hugoTotal();
   const hm = hugoMonth(ym);
@@ -3073,21 +3103,21 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'nm-sss-michael' && isNewMode()) {
-    const buyPrice = state.params.buyPrice || 245;
     const sssOpening = state.params.sssOpeningCredit || 0;
     const emmaOpening = state.params.emmaOpeningCredit || 0;
     const outSupplier = _newModeEvents().filter(e => e.type === 'out-supplier');
     const outSupplierSum = outSupplier.reduce((s,e) => s + (e.amount || 0), 0);
     const inEmmaSum = _newModeEvents().filter(e => e.type === 'in-emma').reduce((s,e) => s + (e.amount || 0), 0);
     const michaelPicks = _newModeEvents().filter(e => e.type === 'pickup' && isMichaelPickup(e));
-    const michaelUsed = michaelPicks.reduce((s,e) => s + (e.pallets || 0) * buyPrice, 0);
+    // 2026-07-03: date-aware buyPrice
+    const michaelUsed = michaelPicks.reduce((s,e) => s + (e.pallets || 0) * buyPriceOn(e.date), 0);
     const michaelRefunds = _newModeEvents().filter(e => e.type === 'sss-refund' && e.to === 'michael');
     const mShare = michaelSssShare();
     const rows = [
       { date: '—', desc: `<b>📌 我的 SSS 期初(切换日)</b> = SSS 总池 £${fmt0(sssOpening)} − Emma 切换日预付 £${fmt0(emmaOpening)}`, amount: mShare.opening },
       ...outSupplier.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ 付 SSS</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
       ..._newModeEvents().filter(e => e.type === 'in-emma').map(e => ({ date: e.date, desc: `<b style="color:var(--mute-2);">  其中 Emma 出资部分(归 Emma 份额)</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) })),
-      ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e._emmaTransferDay ? ' <span style="font-size:9px;color:#f9a8d4;background:rgba(244,114,182,0.18);padding:1px 5px;border-radius:3px;font-weight:700;">🤝 代取 Emma 日</span>' : ''}`, amount: -(e.pallets || 0) * buyPrice })),
+      ...michaelPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− 我取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e._emmaTransferDay ? ' <span style="font-size:9px;color:#f9a8d4;background:rgba(244,114,182,0.18);padding:1px 5px;border-radius:3px;font-weight:700;">🤝 代取 Emma 日</span>' : ''}`, amount: -(e.pallets || 0) * buyPriceOn(e.date) })),
       ...michaelRefunds.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">📥 SSS 退款给我</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const refundLine = (mShare.refunded || 0) > 0
@@ -3095,7 +3125,7 @@ function buildDrilldownData(key) {
       : '';
     return {
       title: '🤴 我的 SSS 份额 · 数据来源',
-      sub: mShare.remaining >= 0 ? `我转入(净) £${fmt0(mShare.in)} · 已取 £${fmt0(mShare.used)}${(mShare.refunded||0)>0 ? ' · SSS 退 £'+fmt0(mShare.refunded) : ''} · 还能拉 ${Math.floor(mShare.remaining / buyPrice)} 托` : `透支 £${fmt0(Math.abs(mShare.remaining))}`,
+      sub: mShare.remaining >= 0 ? `我转入(净) £${fmt0(mShare.in)} · 已取 £${fmt0(mShare.used)}${(mShare.refunded||0)>0 ? ' · SSS 退 £'+fmt0(mShare.refunded) : ''} · 还能拉 ${Math.floor(mShare.remaining / buyPriceOn(new Date().toISOString().slice(0,10)))} 托` : `透支 £${fmt0(Math.abs(mShare.remaining))}`,
       formula: `<div><span class="k">SSS 总池期初</span><span class="v" style="float:right;">£${fmt0(sssOpening)}</span></div>
                 <div><span class="k">− Emma 切换日的预付</span><span class="v" style="float:right;color:var(--pink);">−£${fmt0(emmaOpening)}</span></div>
                 <div><span class="k">= 我的期初</span><span class="v" style="float:right;color:${mShare.opening < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.opening)}</span></div>
@@ -3109,7 +3139,6 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'nm-sss-emma' && isNewMode()) {
-    const buyPrice = state.params.buyPrice || 245;
     const inEmmaEvents = _newModeEvents().filter(e => e.type === 'in-emma');
     const emmaPicks = _newModeEvents().filter(e => e.type === 'pickup' && !isMichaelPickup(e));
     const emmaRefunds = _newModeEvents().filter(e => e.type === 'sss-refund' && e.to === 'emma');
@@ -3117,7 +3146,8 @@ function buildDrilldownData(key) {
     const rows = [
       { date: '—', desc: `<b>📌 Emma 切换日的 SSS 预付</b>(从老模式带过来的)`, amount: eShare.opening },
       ...inEmmaEvents.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ Emma 转给我</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
-      ...emmaPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice })),
+      // 2026-07-03: date-aware buyPrice
+      ...emmaPicks.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPriceOn(e.date) })),
       ...emmaRefunds.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">📥 SSS 退款给 Emma</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: -(e.amount || 0) }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const refundLine = (eShare.refunded || 0) > 0
@@ -3125,7 +3155,7 @@ function buildDrilldownData(key) {
       : '';
     return {
       title: '👩 Emma 的 SSS 份额 · 数据来源',
-      sub: eShare.remaining >= 0 ? `她总预付 £${fmt0(eShare.in)} · 她取 £${fmt0(eShare.used)}${(eShare.refunded||0)>0 ? ' · SSS 退 £'+fmt0(eShare.refunded) : ''} · 她还能拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `Emma 份额透支 £${fmt0(Math.abs(eShare.remaining))}`,
+      sub: eShare.remaining >= 0 ? `她总预付 £${fmt0(eShare.in)} · 她取 £${fmt0(eShare.used)}${(eShare.refunded||0)>0 ? ' · SSS 退 £'+fmt0(eShare.refunded) : ''} · 她还能拉 ${Math.floor(eShare.remaining / buyPriceOn(new Date().toISOString().slice(0,10)))} 托` : `Emma 份额透支 £${fmt0(Math.abs(eShare.remaining))}`,
       formula: `<div><span class="k">期初 SSS 预付(切换日)</span><span class="v" style="float:right;color:${eShare.opening >= 0 ? 'var(--green)' : 'var(--rose)'};">£${fmt0(eShare.opening)}</span></div>
                 <div><span class="k">+ 新模式 Emma 转给我</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(eShare.inFresh)}</span></div>
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(eShare.used)}</span></div>
@@ -3140,14 +3170,16 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'nm-sss' && isNewMode()) {
-    const buyPrice = state.params.buyPrice || 245;
+    // 2026-07-03: date-aware buyPrice for used calc; "still can buy" uses today's price
     const opening = state.params.sssOpeningCredit || 0;
     const paid = _newModeEvents().filter(e => e.type === 'out-supplier').reduce((s,e) => s + (e.amount || 0), 0);
     const pickupRows = _newModeEvents().filter(e => e.type === 'pickup');
-    const used = pickupRows.reduce((s,e) => s + (e.pallets || 0) * buyPrice, 0);
+    const used = pickupRows.reduce((s,e) => s + (e.pallets || 0) * buyPriceOn(e.date), 0);
     const refundRows = _newModeEvents().filter(e => e.type === 'sss-refund');
     const refundedTotal = refundRows.reduce((s,e) => s + (e.amount || 0), 0);
     const total = sssBalance();
+    const today = new Date().toISOString().slice(0, 10);
+    const currentBuyPrice = buyPriceOn(today);
     const rows = [
       ..._newModeEvents().filter(e => e.type === 'out-supplier').map(e => ({
         date: e.date,
@@ -3156,8 +3188,8 @@ function buildDrilldownData(key) {
       })),
       ...pickupRows.map(e => ({
         date: e.date,
-        desc: `<b style="color:var(--rose);">− 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}(${(e.pickedUpBy || e.createdBy) ? userInfo(e.createdBy || e.pickedUpBy).name : '?'} 取)`,
-        amount: -(e.pallets || 0) * buyPrice
+        desc: `<b style="color:var(--rose);">− 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}(${(e.pickedUpBy || e.createdBy) ? userInfo(e.createdBy || e.pickedUpBy).name : '?'} 取) <span style="opacity:0.5;font-size:10px;">@ £${buyPriceOn(e.date)}</span>`,
+        amount: -(e.pallets || 0) * buyPriceOn(e.date)
       })),
       ...refundRows.map(e => ({
         date: e.date,
@@ -3170,7 +3202,7 @@ function buildDrilldownData(key) {
       : '';
     return {
       title: '🏭 SSS 那边余额 · 数据来源',
-      sub: total >= 0 ? `预付了 £${fmt0(paid)} · 已用 £${fmt0(used)}${refundedTotal>0 ? ' · 退款 £'+fmt0(refundedTotal) : ''} · 还能拉 ${Math.floor(total / buyPrice)} 托` : `透支 £${fmt0(Math.abs(total))}`,
+      sub: total >= 0 ? `预付了 £${fmt0(paid)} · 已用 £${fmt0(used)}${refundedTotal>0 ? ' · 退款 £'+fmt0(refundedTotal) : ''} · 还能拉 ${Math.floor(total / currentBuyPrice)} 托 @ £${currentBuyPrice}` : `透支 £${fmt0(Math.abs(total))}`,
       formula: `<div><span class="k">期初(切换日)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
                 <div><span class="k">+ 累计付 SSS</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(paid)}</span></div>
                 <div><span class="k">− 累计取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
@@ -3181,20 +3213,22 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'nm-emma' && isNewMode()) {
-    const buyPrice = state.params.buyPrice || 245;
     const transfersIn = _newModeEvents().filter(e => e.type === 'in-emma');
     const emmaPickups = _newModeEvents().filter(e => e.type === 'pickup' && (e.pickedUpBy === 'Emma' || e.createdBy === 'emma@maomail.uk'));
     const transferred = transfersIn.reduce((s, e) => s + (e.amount || 0), 0);
-    const used = emmaPickups.reduce((s, e) => s + (e.pallets || 0) * buyPrice, 0);
+    // 2026-07-03: date-aware buyPrice
+    const used = emmaPickups.reduce((s, e) => s + (e.pallets || 0) * buyPriceOn(e.date), 0);
     const total = emmaBalanceNew();
     const opening = state.params.emmaOpeningCredit || 0;
+    // 2026-07-03: date-aware buyPrice per pickup; "still can lift" uses today's price
+    const _todayBuy = buyPriceOn(new Date().toISOString().slice(0,10));
     const rows = [
       ...transfersIn.map(e => ({ date: e.date, desc: `<b style="color:var(--green);">+ Emma 转入</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`, amount: e.amount || 0 })),
-      ...emmaPickups.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPrice }))
+      ...emmaPickups.map(e => ({ date: e.date, desc: `<b style="color:var(--rose);">− Emma 取货</b> · ${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}`, amount: -(e.pallets || 0) * buyPriceOn(e.date) }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     return {
       title: '👩 Emma 余额(在我这)· 数据来源',
-      sub: total >= 0 ? `她预付总 £${fmt0(opening + transferred)} · 取了 £${fmt0(used)} · 她还能拉 ${buyPrice > 0 ? Math.floor(total / buyPrice) : 0} 托` : `她透支 £${fmt0(Math.abs(total))}`,
+      sub: total >= 0 ? `她预付总 £${fmt0(opening + transferred)} · 取了 £${fmt0(used)} · 她还能拉 ${_todayBuy > 0 ? Math.floor(total / _todayBuy) : 0} 托` : `她透支 £${fmt0(Math.abs(total))}`,
       formula: `<div><span class="k">期初 SSS 预付(切换日)</span><span class="v" style="float:right;color:${opening >= 0 ? 'var(--green)' : 'var(--rose)'};">£${fmt0(opening)}</span></div>
                 <div><span class="k">+ 累计 Emma 转入(新模式)</span><span class="v" style="float:right;color:var(--green);">+£${fmt0(transferred)}</span></div>
                 <div><span class="k">− Emma 取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(used)}</span></div>
@@ -3270,7 +3304,10 @@ function buildDrilldownData(key) {
     const ym = new Date().toISOString().slice(0, 7);
     const mp = monthPalletsNew(ym);
     const rate = state.params.hugoCommission || 7;
-    const buyPrice = state.params.buyPrice || 245;
+    // 2026-07-03: per-pickup row amounts use buyPriceOn(e.date); month-summary
+    // fields (mp.michael × buyPrice) use *today's* price as a display estimate
+    // for the current month totals card (approximation for post-cutover month).
+    const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
     const swapPrem = (state.params.swapPremium != null) ? state.params.swapPremium : 30;
     const monthPickups = _newModeEvents().filter(e => e.type === 'pickup' && (e.date || '').startsWith(ym));
     // Build detailed rows: date | who | type | pallets | swap | truck | amount | notes
@@ -3300,7 +3337,7 @@ function buildDrilldownData(key) {
         return {
           date: e.date,
           desc: `${typeBadge}${swapBadge} <b>${e.pallets} 托</b> · ${ownerBadge}${transferBadge}${truckTxt}${noteTxt}`,
-          amount: -((e.pallets || 0) * buyPrice)  // SSS-side cost (negative = consumed share)
+          amount: -((e.pallets || 0) * buyPriceOn(e.date))  // 2026-07-03: date-aware SSS cost
         };
       });
     return {
@@ -3843,7 +3880,10 @@ function _pmEsc(s) {
 //     and reconstructed using new-mode-only events. Pre-switch legacy events are excluded
 //     (their net effect is baked into emmaOpeningCredit per Option B).
 function computeEmmaStatementData(from, to) {
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: buyPrice is now per-pickup via buyPriceOn(e.date). The
+  // legacy variable is only used as a *display* unit price (statement's
+  // "Unit Price" cell) — kept as today's rate for the current statement.
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const inNewMode = isNewMode();
   const sw = newModeStartDate();
   const sorted = (state.events || []).filter(e => !e.deleted && e.date).sort((a, b) => a.date.localeCompare(b.date));
@@ -3854,7 +3894,7 @@ function computeEmmaStatementData(from, to) {
     for (const e of sorted) {
       if (e.date < from) {
         if (e.type === 'transfer') opening += (e.amount || 0);
-        else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPrice;
+        else if (e.type === 'pickup') opening -= (e.pallets || 0) * buyPriceOn(e.date);
       }
     }
     let running = opening;
@@ -3869,7 +3909,7 @@ function computeEmmaStatementData(from, to) {
           inRange.push({ ...e, _balance: running });
         } else if (e.type === 'pickup') {
           const palls = e.pallets || 0;
-          const amt = palls * buyPrice;
+          const amt = palls * buyPriceOn(e.date);
           totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
           inRange.push({ ...e, _balance: running, _amount: amt });
         }
@@ -3890,7 +3930,7 @@ function computeEmmaStatementData(from, to) {
     if (e.date >= from) break;
     if (sw && e.date < sw) continue;  // skip pre-switch (baked into opening)
     if (e.type === 'in-emma') opening += (e.amount || 0);
-    else if (e.type === 'pickup' && !isMichaelPickup(e)) opening -= (e.pallets || 0) * buyPrice;
+    else if (e.type === 'pickup' && !isMichaelPickup(e)) opening -= (e.pallets || 0) * buyPriceOn(e.date);
     else if (e.type === 'sss-refund' && e.to === 'emma') opening -= (e.amount || 0);
   }
 
@@ -3908,7 +3948,7 @@ function computeEmmaStatementData(from, to) {
     } else if (e.type === 'pickup' && !isMichaelPickup(e)) {
       // Only Emma's own pickups consume her share in new mode
       const palls = e.pallets || 0;
-      const amt = palls * buyPrice;
+      const amt = palls * buyPriceOn(e.date);
       totalOut += amt; running -= amt; totalPallets += palls; totalPickups += 1;
       inRange.push({ ...e, _balance: running, _amount: amt });
     } else if (e.type === 'sss-refund' && e.to === 'emma') {
@@ -3930,7 +3970,9 @@ function computeEmmaStatementData(from, to) {
 //   - Include `out-hugo` cash payments in the period as paid-down
 //   - Legacy/prepay split via cutoff (`hugoPrepayStartDate`) preserved for old-mode statements
 function computeHugoStatementData(from, to) {
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: display-only in Hugo statement; per-event math uses hugoRate,
+  // not buyPrice — this value is a static reference passed through as data.buyPrice.
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const hugoRate = (state.params && state.params.hugoCommission) || 7;
   const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
   const inNewMode = isNewMode();
@@ -4073,7 +4115,7 @@ function buildEmmaStatementEmailHtml(from, to) {
       return `
         <tr>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PICKUP</span><b>Pallets Collected</b> — ${e.pallets || 0} @ ${_pmMoney(data.buyPrice)}${e.truck ? ' <span style="color:#94a3b8;">(' + _pmEsc(e.truck) + ')</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;"><span style="display:inline-block;font-size:9px;letter-spacing:0.6px;background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:700;">PICKUP</span><b>Pallets Collected</b> — ${e.pallets || 0} @ ${_pmMoney(buyPriceOn(e.date))}${e.truck ? ' <span style="color:#94a3b8;">(' + _pmEsc(e.truck) + ')</span>' : ''}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#94a3b8;text-align:right;">—</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#b91c1c;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;">${_pmMoney(e._amount)}</td>
           <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;">${_pmMoney(e._balance)}</td>
@@ -4625,7 +4667,8 @@ function openEmmaStatementModal() {
   document.getElementById('es-from').value = first;
   document.getElementById('es-to').value = today;
   const buyEl = document.getElementById('es-buy');
-  if (buyEl) buyEl.textContent = state.params.buyPrice || 245;
+  // 2026-07-03: display today's rate in the modal (statement is per-event date-aware)
+  if (buyEl) buyEl.textContent = buyPriceOn(new Date().toISOString().slice(0,10));
   document.getElementById('emma-stmt-modal').classList.add('open');
 }
 function closeEmmaStatementModal() {
@@ -4745,7 +4788,8 @@ function generateEmmaStatement() {
         <td class="num bal">${money(e._balance)}</td>
       </tr>`;
     } else {
-      let desc = `<b>Pallets Collected</b> &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPrice)}`;
+      // 2026-07-03: date-aware — show the actual price this pickup was booked at
+      let desc = `<b>Pallets Collected</b> &mdash; ${e.pallets || 0} pallet${(e.pallets || 0) === 1 ? '' : 's'} @ ${money(buyPriceOn(e.date))}`;
       if (e.truck) desc += ` <span class="muted">(Vehicle ${esc(e.truck)})</span>`;
       if (e.note) desc += ` <span class="muted">&middot; ${esc(e.note)}</span>`;
       return `<tr>
@@ -5237,7 +5281,8 @@ function updateEmmaQuote() {
   const box = document.getElementById('qq-result');
   if (!box) return;
   const buyEl = document.getElementById('qq-buy');
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: quote calculator = "what if I pick up NOW" → today's price
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const hugoRate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (buyEl) buyEl.textContent = buyPrice;
   const inputEl = document.getElementById('qq-pallets');
@@ -5377,7 +5422,8 @@ function updateTransferPreview() {
   const hugoAmountEl = document.getElementById('t-hugo-amount');
 
   const pallets = parseInt(palletsEl ? palletsEl.value : '') || 0;
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: transfer preview = planning a future pickup → today's price
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
   if (hugoRateEl) hugoRateEl.textContent = rate;
 
@@ -5459,7 +5505,10 @@ function updatePickupPreview() {
   if (!box) return;
   const pallets = parseInt(document.getElementById('p-pallets').value) || 0;
   if (!pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
-  const sell = state.params.buyPrice;
+  // 2026-07-03: use the form's pickup date for price (falls back to today)
+  const _pdEl = document.getElementById('p-date');
+  const _pdVal = (_pdEl && _pdEl.value) || new Date().toISOString().slice(0,10);
+  const sell = buyPriceOn(_pdVal);
   const spend = pallets * sell;
   const bal = balance();
   const after = bal - spend;
@@ -5559,7 +5608,9 @@ function onInEmmaPalletsChange() {
   const amtEl = document.getElementById('ie-amount');
   if (amtEl.dataset.userEdited === 'true') { updateInEmmaPreview(); return; }
   const palls = parseInt(document.getElementById('ie-pallets').value) || 0;
-  amtEl.value = palls > 0 ? palls * (state.params.buyPrice || 245) : '';
+  // 2026-07-03: use form date for price
+  const _d = (document.getElementById('ie-date') && document.getElementById('ie-date').value) || new Date().toISOString().slice(0,10);
+  amtEl.value = palls > 0 ? palls * buyPriceOn(_d) : '';
   updateInEmmaPreview();
 }
 function onInEmmaAmountChange() {
@@ -5569,7 +5620,9 @@ function onInEmmaAmountChange() {
 function updateInEmmaPreview() {
   const palls = parseInt(document.getElementById('ie-pallets').value) || 0;
   const amt = parseFloat(document.getElementById('ie-amount').value) || 0;
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware
+  const _d = (document.getElementById('ie-date') && document.getElementById('ie-date').value) || new Date().toISOString().slice(0,10);
+  const buy = buyPriceOn(_d);
   const before = emmaBalanceNew();
   const after = before + amt;
   const box = document.getElementById('ie-preview');
@@ -5621,7 +5674,9 @@ function onOutSupplierPalletsChange() {
   const amtEl = document.getElementById('os-amount');
   if (amtEl.dataset.userEdited === 'true') { updateOutSupplierPreview(); return; }
   const palls = parseInt(document.getElementById('os-pallets').value) || 0;
-  amtEl.value = palls > 0 ? palls * (state.params.buyPrice || 245) : '';
+  // 2026-07-03: use form date for price
+  const _d = (document.getElementById('os-date') && document.getElementById('os-date').value) || new Date().toISOString().slice(0,10);
+  amtEl.value = palls > 0 ? palls * buyPriceOn(_d) : '';
   updateOutSupplierPreview();
 }
 function onOutSupplierAmountChange() {
@@ -5631,7 +5686,9 @@ function onOutSupplierAmountChange() {
 function updateOutSupplierPreview() {
   const palls = parseInt(document.getElementById('os-pallets').value) || 0;
   const amt = parseFloat(document.getElementById('os-amount').value) || 0;
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware
+  const _d = (document.getElementById('os-date') && document.getElementById('os-date').value) || new Date().toISOString().slice(0,10);
+  const buy = buyPriceOn(_d);
   const poolBefore = cashPoolBalance();
   // P1 audit fix (2026-05-22): show Michael's SSS share, not the combined pool.
   // In new mode the pool is split between Michael & Emma — paying SSS only grows
@@ -5771,7 +5828,8 @@ function generateSinvForEmmaTransfer(ev) {
   ensurePartnershipInvoicesArray();
   // Skip if already linked
   if (state.partnershipInvoices.some(i => i.linkedEventId === ev.id)) return null;
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware unit price for invoice
+  const buy = buyPriceOn(ev.date);
   const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
   const co = state.company || {};
   const emma = state.emma || {};
@@ -5809,7 +5867,8 @@ function generatePinvForSupplierPayment(ev) {
   if (!ev || ev.type !== 'out-supplier') return null;
   ensurePartnershipInvoicesArray();
   if (state.partnershipInvoices.some(i => i.linkedEventId === ev.id)) return null;
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware unit price for invoice
+  const buy = buyPriceOn(ev.date);
   const palls = ev.pallets || (buy > 0 ? Math.round(ev.amount / buy) : 0);
   const co = state.company || {};
   const sss = state.sss || {};
@@ -6956,7 +7015,7 @@ function addPickup() {
     date, type: 'pickup',
     pallets,
     palletType,                                    // TT / AMAZON / Mixed
-    amount: pallets * state.params.buyPrice,
+    amount: pallets * buyPriceOn(date),            // 2026-07-03: date-aware
     truck, note,
     createdBy: currentEmail(),
     createdAt: new Date().toISOString()
@@ -7486,7 +7545,8 @@ async function saveEditPickup() {
   if (!newDate)             { alert('日期不能为空'); return; }
   if (newPallets <= 0)      { alert('托盘数必须 > 0'); return; }
 
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: date-aware — price the amount at the edited event's date
+  const buyPrice = buyPriceOn(newDate);
   const swapPrem = (state.params.swapPremium != null) ? state.params.swapPremium : 30;
   const newPartnershipAmount = newPallets * buyPrice;            // SSS cost side
   const linkId = ev._linkSupplyId;
@@ -7895,7 +7955,8 @@ function importJson(e) {
 // new-mode metrics: cashPoolBalance, michaelSssShare, emmaSssShare, hugoOwedNew.
 function analyzeRules() {
   const insights = [];
-  const buy = state.params.buyPrice || 245;
+  // 2026-07-03: insights are about *current* buying power → today's price
+  const buy = buyPriceOn(new Date().toISOString().slice(0,10));
   const pickups = getPickups();
   const inNewMode = isNewMode();
 
@@ -8016,7 +8077,8 @@ async function runAI() {
   const tp = totalPallets();
   const ins = analyzeRules();
   const agg = monthlyAgg();
-  const buy = state.params.buyPrice;
+  // 2026-07-03: AI summary uses today's price for "still can lift" math
+  const buy = buyPriceOn(new Date().toISOString().slice(0,10));
   const inNewMode = isNewMode();
 
   const lines = [];
@@ -8115,8 +8177,9 @@ function calcCopy() {
 }
 function calcPreset(key) {
   let expr = '';
-  if (key === 'cost-24') expr = '24 * ' + state.params.buyPrice;
-  if (key === 'cost-26') expr = '26 * ' + state.params.buyPrice;
+  // 2026-07-03: calculator presets use today's buy price
+  if (key === 'cost-24') expr = '24 * ' + buyPriceOn(new Date().toISOString().slice(0,10));
+  if (key === 'cost-26') expr = '26 * ' + buyPriceOn(new Date().toISOString().slice(0,10));
   document.getElementById('calc-input').value = expr; calcEval();
 }
 
@@ -8281,7 +8344,8 @@ function delNewModeEvent(id) {
 // === Render the 5 new-mode KPI cards ===
 function renderNewModeKpis() {
   if (!isNewMode()) return;
-  const buyPrice = state.params.buyPrice || 245;
+  // 2026-07-03: KPI cards show "still can lift N 托" → today's price
+  const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
   const rate = state.params.hugoCommission || 7;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
