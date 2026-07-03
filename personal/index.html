@@ -6563,30 +6563,40 @@ function buildDrilldownData(key) {
       const lastWk = lastWkD.toISOString().slice(0, 10);
       let thisWkPallets = 0, thisWkProfit = 0, lastWkProfit = 0;
       const rows = [];
+      // 2026-07-03: date-aware — track blended per-pallet for header display
+      let weightedPerP = 0;
+      const perPSet = new Set();
       for (const e of (c.ledger || [])) {
         if (e.type !== 'pickup') continue;
         const wk = weekStartOf(e.date);
-        const palletProfit = (e.pallets || 0) * perPalletProfit();
+        const perPForEntry = perPalletProfit(e.date);
+        const palletProfit = (e.pallets || 0) * perPForEntry;
         const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapPrem) : 0;
         const profitForEntry = palletProfit + swapBonus;
         if (wk === todayWk) {
           thisWkPallets += (e.pallets || 0);
           thisWkProfit += profitForEntry;
+          weightedPerP += palletProfit;
+          perPSet.add(perPForEntry);
           rows.push({
             date: e.date,
-            desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${perPalletProfit()}${e.isSwap ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
+            desc: `${e.pallets} 托${e.palletType ? ' · ' + e.palletType : ''}${e.isSwap ? ' <span class="badge" style="background:rgba(244,114,182,0.18);color:var(--pink);font-size:9px;">🔁 SWAP</span>' : ''}<br><span class="dim" style="font-size:11px;">${e.pallets} × £${perPForEntry}${e.isSwap ? ' + ' + e.pallets + ' × £' + (e.swapPremium != null ? e.swapPremium : swapPrem) + ' Swap' : ''}</span>`,
             amount: profitForEntry
           });
         } else if (wk === lastWk) {
           lastWkProfit += profitForEntry;
         }
       }
+      // Header 每托盘净利: if all entries share one rate show it, else show mixed
+      const headerPerP = perPSet.size <= 1
+        ? (thisWkPallets > 0 ? Math.round(weightedPerP / thisWkPallets) : perPalletProfit(new Date().toISOString().slice(0,10)))
+        : (thisWkPallets > 0 ? '~' + Math.round(weightedPerP / thisWkPallets) + ' 混合' : '—');
       const trendTxt = lastWkProfit > 0 ? ((thisWkProfit - lastWkProfit) / lastWkProfit * 100).toFixed(1) + '%' : (thisWkProfit > 0 ? '新' : '—');
       return {
         title: c.name + ' · 本周利润',
         sub: `${weekLabelShort(todayWk)} · 跟上周比 ${trendTxt}`,
         formula: `<div><span class="k">本周托盘</span><span class="v" style="float:right;">${thisWkPallets} 托</span></div>
-                  <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${perPalletProfit()}</span></div>
+                  <div><span class="k">每托盘净利</span><span class="v" style="float:right;">£${headerPerP}</span></div>
                   ${rows.some(r => /SWAP/.test(r.desc)) ? `<div><span class="k">+ Swap 加成</span><span class="v" style="float:right;color:var(--pink);">已分摊</span></div>` : ''}
                   <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k">本周净利</span><span class="v total" style="float:right;">${fmt(thisWkProfit)}</span></div>`,
         rows,
@@ -7428,13 +7438,13 @@ function renderCustomerDetail() {
   const todayWk = weekStartOf(new Date().toISOString().slice(0, 10));
   const lastWkD = new Date(todayWk + 'T12:00:00'); lastWkD.setDate(lastWkD.getDate() - 7);
   const lastWk = lastWkD.toISOString().slice(0, 10);
-  const perP = perPalletProfit();
   let thisWkPallets = 0, thisWkProfit = 0, lastWkProfit = 0;
   for (const e of (c.ledger || [])) {
     if (e.type !== 'pickup') continue;
     const wk = weekStartOf(e.date);
-    // Per-pallet profit + swap-TT bonus (£30/pallet) if tagged
-    const palletProfit = (e.pallets || 0) * perP;
+    // 2026-07-03: date-aware — perPalletProfit(e.date) picks correct period pricing
+    // (pre-7/1 £51, 7/1~7/5 £96 windfall, 7/6+ £51 back to normal)
+    const palletProfit = (e.pallets || 0) * perPalletProfit(e.date);
     const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium()) : 0;
     const profitForEntry = palletProfit + swapBonus;
     if (wk === todayWk) { thisWkPallets += (e.pallets || 0); thisWkProfit += profitForEntry; }
