@@ -3618,7 +3618,8 @@ function renderPickups() {
   const active = all.filter(r => !r.deleted).length;
   const del = all.length - active;
   document.getElementById('pickup-count').textContent = active + ' 条' + (del ? ` · ${del} 已删除` : '');
-  document.getElementById('p-buy').textContent = state.params.buyPrice;
+  // 2026-07-03: date-aware — show today's SSS buy price (was hardcoded state.params.buyPrice = 245)
+  document.getElementById('p-buy').textContent = buyPriceOn(new Date().toISOString().slice(0, 10));
   const rate = hugoRate();
   const body = all.map(r => {
     const cls = r.deleted ? ' class="row-deleted"' : '';
