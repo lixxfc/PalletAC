@@ -3133,7 +3133,13 @@ function buildDrilldownData(key) {
                 <div><span class="k">− 其中 Emma 转过来的部分</span><span class="v" style="float:right;color:var(--mute-2);">−£${fmt0(inEmmaSum)}</span></div>
                 <div><span class="k">− 我自己取货成本</span><span class="v" style="float:right;color:var(--rose);">−£${fmt0(michaelUsed)}</span></div>
                 ${refundLine}
-                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>我的 SSS 份额</b></span><span class="v total" style="float:right;color:${mShare.remaining < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.remaining)}</span></div>`,
+                <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>我的 SSS 份额</b></span><span class="v total" style="float:right;color:${mShare.remaining < 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(mShare.remaining)}</span></div>
+                <div style="margin-top:10px;padding:10px 12px;background:rgba(139,150,255,0.06);border-left:2px solid rgba(139,150,255,0.35);border-radius:0 6px 6px 0;font-size:11px;color:var(--mute-2);line-height:1.55;">
+                  <b style="color:#c4b5fd;">💡 提示 · 为什么 "Emma 转给我" 会临时降低我的份额</b><br>
+                  Emma 转给你的钱在账本上视作 <b>Emma 通过你向 SSS 补充她自己的额度</b>, 所以自动从你的份额里"归还"给 Emma。<br>
+                  <b>没有一分钱丢失</b> — 钱在你银行卡里, 等你把这笔钱付给 SSS (out-supplier 事件), 你的份额会**立刻涨回来**。<br>
+                  <span style="color:#f9a8d4;">流程: Emma 转你 → 你的份额 ↓ → 你付 SSS → 你的份额 ↑ (最终平衡, Emma 份额单独 +)</span>
+                </div>`,
       rows
     };
   }
