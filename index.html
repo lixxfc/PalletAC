@@ -5949,43 +5949,40 @@ function printSinv(id) {
   body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#0a0e1a;background:#eef1f5;padding:16px 8px;}
   /* A4 210mm × 297mm — fit content within a single page */
   .paper{width:210mm;height:297mm;margin:0 auto;background:#fff;box-shadow:0 6px 28px rgba(10,14,26,0.12);position:relative;display:flex;flex-direction:column;overflow:hidden;}
-  .header{padding:8mm 14mm 6mm;background:linear-gradient(135deg,${headerColor} 0%,#7e0e3c 100%);color:#fff;flex-shrink:0;}
-  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;gap:8mm;}
-  .brand .co-name{font-size:19px;font-weight:800;letter-spacing:-0.4px;line-height:1.1;}
-  .brand .co-lines{margin-top:4px;font-size:10px;line-height:1.5;color:rgba(255,255,255,0.90);}
-  .brand .co-tax{margin-top:3px;font-size:9px;line-height:1.5;color:rgba(255,255,255,0.68);letter-spacing:0.3px;}
+  .header{padding:14mm 16mm 10mm;background:linear-gradient(135deg,${headerColor} 0%,#7e0e3c 100%);color:#fff;flex-shrink:0;}
+  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;gap:10mm;}
+  .brand .co-name{font-size:26px;font-weight:800;letter-spacing:-0.5px;line-height:1.1;}
+  .brand .co-lines{margin-top:8px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.92);}
+  .brand .co-tax{margin-top:6px;font-size:11.5px;line-height:1.5;color:rgba(255,255,255,0.75);letter-spacing:0.3px;}
   .doc-title{text-align:right;flex-shrink:0;}
-  .doc-title .label{font-size:8.5px;font-weight:700;letter-spacing:2.2px;text-transform:uppercase;color:rgba(255,255,255,0.70);}
-  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:26px;font-weight:900;letter-spacing:-0.5px;margin-top:2px;line-height:1;}
-  .doc-title .no{margin-top:4px;font-size:10px;letter-spacing:0.6px;color:rgba(255,255,255,0.88);}
-  .doc-title .amt-badge{margin-top:6px;padding:5px 10px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:5px;font-size:15px;font-weight:800;letter-spacing:-0.2px;font-variant-numeric:tabular-nums;}
-  .doc-title .amt-badge .lbl{display:block;font-size:8px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.70);margin-bottom:1px;}
-  .meta{padding:6mm 14mm 4mm;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8mm;border-bottom:1px solid #e2e8f0;flex-shrink:0;}
-  .meta-block .label{font-size:9px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#64748b;margin-bottom:4px;display:flex;align-items:center;gap:5px;}
-  .meta-block .label .edit-hint{font-size:8.5px;font-weight:600;letter-spacing:0.3px;text-transform:none;color:#a855f7;background:rgba(168,85,247,0.10);padding:1px 5px;border-radius:3px;cursor:pointer;user-select:none;}
-  .meta-block .primary{font-size:13px;font-weight:800;color:#0a0e1a;line-height:1.3;}
-  .meta-block .lines{margin-top:3px;font-size:10.5px;line-height:1.55;color:#334155;}
-  .items{padding:5mm 14mm 3mm;flex-shrink:0;}
+  .doc-title .label{font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,255,255,0.75);}
+  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:36px;font-weight:900;letter-spacing:-0.6px;margin-top:4px;line-height:1;}
+  .doc-title .no{margin-top:6px;font-size:13px;letter-spacing:0.7px;color:rgba(255,255,255,0.90);}
+  .doc-title .amt-badge{margin-top:10px;padding:8px 14px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;font-size:20px;font-weight:800;letter-spacing:-0.2px;font-variant-numeric:tabular-nums;}
+  .doc-title .amt-badge .lbl{display:block;font-size:10px;font-weight:700;letter-spacing:1.4px;color:rgba(255,255,255,0.72);margin-bottom:2px;}
+  .meta{padding:10mm 16mm 6mm;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10mm;border-bottom:1px solid #e2e8f0;flex-shrink:0;}
+  .meta-block .label{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#64748b;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .meta-block .label .edit-hint{font-size:10px;font-weight:600;letter-spacing:0.3px;text-transform:none;color:#a855f7;background:rgba(168,85,247,0.10);padding:2px 7px;border-radius:3px;cursor:pointer;user-select:none;}
+  .meta-block .primary{font-size:17px;font-weight:800;color:#0a0e1a;line-height:1.3;}
+  .meta-block .lines{margin-top:5px;font-size:13px;line-height:1.6;color:#334155;}
+  .items{padding:8mm 16mm 4mm;flex-shrink:0;}
   table{width:100%;border-collapse:collapse;}
-  thead th{padding:7px 6px;font-size:9px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #0a0e1a;}
+  thead th{padding:10px 8px;font-size:11px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #0a0e1a;}
   thead th.num{text-align:right;}
-  tbody td{padding:10px 6px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+  tbody td{padding:14px 8px;font-size:14px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
   td.bal{font-weight:800;color:#0a0e1a;}
-  tr.total-row td{padding:10px 6px;font-size:13px;font-weight:800;background:${headerColor};color:#fff;border:0;letter-spacing:0.3px;}
-  tr.total-row td.bal{font-size:17px;letter-spacing:-0.2px;}
-  .payment{margin:4mm 14mm 3mm;padding:8px 12px;background:#fdf2f8;border-left:3px solid ${headerColor};border-radius:0 5px 5px 0;flex-shrink:0;}
-  .payment h4{font-size:9.5px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase;color:${headerColor};margin-bottom:4px;}
-  .payment .bank-line{font-size:11px;color:#0a0e1a;line-height:1.5;white-space:pre-wrap;}
-  .payment .ref-line{margin-top:5px;font-size:10px;color:#475569;padding-top:5px;border-top:1px dashed rgba(163,24,90,0.20);}
-  .notes{margin:3mm 14mm;padding:8px 12px;background:#f8fafc;border-radius:5px;font-size:10.5px;color:#475569;line-height:1.5;flex-shrink:0;}
-  .notes h4{font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#64748b;margin-bottom:3px;}
-  .terms{padding:3mm 14mm 2mm;font-size:9px;color:#64748b;line-height:1.5;border-top:1px solid #f1f5f9;flex-shrink:0;}
-  .terms h4{font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#0a0e1a;margin-bottom:3px;display:inline-block;margin-right:6px;}
-  .sig{margin:3mm 14mm;display:grid;grid-template-columns:1fr 1fr;gap:10mm;padding-top:8mm;flex-shrink:0;}
-  .sig-block{border-top:1.2px solid #0a0e1a;padding-top:4px;font-size:9.5px;color:#64748b;}
-  .sig-block .lbl{font-weight:700;color:#0a0e1a;font-size:10px;letter-spacing:0.4px;}
-  .bottom{margin-top:auto;padding:6px 14mm;background:#0a0e1a;color:rgba(255,255,255,0.72);font-size:9.5px;letter-spacing:0.3px;display:flex;justify-content:space-between;flex-shrink:0;}
+  tr.total-row td{padding:14px 8px;font-size:15px;font-weight:800;background:${headerColor};color:#fff;border:0;letter-spacing:0.4px;}
+  tr.total-row td.bal{font-size:20px;letter-spacing:-0.3px;}
+  .payment{margin:6mm 16mm 4mm;padding:12px 16px;background:#fdf2f8;border-left:4px solid ${headerColor};border-radius:0 6px 6px 0;flex-shrink:0;}
+  .payment h4{font-size:11.5px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:${headerColor};margin-bottom:6px;}
+  .payment .bank-line{font-size:13px;color:#0a0e1a;line-height:1.55;white-space:pre-wrap;}
+  .payment .ref-line{margin-top:7px;font-size:12px;color:#475569;padding-top:6px;border-top:1px dashed rgba(163,24,90,0.20);}
+  .notes{margin:5mm 16mm;padding:12px 16px;background:#f8fafc;border-radius:6px;font-size:12.5px;color:#475569;line-height:1.6;flex-shrink:0;}
+  .notes h4{font-size:11px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase;color:#64748b;margin-bottom:5px;}
+  .terms{padding:6mm 16mm 4mm;font-size:11px;color:#64748b;line-height:1.6;border-top:1px solid #f1f5f9;flex-shrink:0;}
+  .terms h4{font-size:11px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase;color:#0a0e1a;margin-bottom:4px;display:inline-block;margin-right:8px;}
+  .bottom{margin-top:auto;padding:10px 16mm;background:#0a0e1a;color:rgba(255,255,255,0.75);font-size:11.5px;letter-spacing:0.3px;display:flex;justify-content:space-between;flex-shrink:0;}
   /* Editable panel */
   .bt-edit-panel{display:none;margin-top:6px;padding:8px 10px;background:#fdf2f8;border:1px dashed ${headerColor};border-radius:6px;}
   .bt-edit-panel.on{display:block;}
@@ -6085,11 +6082,6 @@ function printSinv(id) {
   <div class="terms">
     <h4>Terms &amp; Conditions</h4>
     Payment due on receipt. Late payments may incur statutory interest under the Late Payment of Commercial Debts (Interest) Act 1998. Pallet availability at SSS subject to stock. Invoice issued in GBP.
-  </div>
-
-  <div class="sig">
-    <div class="sig-block"><div class="lbl">Authorised by (${esc(co.name || 'CYPP UK LTD')})</div>Date: ${fmtDate(inv.date)}</div>
-    <div class="sig-block"><div class="lbl">Received by</div>Date: __________________</div>
   </div>
 
   <div class="bottom">
