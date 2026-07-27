@@ -5909,13 +5909,13 @@ function generatePinvForSupplierPayment(ev) {
 }
 
 // === Print SINV (Emma sales invoice) ===
-// 2026-07-27 redesign:
-//   1) Full A4 portrait page (fills the paper — was too short)
-//   2) Bill To fields are editable (name / address / postcode / phone / email
-//      / companyNo / vatNo). "保存修改" writes back to inv.counterpartySnapshot
-//      so this SINV keeps the custom Bill To (other SINVs unaffected).
-//   3) Added Payment Details (bank), Notes, Terms & Signature block to fill A4.
-// NO change to any accounting math — this is display-only.
+// 2026-07-27 v2:
+//   • Compact single-A4-page layout (was overflowing to page 2)
+//   • Empty Bill To fields hide completely on the printed invoice
+//     (no more "(可选)" placeholders leaking into PDF)
+//   • Description text + subtitle also editable (defaults preserved)
+//   • Smaller header title so it doesn't dominate
+// NO change to any accounting math — display-only.
 function printSinv(id) {
   const inv = (state.partnershipInvoices || []).find(i => i.id === id);
   if (!inv) return;
@@ -5929,76 +5929,83 @@ function printSinv(id) {
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     return `${parseInt(d,10)} ${months[parseInt(m,10)-1]} ${y}`;
   };
-  const headerColor = '#a3185a';  // pink-ish for SINV-Emma
-  // Bank details for Emma to pay Michael
+  const headerColor = '#a3185a';
   const bank = co.bank || '';
+  // Editable overrides (default to sensible values if not overridden)
+  const descTitle    = (inv._descTitleOverride    != null && inv._descTitleOverride    !== '') ? inv._descTitleOverride    : 'Pallet advance payment';
+  const descSubDefault = (inv.pallets ? 'For ' + inv.pallets + ' pallets · ' : '') + 'for collection at SSS warehouse';
+  const descSub      = (inv._descSubOverride      != null && inv._descSubOverride      !== '') ? inv._descSubOverride      : descSubDefault;
+  // Bill To display: ONLY show lines that have real values (no placeholders)
+  const btLines = [];
+  if (c.address) btLines.push(esc(c.address));
+  if (c.postcode) btLines.push(esc(c.postcode));
+  if (c.phone) btLines.push('Tel: ' + esc(c.phone));
+  if (c.email) btLines.push(esc(c.email));
+  if (c.companyNo) btLines.push('Company No: ' + esc(c.companyNo));
+  if (c.vatNo) btLines.push('VAT: ' + esc(c.vatNo));
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(inv.number)} &mdash; ${esc(c.name || 'Emma')}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#0a0e1a;background:#eef1f5;padding:24px 12px;}
-  /* A4 210mm × 297mm — screen preview scales via max-width */
-  .paper{width:210mm;min-height:297mm;margin:0 auto;background:#fff;box-shadow:0 6px 28px rgba(10,14,26,0.12);position:relative;display:flex;flex-direction:column;}
-  .header{padding:20mm 18mm 12mm;background:linear-gradient(135deg,${headerColor} 0%,#7e0e3c 100%);color:#fff;}
-  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;gap:14mm;}
-  .brand .co-name{font-size:28px;font-weight:800;letter-spacing:-0.5px;line-height:1.1;}
-  .brand .co-lines{margin-top:10px;font-size:12px;line-height:1.7;color:rgba(255,255,255,0.90);}
-  .brand .co-tax{margin-top:8px;font-size:10.5px;line-height:1.6;color:rgba(255,255,255,0.70);letter-spacing:0.4px;}
+  body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:#0a0e1a;background:#eef1f5;padding:16px 8px;}
+  /* A4 210mm × 297mm — fit content within a single page */
+  .paper{width:210mm;height:297mm;margin:0 auto;background:#fff;box-shadow:0 6px 28px rgba(10,14,26,0.12);position:relative;display:flex;flex-direction:column;overflow:hidden;}
+  .header{padding:8mm 14mm 6mm;background:linear-gradient(135deg,${headerColor} 0%,#7e0e3c 100%);color:#fff;flex-shrink:0;}
+  .header-inner{display:flex;justify-content:space-between;align-items:flex-start;gap:8mm;}
+  .brand .co-name{font-size:19px;font-weight:800;letter-spacing:-0.4px;line-height:1.1;}
+  .brand .co-lines{margin-top:4px;font-size:10px;line-height:1.5;color:rgba(255,255,255,0.90);}
+  .brand .co-tax{margin-top:3px;font-size:9px;line-height:1.5;color:rgba(255,255,255,0.68);letter-spacing:0.3px;}
   .doc-title{text-align:right;flex-shrink:0;}
-  .doc-title .label{font-size:10px;font-weight:700;letter-spacing:2.6px;text-transform:uppercase;color:rgba(255,255,255,0.72);}
-  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:44px;font-weight:900;letter-spacing:-0.8px;margin-top:6px;line-height:1;}
-  .doc-title .no{margin-top:8px;font-size:12px;letter-spacing:0.8px;color:rgba(255,255,255,0.9);}
-  .doc-title .amt-badge{margin-top:14px;padding:8px 14px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:6px;font-size:22px;font-weight:800;letter-spacing:-0.3px;font-variant-numeric:tabular-nums;}
-  .doc-title .amt-badge .lbl{display:block;font-size:9px;font-weight:700;letter-spacing:1.4px;color:rgba(255,255,255,0.7);margin-bottom:2px;}
-  .meta{padding:14mm 18mm 6mm;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10mm;border-bottom:1px solid #e2e8f0;}
-  .meta-block .label{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
-  .meta-block .label .edit-hint{font-size:9px;font-weight:600;letter-spacing:0.4px;text-transform:none;color:#a855f7;background:rgba(168,85,247,0.10);padding:2px 6px;border-radius:3px;cursor:pointer;user-select:none;}
-  .meta-block .primary{font-size:15px;font-weight:800;color:#0a0e1a;line-height:1.3;}
-  .meta-block .lines{margin-top:4px;font-size:12px;line-height:1.65;color:#334155;}
-  .items{padding:10mm 18mm 4mm;}
+  .doc-title .label{font-size:8.5px;font-weight:700;letter-spacing:2.2px;text-transform:uppercase;color:rgba(255,255,255,0.70);}
+  .doc-title h1{font-family:'Playfair Display',Georgia,serif;font-size:26px;font-weight:900;letter-spacing:-0.5px;margin-top:2px;line-height:1;}
+  .doc-title .no{margin-top:4px;font-size:10px;letter-spacing:0.6px;color:rgba(255,255,255,0.88);}
+  .doc-title .amt-badge{margin-top:6px;padding:5px 10px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.28);border-radius:5px;font-size:15px;font-weight:800;letter-spacing:-0.2px;font-variant-numeric:tabular-nums;}
+  .doc-title .amt-badge .lbl{display:block;font-size:8px;font-weight:700;letter-spacing:1.2px;color:rgba(255,255,255,0.70);margin-bottom:1px;}
+  .meta{padding:6mm 14mm 4mm;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8mm;border-bottom:1px solid #e2e8f0;flex-shrink:0;}
+  .meta-block .label{font-size:9px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#64748b;margin-bottom:4px;display:flex;align-items:center;gap:5px;}
+  .meta-block .label .edit-hint{font-size:8.5px;font-weight:600;letter-spacing:0.3px;text-transform:none;color:#a855f7;background:rgba(168,85,247,0.10);padding:1px 5px;border-radius:3px;cursor:pointer;user-select:none;}
+  .meta-block .primary{font-size:13px;font-weight:800;color:#0a0e1a;line-height:1.3;}
+  .meta-block .lines{margin-top:3px;font-size:10.5px;line-height:1.55;color:#334155;}
+  .items{padding:5mm 14mm 3mm;flex-shrink:0;}
   table{width:100%;border-collapse:collapse;}
-  thead th{padding:11px 8px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#64748b;border-bottom:2.5px solid #0a0e1a;}
+  thead th{padding:7px 6px;font-size:9px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #0a0e1a;}
   thead th.num{text-align:right;}
-  tbody td{padding:16px 8px;font-size:13.5px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+  tbody td{padding:10px 6px;font-size:12px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top;}
   td.num{text-align:right;font-variant-numeric:tabular-nums;}
   td.bal{font-weight:800;color:#0a0e1a;}
-  tr.total-row td{padding:16px 8px;font-size:15px;font-weight:800;background:${headerColor};color:#fff;border:0;letter-spacing:0.4px;}
-  tr.total-row td.bal{font-size:22px;letter-spacing:-0.3px;}
-  .payment{margin:6mm 18mm 4mm;padding:14px 18px;background:#fdf2f8;border-left:4px solid ${headerColor};border-radius:0 6px 6px 0;}
-  .payment h4{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${headerColor};margin-bottom:8px;}
-  .payment .bank-line{font-size:12.5px;color:#0a0e1a;line-height:1.6;white-space:pre-wrap;}
-  .payment .ref-line{margin-top:8px;font-size:11.5px;color:#475569;padding-top:8px;border-top:1px dashed rgba(163,24,90,0.20);}
-  .notes{margin:4mm 18mm;padding:12px 16px;background:#f8fafc;border-radius:6px;font-size:11.5px;color:#475569;line-height:1.65;min-height:28mm;}
-  .notes h4{font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#64748b;margin-bottom:6px;}
-  .terms{padding:6mm 18mm 4mm;font-size:10.5px;color:#64748b;line-height:1.65;border-top:1px solid #f1f5f9;}
-  .terms h4{font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0a0e1a;margin-bottom:5px;}
-  .sig{margin:6mm 18mm;display:grid;grid-template-columns:1fr 1fr;gap:14mm;padding-top:6mm;}
-  .sig-block{border-top:1.5px solid #0a0e1a;padding-top:5px;font-size:10.5px;color:#64748b;}
-  .sig-block .lbl{font-weight:700;color:#0a0e1a;font-size:11px;letter-spacing:0.5px;}
-  .bottom{margin-top:auto;padding:10px 18mm;background:#0a0e1a;color:rgba(255,255,255,0.72);font-size:10.5px;letter-spacing:0.4px;display:flex;justify-content:space-between;}
-  /* Editable inputs — match display styling seamlessly */
-  .bt-input{width:100%;border:none;background:transparent;font-family:inherit;font-size:15px;font-weight:800;color:#0a0e1a;padding:2px 4px;border-radius:3px;line-height:1.3;}
-  .bt-input:focus,.bt-line:focus{outline:2px solid rgba(163,24,90,0.35);background:#fdf2f8;}
-  .bt-line{width:100%;border:none;background:transparent;font-family:inherit;font-size:12px;color:#334155;padding:2px 4px;border-radius:3px;display:block;line-height:1.6;}
-  .bt-edit-panel{display:none;margin-top:8px;padding:8px 10px;background:#fdf2f8;border:1px dashed ${headerColor};border-radius:6px;}
+  tr.total-row td{padding:10px 6px;font-size:13px;font-weight:800;background:${headerColor};color:#fff;border:0;letter-spacing:0.3px;}
+  tr.total-row td.bal{font-size:17px;letter-spacing:-0.2px;}
+  .payment{margin:4mm 14mm 3mm;padding:8px 12px;background:#fdf2f8;border-left:3px solid ${headerColor};border-radius:0 5px 5px 0;flex-shrink:0;}
+  .payment h4{font-size:9.5px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase;color:${headerColor};margin-bottom:4px;}
+  .payment .bank-line{font-size:11px;color:#0a0e1a;line-height:1.5;white-space:pre-wrap;}
+  .payment .ref-line{margin-top:5px;font-size:10px;color:#475569;padding-top:5px;border-top:1px dashed rgba(163,24,90,0.20);}
+  .notes{margin:3mm 14mm;padding:8px 12px;background:#f8fafc;border-radius:5px;font-size:10.5px;color:#475569;line-height:1.5;flex-shrink:0;}
+  .notes h4{font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#64748b;margin-bottom:3px;}
+  .terms{padding:3mm 14mm 2mm;font-size:9px;color:#64748b;line-height:1.5;border-top:1px solid #f1f5f9;flex-shrink:0;}
+  .terms h4{font-size:9px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#0a0e1a;margin-bottom:3px;display:inline-block;margin-right:6px;}
+  .sig{margin:3mm 14mm;display:grid;grid-template-columns:1fr 1fr;gap:10mm;padding-top:8mm;flex-shrink:0;}
+  .sig-block{border-top:1.2px solid #0a0e1a;padding-top:4px;font-size:9.5px;color:#64748b;}
+  .sig-block .lbl{font-weight:700;color:#0a0e1a;font-size:10px;letter-spacing:0.4px;}
+  .bottom{margin-top:auto;padding:6px 14mm;background:#0a0e1a;color:rgba(255,255,255,0.72);font-size:9.5px;letter-spacing:0.3px;display:flex;justify-content:space-between;flex-shrink:0;}
+  /* Editable panel */
+  .bt-edit-panel{display:none;margin-top:6px;padding:8px 10px;background:#fdf2f8;border:1px dashed ${headerColor};border-radius:6px;}
   .bt-edit-panel.on{display:block;}
-  .bt-edit-panel label{display:block;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${headerColor};margin:5px 0 2px;}
-  .bt-edit-panel input{width:100%;padding:5px 7px;border:1px solid rgba(163,24,90,0.30);border-radius:3px;background:#fff;font-size:12px;font-family:inherit;color:#0a0e1a;}
-  .bt-edit-panel .save-btn{margin-top:10px;padding:7px 14px;background:${headerColor};color:#fff;border:0;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.6px;}
+  .bt-edit-panel label{display:block;font-size:9px;font-weight:700;letter-spacing:0.9px;text-transform:uppercase;color:${headerColor};margin:4px 0 2px;}
+  .bt-edit-panel input{width:100%;padding:4px 6px;border:1px solid rgba(163,24,90,0.30);border-radius:3px;background:#fff;font-size:11px;font-family:inherit;color:#0a0e1a;}
+  .bt-edit-panel .save-btn{margin-top:8px;padding:6px 12px;background:${headerColor};color:#fff;border:0;border-radius:4px;font-size:10.5px;font-weight:700;cursor:pointer;letter-spacing:0.5px;}
   .bt-edit-panel .save-btn:hover{background:#7e0e3c;}
-  .btn-bar{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:100;}
-  .btn-bar button{padding:10px 18px;background:#0a0e1a;color:#fff;border:0;border-radius:999px;cursor:pointer;font-size:12.5px;font-weight:700;letter-spacing:0.4px;}
+  .btn-bar{position:fixed;top:12px;right:12px;display:flex;gap:6px;z-index:100;}
+  .btn-bar button{padding:8px 14px;background:#0a0e1a;color:#fff;border:0;border-radius:999px;cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:0.3px;}
   .btn-bar button.alt{background:#fff;color:#0a0e1a;border:1px solid #cbd5e1;}
   @media print{
     body{background:#fff!important;padding:0!important;}
-    .paper{box-shadow:none!important;width:auto!important;min-height:auto!important;}
+    .paper{box-shadow:none!important;width:210mm!important;height:auto!important;}
     .btn-bar,.bt-edit-panel,.edit-hint{display:none!important;}
     @page{size:A4;margin:0;}
     .header,.bottom,tr.total-row td,.payment,.doc-title .amt-badge{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}
-    .bt-input,.bt-line{border:none!important;background:transparent!important;}
   }
 </style></head><body>
 <div class="btn-bar">
-  <button onclick="window.print()">⎙ Download / Print PDF</button>
+  <button onclick="window.print()">⎙ Print / Save PDF</button>
   <button class="alt" onclick="window.close()">Close</button>
 </div>
 <div class="paper">
@@ -6019,23 +6026,18 @@ function printSinv(id) {
   <div class="meta">
     <div class="meta-block">
       <div class="label">Bill To <span class="edit-hint" onclick="toggleEditPanel()">✎ 编辑</span></div>
-      <input class="bt-input" id="bt-name" value="${esc(c.name || 'Emma')}" onchange="_refreshMirrors()" placeholder="公司/客户名">
-      <div class="lines" style="margin-top:6px;">
-        <input class="bt-line" id="bt-address" value="${esc(c.address || '')}" placeholder="地址 (可选)">
-        <input class="bt-line" id="bt-postcode" value="${esc(c.postcode || '')}" placeholder="邮编 (可选)">
-        <input class="bt-line" id="bt-phone" value="${esc(c.phone ? 'Tel: ' + c.phone : '')}" placeholder="电话 (可选)">
-        <input class="bt-line" id="bt-email" value="${esc(c.email || '')}" placeholder="邮箱 (可选)">
-        <input class="bt-line" id="bt-companyNo" value="${esc(c.companyNo ? 'Company No: ' + c.companyNo : '')}" placeholder="公司注册号 (可选)">
-        <input class="bt-line" id="bt-vatNo" value="${esc(c.vatNo ? 'VAT: ' + c.vatNo : '')}" placeholder="VAT 号 (可选)">
-      </div>
+      <div class="primary">${esc(c.name || 'Emma')}</div>
+      ${btLines.length ? `<div class="lines">${btLines.join('<br>')}</div>` : ''}
       <div class="bt-edit-panel" id="bt-edit-panel">
         <label>Company / Name</label><input id="ep-name" value="${esc(c.name || 'Emma')}">
-        <label>Address</label><input id="ep-address" value="${esc(c.address || '')}">
-        <label>Postcode</label><input id="ep-postcode" value="${esc(c.postcode || '')}">
-        <label>Phone</label><input id="ep-phone" value="${esc(c.phone || '')}">
-        <label>Email</label><input id="ep-email" value="${esc(c.email || '')}">
-        <label>Company No</label><input id="ep-companyNo" value="${esc(c.companyNo || '')}">
-        <label>VAT No</label><input id="ep-vatNo" value="${esc(c.vatNo || '')}">
+        <label>Address</label><input id="ep-address" value="${esc(c.address || '')}" placeholder="留空则不显示">
+        <label>Postcode</label><input id="ep-postcode" value="${esc(c.postcode || '')}" placeholder="留空则不显示">
+        <label>Phone</label><input id="ep-phone" value="${esc(c.phone || '')}" placeholder="留空则不显示">
+        <label>Email</label><input id="ep-email" value="${esc(c.email || '')}" placeholder="留空则不显示">
+        <label>Company No</label><input id="ep-companyNo" value="${esc(c.companyNo || '')}" placeholder="留空则不显示">
+        <label>VAT No</label><input id="ep-vatNo" value="${esc(c.vatNo || '')}" placeholder="留空则不显示">
+        <label style="margin-top:10px;border-top:1px dashed rgba(163,24,90,0.3);padding-top:6px;">Description 标题</label><input id="ep-descTitle" value="${esc(descTitle)}" placeholder="Pallet advance payment">
+        <label>Description 副标题</label><input id="ep-descSub" value="${esc(descSub)}" placeholder="For X pallets · for collection at SSS warehouse">
         <button class="save-btn" onclick="saveBillTo()">💾 保存到本 SINV</button>
       </div>
     </div>
@@ -6053,18 +6055,17 @@ function printSinv(id) {
 
   <div class="items">
     <table>
-      <thead><tr><th>Description</th><th class="num" style="width:80px;">Qty</th><th class="num" style="width:110px;">Unit Price</th><th class="num" style="width:130px;">Amount</th></tr></thead>
+      <thead><tr><th>Description</th><th class="num" style="width:70px;">Qty</th><th class="num" style="width:90px;">Unit Price</th><th class="num" style="width:110px;">Amount</th></tr></thead>
       <tbody>
         <tr>
           <td>
-            <b>Pallet advance payment</b>
-            <br><span style="color:#64748b;font-size:11.5px;">${inv.pallets ? 'For ' + inv.pallets + ' pallets · ' : ''}for collection at SSS warehouse</span>
+            <b id="disp-desc-title">${esc(descTitle)}</b>
+            ${descSub ? `<br><span id="disp-desc-sub" style="color:#64748b;font-size:10.5px;">${esc(descSub)}</span>` : ''}
           </td>
           <td class="num">${inv.pallets || '—'}</td>
           <td class="num">${money(inv.unitPrice)}</td>
           <td class="num bal">${money(inv.amount)}</td>
         </tr>
-        <tr><td style="height:8px;border:0;"></td><td style="border:0;"></td><td style="border:0;"></td><td style="border:0;"></td></tr>
         <tr class="total-row"><td colspan="3" style="text-align:right;">TOTAL DUE</td><td class="num bal">${money(inv.amount)}</td></tr>
       </tbody>
     </table>
@@ -6078,14 +6079,12 @@ function printSinv(id) {
 
   <div class="notes">
     <h4>Notes</h4>
-    Pallets are available for collection at SSS warehouse once payment clears in our account.
-    ${inv.note ? '<br><br><b>Additional note:</b> ' + esc(inv.note) : ''}
-    <br><br>If you have any questions about this invoice, please contact ${esc(co.email || co.phone || 'us')}.
+    Pallets are available for collection at SSS once payment clears.${inv.note ? ' <b>' + esc(inv.note) + '</b>' : ''} For questions contact ${esc(co.email || co.phone || 'us')}.
   </div>
 
   <div class="terms">
     <h4>Terms &amp; Conditions</h4>
-    Payment is due on receipt. Late payments may incur a statutory interest charge under the Late Payment of Commercial Debts (Interest) Act 1998. Pallet availability at SSS is subject to stock levels at time of collection. This invoice is issued in GBP.
+    Payment due on receipt. Late payments may incur statutory interest under the Late Payment of Commercial Debts (Interest) Act 1998. Pallet availability at SSS subject to stock. Invoice issued in GBP.
   </div>
 
   <div class="sig">
@@ -6105,20 +6104,6 @@ function printSinv(id) {
     const p = document.getElementById('bt-edit-panel');
     p.classList.toggle('on');
   }
-  function _refreshMirrors(){
-    // Sync inline Bill-To display inputs into hidden edit panel (bi-directional convenience)
-    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(function(k){
-      const disp = document.getElementById('bt-'+k);
-      const ep   = document.getElementById('ep-'+k);
-      if (!disp || !ep) return;
-      // Strip prefix labels like "Tel: " / "Company No: " / "VAT: " when syncing to raw ep field
-      let v = disp.value || '';
-      if (k === 'phone')     v = v.replace(/^\\s*Tel:\\s*/i, '');
-      if (k === 'companyNo') v = v.replace(/^\\s*Company No:\\s*/i, '');
-      if (k === 'vatNo')     v = v.replace(/^\\s*VAT:\\s*/i, '');
-      ep.value = v;
-    });
-  }
   function saveBillTo(){
     const opener = window.opener;
     if (!opener || !opener._updateSinvBillTo) {
@@ -6126,21 +6111,14 @@ function printSinv(id) {
       return;
     }
     const fields = {};
-    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(function(k){
+    ['name','address','postcode','phone','email','companyNo','vatNo','descTitle','descSub'].forEach(function(k){
       const el = document.getElementById('ep-'+k);
       fields[k] = el ? (el.value || '').trim() : '';
     });
     try {
       opener._updateSinvBillTo(_INV_ID, fields);
-      alert('✓ Bill To 已保存到本 SINV');
-      document.getElementById('bt-name').value = fields.name || 'Emma';
-      document.getElementById('bt-address').value = fields.address || '';
-      document.getElementById('bt-postcode').value = fields.postcode || '';
-      document.getElementById('bt-phone').value = fields.phone ? 'Tel: ' + fields.phone : '';
-      document.getElementById('bt-email').value = fields.email || '';
-      document.getElementById('bt-companyNo').value = fields.companyNo ? 'Company No: ' + fields.companyNo : '';
-      document.getElementById('bt-vatNo').value = fields.vatNo ? 'VAT: ' + fields.vatNo : '';
-      toggleEditPanel();
+      alert('✓ 已保存到本 SINV — 关闭窗口重新打开即可看到最新版本');
+      window.location.reload();
     } catch(err) {
       alert('保存失败: ' + (err && err.message || err));
     }
@@ -6152,7 +6130,7 @@ function printSinv(id) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
-// === Persist Bill To edits from the SINV print window back to state ===
+// === Persist Bill To + Description edits from the SINV print window back to state ===
 // 2026-07-27: called by printSinv preview window when user clicks "保存到本 SINV"
 window._updateSinvBillTo = function(invId, fields) {
   const inv = (state.partnershipInvoices || []).find(i => i.id === invId);
@@ -6162,6 +6140,9 @@ window._updateSinvBillTo = function(invId, fields) {
   ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(k => {
     snap[k] = (fields && fields[k]) || '';
   });
+  // Description overrides: null-means-default (kept simple with empty-string check on render)
+  if (fields && ('descTitle' in fields)) inv._descTitleOverride = fields.descTitle;
+  if (fields && ('descSub'   in fields)) inv._descSubOverride   = fields.descSub;
   inv.updatedAt = new Date().toISOString();
   if (typeof saveData === 'function') saveData();
   if (typeof renderPartnershipInvoices === 'function') renderPartnershipInvoices();
