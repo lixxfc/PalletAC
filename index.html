@@ -6099,7 +6099,7 @@ function printSinv(id) {
   </div>
 </div>
 
-<script>
+<scr` + `ipt>
   const _INV_ID = ${JSON.stringify(id)};
   function toggleEditPanel(){
     const p = document.getElementById('bt-edit-panel');
@@ -6107,7 +6107,7 @@ function printSinv(id) {
   }
   function _refreshMirrors(){
     // Sync inline Bill-To display inputs into hidden edit panel (bi-directional convenience)
-    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(k=>{
+    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(function(k){
       const disp = document.getElementById('bt-'+k);
       const ep   = document.getElementById('ep-'+k);
       if (!disp || !ep) return;
@@ -6126,14 +6126,13 @@ function printSinv(id) {
       return;
     }
     const fields = {};
-    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(k=>{
+    ['name','address','postcode','phone','email','companyNo','vatNo'].forEach(function(k){
       const el = document.getElementById('ep-'+k);
       fields[k] = el ? (el.value || '').trim() : '';
     });
     try {
       opener._updateSinvBillTo(_INV_ID, fields);
-      alert('✓ Bill To 已保存到本 SINV\\n刷新即可看到最新版本');
-      // Refresh visible inline inputs to match
+      alert('✓ Bill To 已保存到本 SINV');
       document.getElementById('bt-name').value = fields.name || 'Emma';
       document.getElementById('bt-address').value = fields.address || '';
       document.getElementById('bt-postcode').value = fields.postcode || '';
@@ -6146,7 +6145,7 @@ function printSinv(id) {
       alert('保存失败: ' + (err && err.message || err));
     }
   }
-</script>
+` + `<\/scr` + `ipt>
 </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { alert('请允许弹出窗口'); return; }
