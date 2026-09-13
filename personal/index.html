@@ -2205,7 +2205,7 @@ select option { background: var(--bg-2); color: var(--text); }
         <div class="table-wrap mt-4">
           <table>
             <thead><tr>
-              <th>日期</th><th>客户</th><th>托盘</th><th>车次</th><th>扣款</th><th>成本</th><th>中介费</th><th>净利润</th><th>备注</th><th></th>
+              <th>日期</th><th>客户</th><th>托盘</th><th>库房</th><th>扣款</th><th>成本</th><th>中介费</th><th>净利润</th><th>备注</th><th></th>
             </tr></thead>
             <tbody id="daily-body"></tbody>
           </table>
@@ -2313,7 +2313,7 @@ select option { background: var(--bg-2); color: var(--text); }
             </div>
             <div class="form-row" id="lg-amount-row"><label id="lg-amount-label">金额 £</label><input type="number" id="lg-amount" placeholder="0" oninput="updateLedgerPreview()"></div>
             <div class="form-row row-hidden" id="lg-pallets-row"><label>托盘数</label><input type="number" id="lg-pallets" placeholder="24" min="1" oninput="updateLedgerPreview()"></div>
-            <div class="form-row row-hidden" id="lg-truck-row"><label>车次（可选）</label><input type="text" id="lg-truck" placeholder="T-001"></div>
+            <div class="form-row row-hidden" id="lg-truck-row"><label>SSS 库房 (可选)</label><input type="text" id="lg-truck" placeholder="2仓 / 25仓 / 19仓"></div>
             <div class="form-row row-hidden" id="lg-type-row"><label>类型</label>
               <select id="lg-type-select">
                 <option value="TT">TT</option>
@@ -2339,7 +2339,7 @@ select option { background: var(--bg-2); color: var(--text); }
           </div>
           <div class="table-wrap mt-4">
             <table>
-              <thead><tr><th>日期</th><th>类型</th><th>托盘</th><th>车次</th><th>金额</th><th>余额</th><th>备注</th><th></th></tr></thead>
+              <thead><tr><th>日期</th><th>类型</th><th>托盘</th><th>库房</th><th>金额</th><th>余额</th><th>备注</th><th></th></tr></thead>
               <tbody id="ledger-body"></tbody>
             </table>
           </div>
@@ -2936,7 +2936,7 @@ select option { background: var(--bg-2); color: var(--text); }
           <tr style="background:linear-gradient(90deg,rgba(139,92,246,0.08),rgba(0,229,255,0.06));">
             <th style="width:90px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">类型</th>
             <th style="width:80px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:center;">托盘</th>
-            <th style="width:100px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">车次</th>
+            <th style="width:100px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">库房</th>
             <th style="width:110px;padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:center;">Swap</th>
             <th class="se-col-customer" style="padding:11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;text-align:left;">→ 客户</th>
             <th style="width:130px;text-align:right;padding:11px 14px 11px 10px;font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-dim);text-transform:uppercase;" class="se-col-amount">该车金额</th>
@@ -3213,7 +3213,7 @@ select option { background: var(--bg-2); color: var(--text); }
       <div class="form-row"><label>类型</label><input type="text" id="le-type-display" disabled style="background:rgba(139,150,255,0.06);font-weight:600;"></div>
       <div class="form-row" id="le-amount-row"><label id="le-amount-label">金额 £</label><input type="number" id="le-amount" placeholder="0" oninput="updateLedgerEditPreview()"></div>
       <div class="form-row row-hidden" id="le-pallets-row"><label>托盘数</label><input type="number" id="le-pallets" placeholder="24" min="1" oninput="updateLedgerEditPreview()"></div>
-      <div class="form-row row-hidden" id="le-truck-row"><label>车次(可选)</label><input type="text" id="le-truck" placeholder="T-001"></div>
+      <div class="form-row row-hidden" id="le-truck-row"><label>SSS 库房 (可选)</label><input type="text" id="le-truck" placeholder="2仓 / 25仓 / 19仓"></div>
       <div class="form-row row-hidden" id="le-pallet-type-row"><label>托盘类型</label>
         <select id="le-pallet-type">
           <option value="TT">TT</option>
@@ -5240,7 +5240,7 @@ function renderSmartEntryTrucks() {
         <input type="number" min="0" value="${t.pallets || 0}" oninput="updateSmartEntryTruck(${idx}, 'pallets', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.6);border:1.5px solid rgba(139,150,255,0.22);border-radius:8px;color:var(--text);font-size:15px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;">
       </td>
       <td style="padding:12px 10px;vertical-align:middle;">
-        <input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="车次号" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.5);border:1.5px solid rgba(139,150,255,0.18);border-radius:8px;color:var(--text);font-size:12px;">
+        <input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="2仓 / 25仓" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.5);border:1.5px solid rgba(139,150,255,0.18);border-radius:8px;color:var(--text);font-size:12px;">
       </td>
       <td style="padding:12px 10px;text-align:center;vertical-align:middle;">
         <button type="button" onclick="updateSmartEntryTruck(${idx}, 'isSwap', !${!!t.isSwap})" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;padding:8px 14px;border-radius:20px;background:${t.isSwap ? 'linear-gradient(135deg,rgba(244,114,182,0.25),rgba(244,114,182,0.10))' : 'rgba(139,150,255,0.06)'};border:1.5px solid ${t.isSwap ? 'rgba(244,114,182,0.55)' : 'rgba(139,150,255,0.18)'};color:${t.isSwap ? '#fda4af' : 'var(--text-dim)'};font-weight:${t.isSwap ? '800' : '600'};letter-spacing:0.4px;transition:all 0.18s;min-width:80px;justify-content:center;">
