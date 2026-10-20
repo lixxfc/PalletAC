@@ -4031,9 +4031,17 @@ async function saveUserDataNow() {
 //   pre-7/1:   sell 265 + myFee 31 − buy 245 = £51
 //   7/1~7/5:  sell 265 + myFee 31 − buy 200 = £96 (£45 windfall — client not told yet)
 //   7/6+:     sell 220 + myFee 31 − buy 200 = £51 (back to normal spread)
+// perPalletProfit(date):
+//   = sellPrice − buyPrice (hidden markup)
+//   + myFee (31 = £30 client fee + £3 Hugo spread − £2 V, at the £7 Hugo baseline)
+//   − Hugo rate increase vs baseline  (2026-10-20: Hugo £7 → £10 from 10/1 ⇒ −£3)
+// Result: £51/pallet before 2026-10-01, £48/pallet from 2026-10-01.
+// Equivalent to: hiddenMarkup + clientFee(30) + hugoSpread(10 − hugoRateOn) − V(2).
 const perPalletProfit = (date) => {
   const d = date || new Date().toISOString().slice(0,10);
-  return (sellPriceOn(d) || 0) + (+state.params.myFee || 0) - (buyPriceOn(d) || 0);
+  const baseHugo = (state.params.hugoFee != null) ? +state.params.hugoFee : 7;
+  const hugoDelta = (hugoRateOn(d) || 0) - baseHugo;   // 0 pre-10/1, +3 from 10/1
+  return (sellPriceOn(d) || 0) + (+state.params.myFee || 0) - (buyPriceOn(d) || 0) - hugoDelta;
 };
 // fmt: format any number as a £-prefixed integer string. Defensive against
 // NaN / undefined so a single corrupt amount doesn't render '£NaN'.
@@ -4218,7 +4226,6 @@ function weeklyAgg() {
 function customerWeeklyAgg(customer) {
   if (!customer) return [];
   const map = {};
-  const perP = perPalletProfit();
   for (const e of (customer.ledger || [])) {
     if (e.type !== 'pickup') continue;
     const wk = weekStartOf(e.date);
@@ -4226,9 +4233,9 @@ function customerWeeklyAgg(customer) {
     if (!map[wk]) map[wk] = { week: wk, pallets: 0, revenue: 0, profit: 0, entries: 0 };
     map[wk].pallets += (e.pallets || 0);
     map[wk].revenue += (e.amount || 0);
-    // Profit = base per-pallet margin + swap-TT bonus (£30/pallet for tagged entries)
+    // Profit = base per-pallet margin (date-aware: 7/1 price + 10/1 Hugo cutovers) + swap-TT bonus
     const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium()) : 0;
-    map[wk].profit += (e.pallets || 0) * perP + swapBonus;
+    map[wk].profit += (e.pallets || 0) * perPalletProfit(e.date) + swapBonus;
     map[wk].entries += 1;
   }
   return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
@@ -5070,14 +5077,14 @@ function _updateEmmaTransferPreview() {
   const swapP = swapTtPremium();
   const buyP  = buyPriceOn(_seDate);
   const myFee = state.params.myFee || 31;
-  const hugoF = state.params.hugoFee || 7;
+  const hugoF = state.params.hugoFee || 7;   // legacy baseline (£7) — customer cash is fixed £30+£10 regardless
   const vF    = state.params.vFee || 2;
   // TT (Swap auto-on) — per pallet
   const ttBankUnit = sellP + swapP + EMMA_TRANSFER_RATE;     // 295 + 25 = 320
-  const ttCashUnit = myFee + hugoF + vF;                     // 40
+  const ttCashUnit = myFee + hugoF + vF;                     // 40 = £30 fee + £10 Hugo (what customer hands over)
   const ttGrossUnit = ttBankUnit + ttCashUnit;               // 360
-  // Michael's net per Swap TT: sellPrice + swapPrem + myFee - buyPrice = 81
-  const ttNetPerPallet = sellP + swapP + myFee - buyP;
+  // Michael's net per Swap TT: perPalletProfit(date) + swapPrem  (2026-10-20: perPalletProfit already nets Hugo £7→£10 from 10/1)
+  const ttNetPerPallet = perPalletProfit(_seDate) + swapP;
   const emmaOwed = tt * EMMA_TRANSFER_RATE;
   const ttBankTotal = tt * ttBankUnit;
   const ttCashTotal = tt * ttCashUnit;
@@ -5086,7 +5093,7 @@ function _updateEmmaTransferPreview() {
   // AMZ (no Swap, no transfer fee) — per pallet
   const amzBankUnit = sellP;
   const amzCashUnit = ttCashUnit;
-  const amzNetPerPallet = sellP + myFee - buyP;               // 51
+  const amzNetPerPallet = perPalletProfit(_seDate);           // 51 pre-10/1, 48 from 10/1 (Hugo £10)
   const amzBankTotal = amz * amzBankUnit;
   const amzCashTotal = amz * amzCashUnit;
   const amzNetTotal = amz * amzNetPerPallet;
@@ -5411,14 +5418,19 @@ function updateSmartEntryPreview() {
   const buyPrice = buyPriceOn(date);
   const sellPrice = sellPriceOn(date);
   const myFee = state.params.myFee || 31;
-  const hugoFeeRate = state.params.hugoFee || 7;
+  // 2026-10-20: Hugo rate is date-aware (£7 → £10 from 2026-10-01). What the CUSTOMER
+  // hands over for Hugo stays £10 (CLIENT_HUGO_PER_PALLET); what Michael OWES Hugo is
+  // hugoRateOn(date). The £3 spread pre-10/1 lives inside myFee (31 = 30 + 3 − 2).
+  const hugoFeeRate = hugoRateOn(date);
+  const clientHugoRate = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
+  const hugoDeltaRate = hugoFeeRate - ((state.params.hugoFee != null) ? +state.params.hugoFee : 7);   // 0 pre-10/1, +3 after
   const vFeeRate = state.params.vFee || 2;
   const swapPrem = swapTtPremium();
 
   // Per-truck profit (incl swap bonus) + totals
   const swapPallets = _seTrucks.filter(t => t.isSwap).reduce((s, t) => s + (t.pallets || 0), 0);
   const normalPallets = totalPallets - swapPallets;
-  const baseProfit = totalPallets * (sellPrice + myFee - buyPrice);   // = pallets × £51
+  const baseProfit = totalPallets * perPalletProfit(date);   // = pallets × £51 (pre-10/1) / £48 (from 10/1)
   const swapBonus = swapPallets * swapPrem;                           // swap pallets × £30
   const totalProfit = baseProfit + swapBonus;
 
@@ -5446,10 +5458,11 @@ function updateSmartEntryPreview() {
   }, 0);
 
   // Hugo / V cash flows (only meaningful when Michael picks up)
-  const hugoCommission = totalPallets * hugoFeeRate;
+  const hugoCommission = totalPallets * hugoFeeRate;              // what you owe Hugo (date-aware)
+  const hugoCashFromClient = totalPallets * clientHugoRate;        // what customer hands you for Hugo (£10 fixed)
   const vCommission = totalPallets * vFeeRate;
-  const myFeeKept = totalPallets * myFee;
-  const cashFromCustomer = myFeeKept + hugoCommission + vCommission;
+  const myFeeKept = totalPallets * (myFee - hugoDeltaRate);        // 31 pre-10/1, 28 from 10/1
+  const cashFromCustomer = myFeeKept + hugoCashFromClient + vCommission;   // always £40/托 from customer
 
   // === Owner-aware accounting (NEW mode) ===
   // The picker is the person whose SSS share gets debited. Michael earns profit + handles
@@ -5545,8 +5558,8 @@ function updateSmartEntryPreview() {
     const owedAfter = hugoOwedBefore ? (hugoOwedBefore.owed + hugoCommission) : null;
     const transferTag = _ueIsTransferDay ? ' <span style="color:#f9a8d4;font-size:11px;">(Emma 转售试行: 代取应付归你)</span>' : '';
     hugoSection = sec('💰', '合伙账 — Hugo 提成 (你欠 Hugo)' + transferTag, `
-      本次应付:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b><br>
-      <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCommission)} 现金 → 你转给 Hugo (cash, 不进系统)</span>
+      本次应付:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b>${hugoFeeRate >= HUGO_RATE_NEW ? ' <span style="font-size:10.5px;color:var(--text-dim);">(10/1 起 £10/托)</span>' : ''}<br>
+      <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCashFromClient)} 现金 (£${clientHugoRate}/托) → 你转给 Hugo ${fmt(hugoCommission)}${hugoCashFromClient - hugoCommission > 0 ? ` (差价 ${fmt(hugoCashFromClient - hugoCommission)} 你留)` : ''} (cash, 不进系统)</span>
       ${owedAfter != null ? `<br>Hugo 累计应付 <b>${fmt(hugoOwedBefore.owed)}</b> → 取货后 <b style="color:var(--amber);">${fmt(owedAfter)}</b>` : ''}
     `, 'var(--amber)');
   } else {
@@ -5581,12 +5594,13 @@ function updateSmartEntryPreview() {
 
   // P1 audit fix (2026-05-22): use perPalletProfit() instead of hard-coded £51 — if
   // sellPrice / myFee / buyPrice are changed in settings, this formula now reflects it.
-  const perP = perPalletProfit();                // sellPrice + myFee − buyPrice
+  const perP = perPalletProfit(date);            // sellPrice + myFee − buyPrice − Hugo delta (date-aware)
   const swapBonusPerPallet = swapPrem;           // £30 by default
   const swapTotalPerPallet = perP + swapBonusPerPallet;
+  const _hugoDeltaTxt = hugoDeltaRate > 0 ? ` - £${hugoDeltaRate} Hugo涨价` : '';
   const profitFormula = swapPallets > 0
     ? `普通:${normalPallets} × £${perP} = ${fmt(normalPallets * perP)}<br>Swap:${swapPallets} × £${swapTotalPerPallet}(£${perP} + £${swapBonusPerPallet} 加成)= ${fmt(swapPallets * swapTotalPerPallet)}<br>合计 = <b>${fmt(totalProfit)}</b>`
-    : `${totalPallets} × £${perP}(£${sellPrice} + £${myFee} - £${buyPrice})= <b>${fmt(totalProfit)}</b>`;
+    : `${totalPallets} × £${perP}(£${sellPrice} + £${myFee} - £${buyPrice}${_hugoDeltaTxt})= <b>${fmt(totalProfit)}</b>`;
 
   // === Profit card (owner-aware) ===
   // Only Michael picks up → Michael earns perPalletProfit() per 托 (sellPrice + myFee − buyPrice).
@@ -5618,10 +5632,10 @@ function updateSmartEntryPreview() {
   // === Cash card (owner-aware) ===
   let cashSection;
   if (isMichaelPick) {
-    cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${(myFee + hugoFeeRate + vFeeRate) * totalPallets} — 提醒别忘了)`, `
+    cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${cashFromCustomer.toLocaleString('en-GB')} — 提醒别忘了)`, `
       <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
-        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £51 利润里)</td></tr>
-        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo(过路钱)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee - hugoDeltaRate} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £${perP} 利润里)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${clientHugoRate} = <b style="color:var(--amber);">+${fmt(hugoCashFromClient)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo £${hugoFeeRate}/托 = ${fmt(hugoCommission)}${hugoCashFromClient - hugoCommission > 0 ? ` (留 ${fmt(hugoCashFromClient - hugoCommission)})` : '(过路钱)'}</td></tr>
         <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
         <tr style="border-top:1px dashed rgba(139,150,255,0.2);"><td style="padding:6px 0 0;font-weight:700;">总计客户现金</td><td style="padding:6px 0 0;text-align:right;font-weight:700;color:var(--text);">${fmt(cashFromCustomer)}</td><td></td></tr>
       </table>
@@ -7783,7 +7797,7 @@ function updatePickupPreview() {
   const deduction = pallets * unitPrice;
   const bal = customerBalance(c);
   const after = bal - deduction;
-  const profit = pallets * perPalletProfit() + (isSwap ? pallets * swapTtPremium() : 0);
+  const profit = pallets * perPalletProfit(_pDate || undefined) + (isSwap ? pallets * swapTtPremium() : 0);
   const overdraft = after < 0;
   box.classList.add('show');
   box.classList.toggle('danger', overdraft);
@@ -8263,7 +8277,7 @@ function _smartAlertsCompute() {
   // 2026-07-03: smart alerts run on current data → today's prices
   const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
   const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
-  const hugoRate = state.params.hugoFee || 7;
+  const hugoRate = hugoRateOn(todayStr);   // 2026-10-20: £10 from 10/1
   const monthTarget = +(state.params.monthlyProfitTarget || 45000);
 
   // ────────── 1. 🚨 Overdue invoices ──────────
@@ -8807,6 +8821,21 @@ function sellPriceOn(date) {
   const legacy = (state && state.params && state.params.sellPrice) || 265;
   if (!date || date < PRICE_CLIENT_CUTOVER) return legacy;
   return 220;
+}
+// ═════════════════════════════════════════════════════════════════════
+// HUGO RATE SCHEDULE (2026-10-20 added)
+// ═════════════════════════════════════════════════════════════════════
+// Hugo raised his per-pallet delivery fee £7 → £10 from 2026-10-01.
+// Client-facing charge stays £10 (CLIENT_HUGO_PER_PALLET), so Michael's
+// £3 Hugo spread becomes £0 from that date; per-pallet net £51 → £48.
+//   before 2026-10-01   pay Hugo £7   (spread £3)
+//   2026-10-01 onwards  pay Hugo £10  (spread £0)
+const HUGO_RATE_CUTOVER = '2026-10-01';
+const HUGO_RATE_NEW     = 10;
+function hugoRateOn(date) {
+  const legacy = (state && state.params && state.params.hugoFee != null) ? state.params.hugoFee : 7;
+  if (!date || date < HUGO_RATE_CUTOVER) return legacy;
+  return HUGO_RATE_NEW;
 }
 const EMMA_TRANSFER_RATE        = 25;             // £ per TT pallet
 const EMMA_TRANSFER_FEE_TYPE    = 'emma-transfer-fee';  // customer ledger entry type
@@ -14122,7 +14151,7 @@ function aiSystemPrompt() {
 - 资金流向: 客户预付 + Emma 转账 → Michael → SSS。Michael 是唯一付 SSS 的人。
 - SSS 池被分成两份: Michael 份额 + Emma 份额。每次取货只消耗取货人那一边的份额。
 - 客户先预付款给 Michael(进客户余额),Michael 取货时按 sellPrice 扣客户账本
-- Hugo 提成 £${state.params.hugoFee || 7}/托: 客户当面付 Michael 现金 → Michael 转给 Hugo (只针对 Michael 取的货)
+- Hugo 提成 £${hugoRateOn(new Date().toISOString().slice(0,10))}/托 (2026-10-01 前 £7, 起 £10; 客户付的 Hugo 钱固定 £10/托): 客户当面付 Michael 现金 → Michael 转给 Hugo (只针对 Michael 取的货)
 - V 费用 £${state.params.vFee || 2}/托: 客户直接付 V(过路钱,不进 Michael P&L)
 - 托盘有两种类型:TT 和 AMAZON
 - **Michael 取货 vs Emma 取货是关键区分**:
@@ -15703,7 +15732,8 @@ const CLIENT_HUGO_PER_PALLET = 10;     // 给客人说的"Hugo 费用" / 托
 // SELF_* 改成读 live params,这样改设置后所有地方同步更新
 // 2026-07-03: all now date-aware; call sites can pass an event date.
 function selfProfitPerPallet(date) { return perPalletProfit(date); }
-function selfHugoPerPallet()   { return state.params.hugoFee != null ? state.params.hugoFee : 7; }
+// 2026-10-20: Hugo rate is date-aware (£7 pre-10/1, £10 from 10/1)
+function selfHugoPerPallet(date) { return hugoRateOn(date || new Date().toISOString().slice(0,10)); }
 function selfVPerPallet()      { return state.params.vFee   != null ? state.params.vFee   : 2; }
 // 2026-06-09 v2 — 净利 £51/托 拆解显示 (4 个组成部分, 数学等价):
 //   £51 净利 = £20 隐藏加价 + £30 客户费 + £3 Hugo 差价 − £2 V
@@ -15721,10 +15751,10 @@ function selfClientFeePerPallet() {
   // £30 = 客户版 "我的费用" — 跟 CLIENT_PROFIT_PER_PALLET 同源
   return (typeof CLIENT_PROFIT_PER_PALLET !== 'undefined') ? CLIENT_PROFIT_PER_PALLET : 30;
 }
-function selfHugoSpreadPerPallet() {
-  // £3 = 客户付你 £10 Hugo 费 − 你付 Hugo £7 现金
+function selfHugoSpreadPerPallet(date) {
+  // 客户付你 £10 Hugo 费 − 你付 Hugo 现金 (£7 pre-10/1 → spread £3; £10 from 10/1 → spread £0)
   const clientHugo = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
-  return clientHugo - selfHugoPerPallet();
+  return clientHugo - selfHugoPerPallet(date);
 }
 
 let currentBreakdownTab = 'client';
@@ -15869,15 +15899,16 @@ function renderSelfBreakdown(customer) {
     const isCurrent = w.week === todayWk;
     // 2026-07-03: per-entry date-aware profit/markup (weeks that straddle 7/1
     // or 7/6 mix different rates; summing per-pickup keeps the invariant true)
-    let profit51 = 0, hiddenMarkup = 0;
+    // 2026-10-20: Hugo pay + spread also per-entry date-aware (£7→£10 on 10/1)
+    let profit51 = 0, hiddenMarkup = 0, hugo7 = 0, hugoSpread = 0;
     for (const en of (w.entries || [])) {
       profit51     += (en.pallets || 0) * selfProfitPerPallet(en.date);
       hiddenMarkup += (en.pallets || 0) * selfHiddenMarkupPerPallet(en.date);
+      hugo7        += (en.pallets || 0) * selfHugoPerPallet(en.date);
+      hugoSpread   += (en.pallets || 0) * selfHugoSpreadPerPallet(en.date);
     }
-    const hugo7    = w.totalPallets * selfHugoPerPallet();
     const v2       = w.totalPallets * selfVPerPallet();
     const clientFee    = w.totalPallets * selfClientFeePerPallet();      // £30 × N (fixed)
-    const hugoSpread   = w.totalPallets * selfHugoSpreadPerPallet();     // £3 × N (fixed)
     // INVARIANT 自检: hiddenMarkup + clientFee + hugoSpread − v2 === profit51
     const _invariantDelta = profit51 - (hiddenMarkup + clientFee + hugoSpread - v2);
     if (Math.abs(_invariantDelta) > 0.01) {
@@ -15914,13 +15945,15 @@ function renderSelfBreakdown(customer) {
     const _wkSampleDate = _wkSample ? _wkSample.date : new Date().toISOString().slice(0,10);
     const _sellP = sellPriceOn(_wkSampleDate);
     const _buyP  = buyPriceOn(_wkSampleDate);
-    // Detect mixed-rate week (any two entries with different buy prices)
-    const _mixedRate = (w.entries || []).some(en => buyPriceOn(en.date) !== _buyP || sellPriceOn(en.date) !== _sellP);
-    const _mixTag = _mixedRate ? ' <span style="font-size:9.5px;color:var(--amber);">(本周含 7/1 切换)</span>' : '';
+    // Detect mixed-rate week (any two entries with different buy/sell/Hugo rates)
+    const _hugoP = selfHugoPerPallet(_wkSampleDate);
+    const _mixedRate = (w.entries || []).some(en => buyPriceOn(en.date) !== _buyP || sellPriceOn(en.date) !== _sellP || selfHugoPerPallet(en.date) !== _hugoP);
+    const _mixTag = _mixedRate ? ' <span style="font-size:9.5px;color:var(--amber);">(本周含费率切换)</span>' : '';
+    const _wkAvgHugoSpread = w.totalPallets > 0 ? (hugoSpread / w.totalPallets) : 0;
     const chargeRows = [
       `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${w.totalPallets} × £${_wkAvgHiddenMk.toFixed(_mixedRate ? 2 : 0)} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(卖 £${_sellP} − 进 £${_buyP})${_mixTag}</span></span><span class="v">${fmt(hiddenMarkup)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${w.totalPallets} × £${selfClientFeePerPallet()} 客户费 <span style="font-size:9.5px;color:var(--text-dim);">(你收客户的中介费)</span></span><span class="v">${fmt(clientFee)}</span></div>`,
-      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${w.totalPallets} × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(收 £${_clientHugo} − 付 £${selfHugoPerPallet()})</span></span><span class="v">${fmt(hugoSpread)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${w.totalPallets} × £${_wkAvgHugoSpread.toFixed(_mixedRate ? 2 : 0)} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(收 £${_clientHugo} − 付 £${_hugoP}${_hugoP >= HUGO_RATE_NEW ? ' · Hugo 10/1 起涨价, 差价归零' : ''})</span></span><span class="v">${fmt(hugoSpread)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${w.totalPallets} × £${selfVPerPallet()} V 付出 <span style="font-size:9.5px;opacity:0.7;">(你付 V 现金)</span></span><span class="v">−${fmt(v2)}</span></div>`,
       `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 £${_wkAvgProfit.toFixed(_mixedRate ? 2 : 0)}/托 × ${w.totalPallets}</span><span class="v">= ${fmt(profit51)}</span></div>`,
       swapBonus > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${w.swapPallets} × £${swapTtPremium()} Swap</span><span class="v">${fmt(swapBonus)}</span></div>` : '',
@@ -15935,7 +15968,7 @@ function renderSelfBreakdown(customer) {
     const detailRows = entries.map((en, idx) => {
       // 2026-07-03: per-entry date-aware profit
       const enProfit = (en.pallets || 0) * selfProfitPerPallet(en.date);
-      const enHugo = (en.pallets || 0) * selfHugoPerPallet();
+      const enHugo = (en.pallets || 0) * selfHugoPerPallet(en.date);   // 2026-10-20 date-aware
       const enV = (en.pallets || 0) * selfVPerPallet();
       const enSwap = (en.isSwap ? (en.pallets || 0) : 0) * swapTtPremium();
       const enTrxTT = en.emmaTransferTTPallets || 0;
@@ -15983,7 +16016,7 @@ function renderSelfBreakdown(customer) {
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:left;">类型</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">托盘</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">净利/托</th>
-              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Hugo £${selfHugoPerPallet()}/托</th>
+              <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Hugo £${selfHugoPerPallet(_wkSampleDate)}/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">V £${selfVPerPallet()}/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">Swap £${swapTtPremium()}/托</th>
               <th style="padding:5px 8px;font-size:10px;font-weight:700;color:var(--dim);letter-spacing:1px;text-align:right;">🤝 入/出</th>
@@ -15999,22 +16032,27 @@ function renderSelfBreakdown(customer) {
   // 2026-07-03: totals also per-entry date-aware (weeks span 7/1 cutover) —
   // hoisted out of the `if (tf)` block so the reconcile card below can reuse it.
   let totHiddenMarkup = 0;
+  let totHugoSpread   = 0;   // 2026-10-20: Hugo £7→£10 on 10/1, so spread is per-entry too
+  let totHugoPaid     = 0;
   for (const wk of weeks) {
     for (const en of (wk.entries || [])) {
       totHiddenMarkup += (en.pallets || 0) * selfHiddenMarkupPerPallet(en.date);
+      totHugoSpread   += (en.pallets || 0) * selfHugoSpreadPerPallet(en.date);
+      totHugoPaid     += (en.pallets || 0) * selfHugoPerPallet(en.date);
     }
   }
 
   if (tf) {
     const totClientFee    = totPallets * selfClientFeePerPallet();
-    const totHugoSpread   = totPallets * selfHugoSpreadPerPallet();
     const _clientHugo_t = (typeof CLIENT_HUGO_PER_PALLET !== 'undefined') ? CLIENT_HUGO_PER_PALLET : 10;
     const _totAvgHiddenMk = totPallets > 0 ? (totHiddenMarkup / totPallets) : 0;
+    const _totAvgHugoSp   = totPallets > 0 ? (totHugoSpread   / totPallets) : 0;
+    const _totAvgHugoPaid = totPallets > 0 ? (totHugoPaid     / totPallets) : 0;
     const _totAvgProfit   = totPallets > 0 ? (totProfit       / totPallets) : 0;
     const totalRows = [
       `<div class="bd-charge-row" style="color:#a855f7;"><span class="k">${totPallets} 托 × 均 £${_totAvgHiddenMk.toFixed(2)} 隐藏加价 <span style="font-size:9.5px;opacity:0.7;">(按每笔日期分段)</span></span><span class="v">${fmt(totHiddenMarkup)}</span></div>`,
       `<div class="bd-charge-row"><span class="k">${totPallets} 托 × £${selfClientFeePerPallet()} 客户费</span><span class="v">${fmt(totClientFee)}</span></div>`,
-      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${totPallets} 托 × £${selfHugoSpreadPerPallet()} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(£${_clientHugo_t}收−£${selfHugoPerPallet()}付)</span></span><span class="v">${fmt(totHugoSpread)}</span></div>`,
+      `<div class="bd-charge-row" style="color:var(--amber);"><span class="k">${totPallets} 托 × 均 £${_totAvgHugoSp.toFixed(2)} Hugo 差价 <span style="font-size:9.5px;opacity:0.7;">(£${_clientHugo_t}收 − 均 £${_totAvgHugoPaid.toFixed(2)}付 · 10/1 前 £7, 起 £10)</span></span><span class="v">${fmt(totHugoSpread)}</span></div>`,
       `<div class="bd-charge-row" style="color:var(--rose);"><span class="k">${totPallets} 托 × £${selfVPerPallet()} V 付出</span><span class="v">−${fmt(totV)}</span></div>`,
       `<div class="bd-charge-row" style="border-top:1px dashed rgba(139,150,255,0.25);padding-top:5px;margin-top:3px;color:var(--text);font-weight:700;"><span class="k">小计 净利 均 £${_totAvgProfit.toFixed(2)}/托 × ${totPallets}</span><span class="v">= ${fmt(totProfit)}</span></div>`,
       totSwap > 0 ? `<div class="bd-charge-row swap"><span class="k">+ ${totSwapPallets} 托 × £${swapTtPremium()} Swap</span><span class="v">${fmt(totSwap)}</span></div>` : '',

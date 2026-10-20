@@ -2251,6 +2251,26 @@ function sellPriceOn(date) {
   if (!date || date < PRICE_CLIENT_CUTOVER) return legacy;
   return 220;
 }
+// ═════════════════════════════════════════════════════════════════════
+// HUGO RATE SCHEDULE (2026-10-20 added)
+// ═════════════════════════════════════════════════════════════════════
+// Hugo raised his per-pallet delivery fee from £7 to £10 effective
+// 2026-10-01. Applies to ALL Michael-accrued pickups (Eastmids-bound and
+// Michael self-retail alike). Client-facing charge stays £10/pallet, so
+// Michael's £3 Hugo spread drops to £0 from this date.
+//
+//   before 2026-10-01   Michael pays Hugo £7/pallet  (client pays £10 → £3 spread)
+//   2026-10-01 onwards  Michael pays Hugo £10/pallet (client pays £10 → £0 spread)
+//
+// Legacy state.params.hugoCommission (7) is the DEFAULT for pre-cutover.
+// Any per-event Hugo accrual MUST use hugoRateOn(date).
+const HUGO_RATE_CUTOVER = '2026-10-01';
+const HUGO_RATE_NEW     = 10;
+function hugoRateOn(date) {
+  const legacy = (state && state.params && state.params.hugoCommission != null) ? state.params.hugoCommission : 7;
+  if (!date || date < HUGO_RATE_CUTOVER) return legacy;
+  return HUGO_RATE_NEW;
+}
 const EMMA_TRANSFER_RATE        = 25;
 const EMMA_TRANSFER_SETTLEMENT_TYPE = 'out-emma-transfer';
 
@@ -2510,10 +2530,10 @@ function isHugoAccruedToMichael(e) {
 // pickups still don't count — she settles those with Hugo herself.
 function hugoOwedNew() {
   const evs = _newModeEvents();
-  const rate = state.params.hugoCommission || 7;
   let accrued = 0, paid = 0;
   for (const e of evs) {
-    if (e.type === 'pickup' && isHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * rate;
+    // 2026-10-20: date-aware Hugo rate — £7 before 10/1, £10 from 10/1
+    if (e.type === 'pickup' && isHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * hugoRateOn(e.date);
     else if (e.type === 'out-hugo') paid += (e.amount || 0);
   }
   const opening = state.params.hugoOpeningOwed || 0;
@@ -2712,11 +2732,11 @@ function totalTransfer() { return getTransfers().reduce((s, e) => s + (e.amount 
 function totalSpent() { return getPickups().reduce((s, e) => s + (e.amount || 0), 0); }
 function totalPallets() { return getPickups().reduce((s, e) => s + (e.pallets || 0), 0); }
 function balance() { return totalTransfer() - totalSpent(); }
-function hugoRate() { return state.params.hugoCommission || 0; }
-function hugoTotal() { return totalPallets() * hugoRate(); }
+// 2026-10-20: hugoRate() = today's rate (for display); totals sum per-event date-aware
+function hugoRate() { return hugoRateOn(new Date().toISOString().slice(0, 10)); }
+function hugoTotal() { return getPickups().reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0); }
 function hugoMonth(ymStr) {
-  const pallets = getPickups().filter(e => e.date.startsWith(ymStr)).reduce((s, e) => s + (e.pallets || 0), 0);
-  return pallets * hugoRate();
+  return getPickups().filter(e => e.date.startsWith(ymStr)).reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
 }
 
 // === NEW Hugo accounting model ===
@@ -2745,8 +2765,8 @@ function hugoMath() {
   const transfersHugoAll = getTransfersAll().filter(t => !t.deleted && t.includesHugoFee);
 
   if (!cutoff) {
-    // Unified mode (backward compatible)
-    const earned = pickupsAll.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    // Unified mode (backward compatible) — 2026-10-20: per-event date-aware rate
+    const earned = pickupsAll.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
     const paid = transfersHugoAll.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
     return {
       mode: 'unified',
@@ -2768,11 +2788,12 @@ function hugoMath() {
   // don't touch it; they're owed in cash directly.)
   const prepayTransfers = transfersHugoAll;
 
-  const legacyDebt = legacyPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  // 2026-10-20: per-event date-aware Hugo rate
+  const legacyDebt = legacyPickups.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
   const legacyPaidCash = (state.params && state.params.hugoLegacyPaidCash) || 0;
   const legacyOutstanding = Math.max(0, legacyDebt - legacyPaidCash);
 
-  const prepayEarned = prepayPickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+  const prepayEarned = prepayPickups.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
   const prepayDeposited = prepayTransfers.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
   const prepayBalance = prepayDeposited - prepayEarned;  // + = extra at Emma, − = need top-up
 
@@ -3245,7 +3266,9 @@ function buildDrilldownData(key) {
   }
 
   if (key === 'nm-hugo' && isNewMode()) {
-    const rate = state.params.hugoCommission || 7;
+    // 2026-10-20: per-event date-aware rate (£7 pre-10/1, £10 from 10/1).
+    // `rate` kept as today's rate for the summary caption only.
+    const rate = hugoRateOn(new Date().toISOString().slice(0, 10));
     const opening = state.params.hugoOpeningOwed || 0;
     // Hugo accrues to Michael for:
     //   (a) Michael's own pickup days
@@ -3259,23 +3282,32 @@ function buildDrilldownData(key) {
     const transferDay    = michaelAccrued.filter(e =>  !!e._emmaTransferDay);
     const pureEmma       = allPickups.filter(e => !isHugoAccruedToMichael(e));
     const payRows = _newModeEvents().filter(e => e.type === 'out-hugo');
-    const accrued = michaelAccrued.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
-    const accruedOwn   = ownDayMichael.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
-    const accruedTrans = transferDay.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    const accrued = michaelAccrued.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
+    const accruedOwn   = ownDayMichael.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
+    const accruedTrans = transferDay.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
     const paid = payRows.reduce((s, e) => s + (e.amount || 0), 0);
     const owed = hugoOwedNew();
+    // Split own-day pallets by rate period for the formula caption
+    const ownPre  = ownDayMichael.filter(e => e.date <  HUGO_RATE_CUTOVER).reduce((s,e)=>s+(e.pallets||0),0);
+    const ownPost = ownDayMichael.filter(e => e.date >= HUGO_RATE_CUTOVER).reduce((s,e)=>s+(e.pallets||0),0);
     const rows = [
       { date: '—', desc: `<b>📌 期初欠款</b>(切换日快照)`, amount: opening },
-      ...ownDayMichael.map(e => ({
-        date: e.date,
-        desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)}`,
-        amount: (e.pallets || 0) * rate
-      })),
-      ...transferDay.map(e => ({
-        date: e.date,
-        desc: `<b style="color:#f9a8d4;">+ 代取 Emma 日应付</b> · ${e.pallets} 托 × £${rate} = £${fmt0((e.pallets || 0) * rate)} <span style="color:var(--mute-2);font-size:10.5px;">(Emma 转售试行,Hugo 归你)</span>`,
-        amount: (e.pallets || 0) * rate
-      })),
+      ...ownDayMichael.map(e => {
+        const r = hugoRateOn(e.date);
+        return {
+          date: e.date,
+          desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${r} = £${fmt0((e.pallets || 0) * r)}${e.truck ? ' <span style="color:var(--mute-2);font-size:10.5px;">· WH ' + escapeHtml(e.truck) + '</span>' : ''}`,
+          amount: (e.pallets || 0) * r
+        };
+      }),
+      ...transferDay.map(e => {
+        const r = hugoRateOn(e.date);
+        return {
+          date: e.date,
+          desc: `<b style="color:#f9a8d4;">+ 代取 Emma 日应付</b> · ${e.pallets} 托 × £${r} = £${fmt0((e.pallets || 0) * r)} <span style="color:var(--mute-2);font-size:10.5px;">(Emma 转售试行,Hugo 归你)</span>`,
+          amount: (e.pallets || 0) * r
+        };
+      }),
       ...payRows.map(e => ({
         date: e.date,
         desc: `<b style="color:var(--green);">− 付 Hugo 现金</b>${e.note ? ' · ' + escapeHtml(e.note) : ''}`,
@@ -3289,18 +3321,25 @@ function buildDrilldownData(key) {
       }))
     ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const transferLine = transferDay.length
-      ? `<div><span class="k">+ Emma 日代取应付</span><span class="v" style="float:right;color:#f9a8d4;">+£${fmt0(accruedTrans)}</span><div style="font-size:11px;color:var(--text-dim);">${transferDay.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate} (转售试行)</div></div>`
+      ? `<div><span class="k">+ Emma 日代取应付</span><span class="v" style="float:right;color:#f9a8d4;">+£${fmt0(accruedTrans)}</span><div style="font-size:11px;color:var(--text-dim);">${transferDay.reduce((s,e)=>s+(e.pallets||0),0)} 托 (转售试行, 按日期分段费率)</div></div>`
       : '';
+    // 2026-10-20: caption splits own-day pallets across the two rate periods
+    const ownCaption = (ownPre > 0 && ownPost > 0)
+      ? `${ownPre} 托 × £${hugoRateOn('2026-01-01')} (10/1 前) + ${ownPost} 托 × £${HUGO_RATE_NEW} (10/1 起)`
+      : (ownPost > 0 ? `${ownPost} 托 × £${HUGO_RATE_NEW}` : `${ownPre} 托 × £${hugoRateOn('2026-01-01')}`);
     return {
       title: '🧑 Hugo 应付 · 数据来源',
       sub: `期初 £${fmt0(opening)} + 我取/代取 £${fmt0(accrued)} − 已付 £${fmt0(paid)} = 欠 £${fmt0(owed)}`,
       formula: `<div><span class="k">期初(切换日快照)</span><span class="v" style="float:right;">£${fmt0(opening)}</span></div>
-                <div><span class="k">+ 我自己取货应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accruedOwn)}</span><div style="font-size:11px;color:var(--text-dim);">${ownDayMichael.reduce((s,e)=>s+(e.pallets||0),0)} 托 × £${rate}</div></div>
+                <div><span class="k">+ 我自己取货应付</span><span class="v" style="float:right;color:var(--amber);">+£${fmt0(accruedOwn)}</span><div style="font-size:11px;color:var(--text-dim);">${ownCaption}</div></div>
                 ${transferLine}
                 <div><span class="k">− 已付 Hugo 现金</span><span class="v" style="float:right;color:var(--green);">−£${fmt0(paid)}</span></div>
                 <div style="border-top:1px dashed rgba(139,150,255,0.2);margin-top:8px;padding-top:8px;"><span class="k"><b>还欠 Hugo</b></span><span class="v total" style="float:right;color:${owed > 0 ? 'var(--rose)' : 'var(--green)'};">£${fmt0(owed)}</span></div>
-                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);line-height:1.7;background:rgba(244,114,182,0.06);padding:8px 10px;border-radius:6px;">
-                  <b>注:</b>Emma 自己取的 ${pureEmma.reduce((s,e)=>s+(e.pallets||0),0)} 托(共应付 Hugo £${fmt0(pureEmma.reduce((s,e)=>s+(e.pallets||0)*rate,0))})Emma 自己结,<b>不算</b>你账上。代取 Emma 日的 Hugo 提成归你(转售试行机制)。
+                <div style="margin-top:8px;font-size:11px;color:var(--text-dim);line-height:1.7;background:rgba(251,191,36,0.08);padding:8px 10px;border-radius:6px;border-left:2px solid var(--amber);">
+                  <b>💡 Hugo 费率:</b> 2026-10-01 前 £${hugoRateOn('2026-01-01')}/托, <b>2026-10-01 起 £${HUGO_RATE_NEW}/托</b> (Hugo 涨价)。系统按每笔取货日期自动分段, 历史账不变。
+                </div>
+                <div style="margin-top:6px;font-size:11px;color:var(--text-dim);line-height:1.7;background:rgba(244,114,182,0.06);padding:8px 10px;border-radius:6px;">
+                  <b>注:</b>Emma 自己取的 ${pureEmma.reduce((s,e)=>s+(e.pallets||0),0)} 托(共应付 Hugo £${fmt0(pureEmma.reduce((s,e)=>s+(e.pallets||0)*hugoRateOn(e.date),0))})Emma 自己结,<b>不算</b>你账上。代取 Emma 日的 Hugo 提成归你(转售试行机制)。
                 </div>`,
       rows
     };
@@ -3309,7 +3348,8 @@ function buildDrilldownData(key) {
   if (key === 'nm-month' && isNewMode()) {
     const ym = new Date().toISOString().slice(0, 7);
     const mp = monthPalletsNew(ym);
-    const rate = state.params.hugoCommission || 7;
+    // 2026-10-20: current-month Hugo caption uses the rate in force on the 1st of this month
+    const rate = hugoRateOn(ym + '-01');
     // 2026-07-03: per-pickup row amounts use buyPriceOn(e.date); month-summary
     // fields (mp.michael × buyPrice) use *today's* price as a display estimate
     // for the current month totals card (approximation for post-cutover month).
@@ -3644,7 +3684,8 @@ function renderPickups() {
     // FIX (P0 audit #5, 2026-05-22): Hugo commission only applies to Michael's pickups
     // in new mode. Emma settles with Hugo herself, so showing a £ amount on her rows
     // was misleading and could lead to double-paying Hugo.
-    const commission = (r.pallets || 0) * rate;
+    // 2026-10-20: date-aware Hugo rate (£7 pre-10/1, £10 from 10/1)
+    const commission = (r.pallets || 0) * hugoRateOn(r.date);
     // Hugo commission display:
     //   • Michael's own pickup → show £ amount (he owes Hugo)
     //   • Emma 转售试行 代取 (_emmaTransferDay, Model B: pickedUpBy=Michael) →
@@ -3980,7 +4021,9 @@ function computeHugoStatementData(from, to) {
   // 2026-07-03: display-only in Hugo statement; per-event math uses hugoRate,
   // not buyPrice — this value is a static reference passed through as data.buyPrice.
   const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
-  const hugoRate = (state.params && state.params.hugoCommission) || 7;
+  // 2026-10-20: `hugoRate` is today's rate for the statement header only.
+  // Per-event commission below uses hugoRateOn(e.date) — £7 pre-10/1, £10 from 10/1.
+  const hugoRate = hugoRateOn(new Date().toISOString().slice(0,10));
   const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
   const inNewMode = isNewMode();
   const sw = newModeStartDate();
@@ -4009,7 +4052,8 @@ function computeHugoStatementData(from, to) {
         continue;
       }
       const palls = e.pallets || 0;
-      const commission = palls * hugoRate;
+      const rateForEvent = hugoRateOn(e.date);           // 2026-10-20: date-aware
+      const commission = palls * rateForEvent;
       const isLegacy = cutoff ? (e.date < cutoff) : true;
       totalPallets += palls;
       totalCommission += commission;
@@ -4020,7 +4064,7 @@ function computeHugoStatementData(from, to) {
         prepayPallets += palls;
         prepayCommission += commission;
       }
-      pickupRows.push({ ...e, _commission: commission, _bucket: isLegacy ? 'legacy' : 'prepay' });
+      pickupRows.push({ ...e, _commission: commission, _rate: rateForEvent, _bucket: isLegacy ? 'legacy' : 'prepay' });
     } else if (e.type === 'transfer' && e.includesHugoFee && e.hugoFeeAmount > 0) {
       // LEGACY old-mode: Emma included Hugo's fee in her bank transfer to Michael
       prepayDeposited += e.hugoFeeAmount;
@@ -4293,7 +4337,7 @@ function buildHugoStatementEmailHtml(from, to) {
       </div>
       <div style="padding:24px 36px 8px;font-size:13px;line-height:1.7;">
         Dear <b>${_pmEsc(hugo.name || 'Hugo')}</b>,<br>
-        Here is your commission summary at <b>${_pmMoney(data.rate)}</b> per pallet for the period above.
+        Here is your commission summary for the period above.${(from < HUGO_RATE_CUTOVER && to >= HUGO_RATE_CUTOVER) ? ` Rate was <b>${_pmMoney(hugoRateOn('2026-01-01'))}</b>/pallet before ${_pmFmtDate(HUGO_RATE_CUTOVER)} and <b>${_pmMoney(HUGO_RATE_NEW)}</b>/pallet from that date — each line shows its own rate.` : ` Rate: <b>${_pmMoney(hugoRateOn(to))}</b> per pallet.`}
       </div>
 
       <!-- Top summary cards (mode-aware) -->
@@ -4313,8 +4357,8 @@ function buildHugoStatementEmailHtml(from, to) {
             </td>
             <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
               <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase;">Rate</div>
-              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${_pmMoney(data.rate)}</div>
-              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">per pallet</div>
+              <div style="font-size:18px;font-weight:700;color:#0a0e1a;margin-top:4px;">${(from < HUGO_RATE_CUTOVER && to >= HUGO_RATE_CUTOVER) ? _pmMoney(hugoRateOn('2026-01-01')) + ' → ' + _pmMoney(HUGO_RATE_NEW) : _pmMoney(hugoRateOn(to))}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">${(from < HUGO_RATE_CUTOVER && to >= HUGO_RATE_CUTOVER) ? 'per pallet · changed ' + _pmFmtDate(HUGO_RATE_CUTOVER) : 'per pallet'}</div>
             </td>` : `
             <td style="padding:14px 16px;border-right:1px solid #e2e8f0;">
               <div style="font-size:9px;font-weight:700;letter-spacing:1.2px;color:#b91c1c;text-transform:uppercase;">Owed in Cash</div>
@@ -4410,15 +4454,19 @@ function buildHugoStatementEmailHtml(from, to) {
         <table width="100%" cellpadding="0" cellspacing="0" border="0">
           <thead><tr>
             <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Date</th>
+            <th style="padding:8px 10px;text-align:left;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Warehouse</th>
             <th style="padding:8px 10px;text-align:center;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Pallets</th>
+            <th style="padding:8px 10px;text-align:center;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Rate</th>
             <th style="padding:8px 10px;text-align:right;font-size:9px;font-weight:700;letter-spacing:1px;color:#94a3b8;text-transform:uppercase;border-bottom:2px solid #0a0e1a;">Commission</th>
           </tr></thead>
           <tbody>${data.pickupRows.map(e => `
             <tr>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#475569;">${e.truck ? 'WH ' + String(e.truck).replace(/[<>&]/g, '') : '—'}</td>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;text-align:center;">${e.pallets || 0}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#475569;text-align:center;">${_pmMoney(e._rate != null ? e._rate : data.rate)}</td>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
-            </tr>`).join('') || '<tr><td colspan="3" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No pallet collections in this period.</td></tr>'}
+            </tr>`).join('') || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;font-style:italic;">No pallet collections in this period.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -5290,7 +5338,7 @@ function updateEmmaQuote() {
   const buyEl = document.getElementById('qq-buy');
   // 2026-07-03: quote calculator = "what if I pick up NOW" → today's price
   const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
-  const hugoRate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  const hugoRate = hugoRateOn(new Date().toISOString().slice(0,10));   // 2026-10-20: £10 from 10/1
   if (buyEl) buyEl.textContent = buyPrice;
   const inputEl = document.getElementById('qq-pallets');
   const raw = (inputEl && inputEl.value || '').trim();
@@ -5380,12 +5428,12 @@ function getHugoMode() {
 function hugoPoolBalance() {
   const transfersHugoAll = (state.events || []).filter(e => !e.deleted && e.type === 'transfer' && e.includesHugoFee);
   const cutoff = (state.params && state.params.hugoPrepayStartDate) || null;
-  const rate = (state.params && state.params.hugoCommission) || 7;
   const pickups = (state.events || []).filter(e => !e.deleted && e.type === 'pickup');
   const deposited = transfersHugoAll.reduce((s, t) => s + (t.hugoFeeAmount || 0), 0);
+  // 2026-10-20: date-aware Hugo rate per pickup
   const used = cutoff
-    ? pickups.filter(e => (e.date || '') >= cutoff).reduce((s, e) => s + (e.pallets || 0) * rate, 0)
-    : pickups.reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    ? pickups.filter(e => (e.date || '') >= cutoff).reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0)
+    : pickups.reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
   return { deposited, used, balance: deposited - used };
 }
 
@@ -5431,7 +5479,7 @@ function updateTransferPreview() {
   const pallets = parseInt(palletsEl ? palletsEl.value : '') || 0;
   // 2026-07-03: transfer preview = planning a future pickup → today's price
   const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
-  const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  const rate = hugoRateOn((document.getElementById('t-date') && document.getElementById('t-date').value) || new Date().toISOString().slice(0,10));   // 2026-10-20: date-aware
   if (hugoRateEl) hugoRateEl.textContent = rate;
 
   const emmaMode = getEmmaMode();
@@ -5523,7 +5571,7 @@ function updatePickupPreview() {
   box.classList.add('show');
   box.classList.toggle('danger', overdraft);
   const afterCls = overdraft ? 'neg' : (after < sell * 3 ? 'warn' : 'pos');
-  const rate = hugoRate();
+  const rate = hugoRateOn(_pdVal);   // 2026-10-20: rate follows the form's pickup date
   const commission = pallets * rate;
   box.innerHTML = `
     <div class="pv-row"><span class="pv-k">本次花费 (${pallets} × £${sell})</span><span class="pv-v neg">-${fmt(spend)}</span></div>
@@ -5541,7 +5589,7 @@ function addTransfer() {
   const note = document.getElementById('t-note').value.trim();
   const pallets = parseInt(document.getElementById('t-pallets').value) || 0;
   const includeHugo = !!document.getElementById('t-include-hugo').checked;
-  const rate = (state.params.hugoCommission != null ? state.params.hugoCommission : 7);
+  const rate = hugoRateOn(date || new Date().toISOString().slice(0,10));   // 2026-10-20: date-aware
   const hugoMode = getHugoMode();
   const emmaMode = getEmmaMode();
 
@@ -8507,7 +8555,7 @@ function renderNewModeKpis() {
   if (!isNewMode()) return;
   // 2026-07-03: KPI cards show "still can lift N 托" → today's price
   const buyPrice = buyPriceOn(new Date().toISOString().slice(0,10));
-  const rate = state.params.hugoCommission || 7;
+  const rate = hugoRateOn(new Date().toISOString().slice(0,10));   // today's rate (captions only; accrual is per-event)
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
   // 1. Cash pool — MUST mirror cashPoolBalance() formula exactly.
@@ -8641,9 +8689,10 @@ function renderNewModeKpis() {
 
   // 4. Hugo owed (Michael's pickups only — Emma settles her own with Hugo)
   const opening = state.params.hugoOpeningOwed || 0;
+  // 2026-10-20: date-aware Hugo rate per pickup
   const accrued = _newModeEvents()
     .filter(e => e.type === 'pickup' && isMichaelPickup(e))
-    .reduce((s, e) => s + (e.pallets || 0) * rate, 0);
+    .reduce((s, e) => s + (e.pallets || 0) * hugoRateOn(e.date), 0);
   const paid = _newModeEvents().filter(e => e.type === 'out-hugo').reduce((s, e) => s + (e.amount || 0), 0);
   const hugo = hugoOwedNew();
   const hugoEl = document.getElementById('nm-hugo-value');
@@ -8844,7 +8893,7 @@ function renderMonthlyHistory() {
     b.pickupCount++;
     b.pallets += (r.pallets || 0);
     b.spent += (r.amount || 0);
-    b.hugoCommission += (r.pallets || 0) * rate;
+    b.hugoCommission += (r.pallets || 0) * hugoRateOn(r.date);   // 2026-10-20 date-aware
     const tp = r.palletType || 'Mixed';
     if (tp === 'TT') { b.ttPallets += (r.pallets || 0); b.ttCount++; }
     else if (tp === 'AMAZON') { b.amzPallets += (r.pallets || 0); b.amzCount++; }
@@ -8907,7 +8956,7 @@ function renderMonthlyHistory() {
           <div class="month-card-stat">
             <div class="stat-label">Hugo 提成</div>
             <div class="stat-value">${fmt(m.hugoCommission)}</div>
-            <div class="stat-sub">${m.pallets} × £${rate}</div>
+            <div class="stat-sub">${m.pallets} × £${hugoRateOn(m.ym + '-01')}</div>
           </div>
 
           ${totalTrucks > 0 ? `
