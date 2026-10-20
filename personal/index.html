@@ -7661,6 +7661,10 @@ function renderSelfCostPanel(c) {
   set('cd-self-mo', fmt(mo.total));   set('cd-self-mo-sub', `${mo.pallets} 托 · ${ym}`);
   set('cd-self-sss', fmt(all.sss));   set('cd-self-sss-sub', `${all.pallets} 托 × £${buyPriceOn(today)}/托 (按取货日进价)`);
   set('cd-self-hugo', fmt(all.hugo)); set('cd-self-hugo-sub', `${all.pallets} 托 × £${hugoRateOn(today)}/托 (按取货日费率)`);
+  // 自营 SSS 份额 line under the cumulative cost (from partnership cache)
+  const _shP = (typeof _seGetSssShares === 'function') ? _seGetSssShares() : null;
+  const _totSub = document.getElementById('cd-self-total-sub');
+  if (_totSub && _shP) _totSub.innerHTML += ` · 自营 SSS 份额 <b style="color:${_shP.self.remaining < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(_shP.self.remaining)}</b> (付 ${fmt(_shP.self.in)} − 取 ${fmt(_shP.self.used)})`;
 
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">还没有自营取货 · 在「智能录入」把车分配给「${escapeHtml(SELF_CUSTOMER_NAME)}」即可</td></tr>`;
@@ -7741,18 +7745,43 @@ function renderCustomerDetail() {
   // 2026-07-03: "still can buy N pallets" uses today's sell price
   const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
   document.getElementById('cd-balance').textContent = fmt(bal);
-  document.getElementById('cd-deposit').textContent = fmt(customerTotalDeposit(c));
+  { const _d = document.getElementById('cd-deposit'); if (_d) _d.textContent = fmt(customerTotalDeposit(c)); }   // may be absent right after a 自营 render
 
   // 余额还能买多少托盘
   const canBuyEl = document.getElementById('cd-canbuy');
   const cbSub = document.getElementById('cd-canbuy-sub');
+  const _depEl = document.getElementById('cd-deposit');
+  const _depWrap = _depEl ? _depEl.parentElement : null;
   if (canBuyEl && _isSelf) {
-    // 自营: no pool → repurpose the two balance cards
-    document.getElementById('cd-balance').textContent = '—';
-    document.getElementById('cd-deposit').textContent = '£0';
-    canBuyEl.textContent = '自营';
-    if (cbSub) cbSub.textContent = '不用预付 · 直接从 SSS 份额扣';
+    // 自营: the "balance" that matters is Michael's 自营 SSS 份额
+    //   = Σ 付 SSS 标为"我自己的钱" − Σ 自营取货 × 进价  (mirrors partnership michaelSssShareSplit().self)
+    const _sh = (typeof _seGetSssShares === 'function') ? _seGetSssShares() : null;
+    const _balEl = document.getElementById('cd-balance');
+    const _buyNow = buyPriceOn(new Date().toISOString().slice(0, 10));
+    if (!_sh) {
+      if (_balEl) _balEl.textContent = '…';
+      if (_depWrap) _depWrap.innerHTML = '正在读取合伙账 SSS 份额…';
+      canBuyEl.textContent = '…';
+      if (cbSub) cbSub.textContent = '自营 SSS 份额';
+      if (typeof _seFetchPartnershipCache === 'function') _seFetchPartnershipCache().then(() => { if (currentCustomer === c.id) renderCustomerDetail(); });
+    } else {
+      const r = _sh.self.remaining;
+      if (_balEl) { _balEl.textContent = fmt(r); _balEl.style.color = r < 0 ? 'var(--rose)' : 'var(--amber)'; }
+      if (_depWrap) _depWrap.innerHTML = `自营 SSS 份额 · 我付 SSS <span style="color:var(--green);">${fmt(_sh.self.in)}</span> − 自营取货 <span style="color:var(--rose);">${fmt(_sh.self.used)}</span>${_sh.self.refunded ? ` − 退款 ${fmt(_sh.self.refunded)}` : ''}`;
+      if (r >= 0) {
+        canBuyEl.textContent = Math.floor(r / _buyNow);
+        if (cbSub) cbSub.textContent = `托 · 按 £${_buyNow}/托 · 自营 SSS 份额`;
+      } else {
+        canBuyEl.textContent = '透支';
+        if (cbSub) cbSub.innerHTML = `自营用了 East 的钱 ${fmt(-r)} · 自己付的款要在「SSS 对账」里标成"我自己的钱"`;
+      }
+    }
   } else if (canBuyEl) {
+    // normal customer: make sure the deposit caption is in its original shape
+    if (_depWrap && !document.getElementById('cd-deposit')) _depWrap.innerHTML = '累计 <span id="cd-deposit">£0</span> 预付';
+    const _depEl2 = document.getElementById('cd-deposit');
+    if (_depEl2) _depEl2.textContent = fmt(customerTotalDeposit(c));
+    const _balEl = document.getElementById('cd-balance'); if (_balEl) _balEl.style.color = '';
     if (bal < 0) {
       canBuyEl.textContent = '透支';
       if (cbSub) cbSub.textContent = `客户已透支 ${fmt(-bal)} · 请催款`;
