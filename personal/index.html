@@ -1679,6 +1679,21 @@ select option { background: var(--bg-2); color: var(--text); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(139, 150, 255, 0.2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(139, 150, 255, 0.4); }
+
+/* 2026-10-20 自营 (self-retail) customer detail: hide client-only blocks */
+#customer-detail.self-mode .quote-card,
+#customer-detail.self-mode .cust-tab[data-tab="weekly"],
+#customer-detail.self-mode .cust-tab[data-tab="breakdown"],
+#customer-detail.self-mode .cust-tab[data-tab="receipts"],
+#customer-detail.self-mode .cust-tab[data-tab="invoices"],
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="weekly"],
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="breakdown"],
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="receipts"],
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="invoices"],
+#customer-detail.self-mode #lg-type option[value="deposit"],
+#customer-detail.self-mode #lg-type option[value="refund"],
+#customer-detail.self-mode #lg-type option[value="adjust"] { display: none !important; }
+#customer-detail.self-mode .kpi .kpi-info { display: none; }
 </style>
 </head>
 <body>
@@ -2263,6 +2278,38 @@ select option { background: var(--bg-2); color: var(--text); }
             <div class="kpi v3"><div class="kpi-head"><div class="kpi-label">余额还能买</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-canbuy">0</div><div class="kpi-sub" id="cd-canbuy-sub">托盘 · 按 £265 / 个</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-canbuy')">ⓘ</button></div>
             <div class="kpi v1"><div class="kpi-head"><div class="kpi-label">累计取货</div><div class="kpi-icon">▦</div></div><div class="kpi-value" id="cd-pallets">0</div><div class="kpi-sub" id="cd-pallets-sub">托盘</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-pallets')">ⓘ</button></div>
             <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-profit')">ⓘ</button></div>
+          </div>
+
+          <!-- ===== 2026-10-20 SELF-RETAIL (自营) panel — only shown for the "Michael我自己" customer ===== -->
+          <div id="cd-self-panel" class="hide" style="margin-bottom:20px;">
+            <div style="padding:14px 18px;border:1px solid rgba(251,191,36,0.35);border-radius:12px;background:linear-gradient(135deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));">
+              <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap;">
+                <span style="font-size:20px;">🏪</span>
+                <div class="grow">
+                  <div style="font-size:13px;font-weight:800;letter-spacing:0.4px;">自营成本账 <span class="badge" style="background:rgba(251,191,36,0.18);color:var(--amber);">只记成本 · 不记收入</span></div>
+                  <div style="font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.6;">你自己取货自己卖 (自 <b>2026-10-16</b> 起)。每托成本 = <b style="color:var(--cyan);">SSS 进价</b> + <b style="color:var(--amber);">Hugo 提成</b>。取货会照常扣你在 SSS 的份额、累计 Hugo 应付；不进客户资金池、不开 INV、不算利润。</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:10px;color:var(--text-dim);letter-spacing:1.5px;text-transform:uppercase;font-weight:700;">累计成本</div>
+                  <div id="cd-self-total" style="font-size:26px;font-weight:800;color:var(--amber);font-variant-numeric:tabular-nums;letter-spacing:-0.5px;">£0</div>
+                  <div id="cd-self-total-sub" style="font-size:10.5px;color:var(--text-dim);"></div>
+                </div>
+              </div>
+              <div class="kpi-grid mt-4" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">
+                <div class="kpi v1" style="padding:12px 14px;"><div class="kpi-label">本周</div><div class="kpi-value" id="cd-self-wk" style="font-size:20px;">£0</div><div class="kpi-sub" id="cd-self-wk-sub">0 托</div></div>
+                <div class="kpi v3" style="padding:12px 14px;"><div class="kpi-label">本月</div><div class="kpi-value" id="cd-self-mo" style="font-size:20px;">£0</div><div class="kpi-sub" id="cd-self-mo-sub">0 托</div></div>
+                <div class="kpi v4" style="padding:12px 14px;"><div class="kpi-label">SSS 进货 (累计)</div><div class="kpi-value" id="cd-self-sss" style="font-size:20px;">£0</div><div class="kpi-sub" id="cd-self-sss-sub">× £200/托</div></div>
+                <div class="kpi v5" style="padding:12px 14px;"><div class="kpi-label">Hugo 提成 (累计)</div><div class="kpi-value" id="cd-self-hugo" style="font-size:20px;">£0</div><div class="kpi-sub" id="cd-self-hugo-sub">× £10/托</div></div>
+              </div>
+              <div class="card-title mt-4" style="font-size:12px;">按周明细 <span class="badge">周一 → 周日</span></div>
+              <div class="table-wrap mt-2">
+                <table>
+                  <thead><tr><th style="width:80px;">周次</th><th style="width:130px;">日期</th><th>取货明细 (日期 · 库房 · 托)</th><th style="text-align:right;">托盘</th><th style="text-align:right;">SSS</th><th style="text-align:right;">Hugo</th><th style="text-align:right;">本周成本</th><th style="text-align:right;">均/托</th></tr></thead>
+                  <tbody id="cd-self-body"></tbody>
+                  <tfoot id="cd-self-foot"></tfoot>
+                </table>
+              </div>
+            </div>
           </div>
 
           <!-- Quick Quote Calculator (no ledger save) -->
@@ -3732,6 +3779,10 @@ async function loadUserData() {
         migrateDailyToLedger();
       } catch (e) { console.error('[migrateDailyToLedger] failed (data preserved):', e); }
       try {
+        // 2026-10-20: self-retail virtual customer "Michael我自己"
+        if (typeof ensureSelfCustomer === 'function' && ensureSelfCustomer()) await saveUserDataNow();
+      } catch (e) { console.warn('[ensureSelfCustomer] failed:', e); }
+      try {
         if (typeof migrateEmmaTransferOffPool === 'function') {
           await migrateEmmaTransferOffPool();
         }
@@ -3776,6 +3827,68 @@ async function loadUserData() {
       console.error('[loadUserData] state was null after error — using emptyState scaffold (saves blocked)');
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 2026-10-20: SELF-RETAIL ("自营") — Michael picks up from SSS and sells
+// the goods himself (started 2026-10-16). Modelled as ONE virtual customer
+// "Michael我自己" with `isSelf: true` so every pickup still flows through the
+// normal pipeline (dailySupply truck + partnership pickup event → SSS share
+// debit at buyPriceOn(date) + Hugo accrual at hugoRateOn(date)), but:
+//   • ledger amount = 0 (no customer pool, no deposits, no INV)
+//   • revenue / fee / profit = 0 (Michael asked: cost only, no revenue tracking)
+//   • cost per pallet = SSS buy price + Hugo rate (both date-aware)
+//   • excluded from client weekly bills / statements / balance alerts
+// ─────────────────────────────────────────────────────────────────
+const SELF_CUSTOMER_NAME = 'Michael我自己';
+const SELF_RETAIL_START  = '2026-10-16';
+function isSelfCustomer(c) { return !!(c && c.isSelf); }
+function selfCustomer() { return (state && state.customers || []).find(c => c.isSelf) || null; }
+function isSelfCustomerId(id) { const c = (state && state.customers || []).find(x => x.id === id); return isSelfCustomer(c); }
+// Per-pallet SELF cost on a date = SSS buy + Hugo (what actually leaves Michael's pocket)
+function selfCostPerPallet(date) {
+  const d = date || new Date().toISOString().slice(0,10);
+  return (buyPriceOn(d) || 0) + (hugoRateOn(d) || 0);
+}
+// Create the virtual customer once (idempotent). Returns true if created.
+function ensureSelfCustomer() {
+  if (!state || !Array.isArray(state.customers)) return false;
+  if (state.customers.some(c => c.isSelf)) return false;
+  // Adopt an existing customer with the exact name (e.g. created by hand) rather than duplicate
+  const byName = state.customers.find(c => (c.name || '').trim() === SELF_CUSTOMER_NAME);
+  if (byName) { byName.isSelf = true; return true; }
+  state.customers.push({
+    id: crypto.randomUUID(),
+    name: SELF_CUSTOMER_NAME,
+    isSelf: true,
+    createdAt: new Date().toISOString(),
+    ledger: [],
+    note: '自营虚拟客户 · 只记成本 (SSS + Hugo), 不记收入'
+  });
+  return true;
+}
+// Flatten self pickups (all customers flagged isSelf) with cost fields
+function selfPickups() {
+  const out = [];
+  for (const c of (state.customers || [])) {
+    if (!c.isSelf) continue;
+    for (const e of (c.ledger || [])) {
+      if (e.type !== 'pickup') continue;
+      const p = e.pallets || 0;
+      const sss = p * (buyPriceOn(e.date) || 0);
+      const hugo = p * (hugoRateOn(e.date) || 0);
+      out.push({ ...e, customerId: c.id, customerName: c.name, isSelf: true, costSss: sss, costHugo: hugo, costTotal: sss + hugo });
+    }
+  }
+  return out.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+}
+function selfTotals(filterFn) {
+  let pallets = 0, trucks = 0, sss = 0, hugo = 0;
+  for (const e of selfPickups()) {
+    if (filterFn && !filterFn(e)) continue;
+    pallets += e.pallets || 0; trucks++; sss += e.costSss; hugo += e.costHugo;
+  }
+  return { pallets, trucks, sss, hugo, total: sss + hugo };
 }
 
 // One-time migration: move legacy state.daily[] into a "未分类" customer's ledger
@@ -4080,7 +4193,8 @@ function allPickups() {
         isSwap: !!e.isSwap,
         unitPrice: e.unitPrice,
         swapPremium: e.swapPremium,
-        palletType: e.palletType || (e.isSwap ? 'TT' : 'Mixed')
+        palletType: e.palletType || (e.isSwap ? 'TT' : 'Mixed'),
+        isSelf: !!c.isSelf                       // 2026-10-20 自营
       });
     }
   }
@@ -4088,6 +4202,12 @@ function allPickups() {
 }
 
 function pickupMetrics(row) {
+  // 2026-10-20: SELF-RETAIL rows — cost only (SSS + Hugo), no revenue / fee / profit
+  if (row.isSelf || row._selfRetail || (row.customerId && isSelfCustomerId(row.customerId))) {
+    const sss = row.pallets * (buyPriceOn(row.date) || 0);
+    const hugo = row.pallets * (hugoRateOn(row.date) || 0);
+    return { revenue: 0, cost: sss, fee: 0, profit: 0, swapBonus: 0, hugo, selfCost: sss + hugo, isSelf: true };
+  }
   // Effective unit price = base sellPrice + swap premium (if any).
   // Use stored unitPrice on the row when present (snapshot), else compute live.
   // 2026-07-03: fallback base and cost are date-aware based on row.date
@@ -4098,7 +4218,10 @@ function pickupMetrics(row) {
   const cost = row.pallets * buyPriceOn(row.date);
   const fee = row.pallets * state.params.myFee;
   const swapBonus = row.pallets * premium;  // extra profit from swap-TT
-  const profit = revenue + fee - cost;
+  // 2026-10-20: net the Hugo rate increase (£7→£10 from 10/1) so this matches perPalletProfit(date)
+  const baseHugo = (state.params.hugoFee != null) ? +state.params.hugoFee : 7;
+  const hugoDelta = row.pallets * ((hugoRateOn(row.date) || 0) - baseHugo);
+  const profit = revenue + fee - cost - hugoDelta;
   return { revenue, cost, fee, profit, swapBonus };
 }
 
@@ -4127,6 +4250,7 @@ function customerTotalPallets(c) {
   return (c.ledger || []).filter(e => e.type === 'pickup').reduce((s, e) => s + (e.pallets || 0), 0);
 }
 function customerProfit(c) {
+  if (isSelfCustomer(c)) return 0;   // 2026-10-20 自营: no profit tracked
   // 2026-07-03: date-aware — sum each pickup at its date's per-pallet profit
   // Base profit (per-pallet margin) + any swap-TT bonus (£30/pallet for tagged pickups)
   let base = 0, bonus = 0;
@@ -4226,6 +4350,7 @@ function weeklyAgg() {
 function customerWeeklyAgg(customer) {
   if (!customer) return [];
   const map = {};
+  const _self = isSelfCustomer(customer);   // 2026-10-20 自营: pallets only, profit 0
   for (const e of (customer.ledger || [])) {
     if (e.type !== 'pickup') continue;
     const wk = weekStartOf(e.date);
@@ -4235,7 +4360,7 @@ function customerWeeklyAgg(customer) {
     map[wk].revenue += (e.amount || 0);
     // Profit = base per-pallet margin (date-aware: 7/1 price + 10/1 Hugo cutovers) + swap-TT bonus
     const swapBonus = e.isSwap ? (e.pallets || 0) * (e.swapPremium != null ? e.swapPremium : swapTtPremium()) : 0;
-    map[wk].profit += (e.pallets || 0) * perPalletProfit(e.date) + swapBonus;
+    map[wk].profit += _self ? 0 : ((e.pallets || 0) * perPalletProfit(e.date) + swapBonus);
     map[wk].entries += 1;
   }
   return Object.values(map).sort((a, b) => a.week.localeCompare(b.week));
@@ -5223,14 +5348,16 @@ function renderSmartEntryTrucks() {
     (!_trxToggle || _trxToggle.checked);
   let totalPallets = 0, totalAmount = 0, totalOffPool = 0;
   tb.innerHTML = _seTrucks.map((t, idx) => {
+    const _selfRow = !!(t.customerId && isSelfCustomerId(t.customerId));   // 2026-10-20 自营
     const unitPrice = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     const baseAmount = (t.pallets || 0) * unitPrice;
     // £25 Emma transfer fee is OFF-POOL (weekly bill, customer transfers
     // separately to Michael — NOT deducted from prepaid pool).
     const _ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
-    const transferFee = (_transferModeOn && _ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
-    const amount = baseAmount;                                // POOL deduction only
-    if (t.customerId) { totalAmount += amount; totalOffPool += transferFee; }
+    const transferFee = (_transferModeOn && _ttEligible && !_selfRow) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0;
+    const amount = _selfRow ? 0 : baseAmount;                 // POOL deduction only (自营: none)
+    const _selfCost = _selfRow ? (t.pallets || 0) * selfCostPerPallet(_seDateForPricing) : 0;
+    if (t.customerId && !_selfRow) { totalAmount += amount; totalOffPool += transferFee; }
     totalPallets += (t.pallets || 0);
     // Type pill style — TT = indigo, AMZ = cyan
     const isTT = (t.type || '').toUpperCase() === 'TT';
@@ -5260,13 +5387,15 @@ function renderSmartEntryTrucks() {
         </select>
       </td>
       <td style="padding:12px 14px 12px 10px;font-variant-numeric:tabular-nums;text-align:right;vertical-align:middle;" class="se-col-amount">
-        <div style="font-size:15px;font-weight:800;color:${t.customerId ? 'var(--green)' : 'var(--text-dim)'};line-height:1.2;">
-          ${t.customerId ? fmt(amount) : '—'}
+        <div style="font-size:15px;font-weight:800;color:${_selfRow ? 'var(--amber)' : (t.customerId ? 'var(--green)' : 'var(--text-dim)')};line-height:1.2;">
+          ${_selfRow ? fmt(_selfCost) : (t.customerId ? fmt(amount) : '—')}
         </div>
         <div style="font-size:10px;color:var(--text-dim);font-weight:500;margin-top:3px;line-height:1.3;letter-spacing:0.2px;">
-          ${t.customerId
-            ? `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''} <span style="opacity:0.7;">·资金池</span>`
-            : '进库存'}
+          ${_selfRow
+            ? `🏪 自营成本 ${t.pallets || 0} × (£${buyPriceOn(_seDateForPricing)} SSS + £${hugoRateOn(_seDateForPricing)} Hugo)`
+            : (t.customerId
+              ? `${t.pallets || 0} × £${unitPrice}${t.isSwap ? ' (Swap)' : ''} <span style="opacity:0.7;">·资金池</span>`
+              : '进库存')}
         </div>
         ${t.customerId && transferFee > 0 ? `<div style="font-size:10px;font-weight:700;margin-top:3px;color:#db2777;background:rgba(244,114,182,0.10);border-radius:5px;padding:2px 6px;display:inline-block;letter-spacing:0.2px;">🤝 +${fmt(transferFee)} off-pool</div>` : ''}
       </td>
@@ -5392,14 +5521,14 @@ function _seGetSssShares() {
 function _seGetHugoOwed() {
   if (!_partnershipCache) return null;
   const params = _partnershipCache.params || {};
-  const rate = params.hugoCommission || 7;
+  const rate = hugoRateOn(new Date().toISOString().slice(0,10));   // 2026-10-20: today's rate for captions; accrual below is per-event
   const opening = +(params.hugoOpeningOwed || 0) || 0;   // pre-switch debt snapshot
   let accrued = 0, paid = 0;
   for (const e of _seNewModeEvents()) {
     // Emma transfer trial (2026-06-08~): _emmaTransferDay pickups also accrue
     // to Michael — he 代取 Emma 日 and runs the customer sale, so the £7/托
     // Hugo commission is on his head. Mirrors partnership isHugoAccruedToMichael.
-    if (e.type === 'pickup' && _seIsHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * rate;
+    if (e.type === 'pickup' && _seIsHugoAccruedToMichael(e)) accrued += (e.pallets || 0) * hugoRateOn(e.date);
     else if (e.type === 'out-hugo') paid += (+(e.amount || 0) || 0);
   }
   return { opening, accrued, paid, owed: opening + accrued - paid, rate };
@@ -5427,15 +5556,23 @@ function updateSmartEntryPreview() {
   const vFeeRate = state.params.vFee || 2;
   const swapPrem = swapTtPremium();
 
-  // Per-truck profit (incl swap bonus) + totals
-  const swapPallets = _seTrucks.filter(t => t.isSwap).reduce((s, t) => s + (t.pallets || 0), 0);
-  const normalPallets = totalPallets - swapPallets;
-  const baseProfit = totalPallets * perPalletProfit(date);   // = pallets × £51 (pre-10/1) / £48 (from 10/1)
+  // 2026-10-20 自营: self-retail trucks → SSS share + Hugo still hit Michael, but NO
+  // customer pool / profit / client cash. Split pallets into billable vs self.
+  const selfTrucks = _seTrucks.filter(t => t.customerId && t.pallets > 0 && isSelfCustomerId(t.customerId));
+  const selfPallets = selfTrucks.reduce((s, t) => s + (t.pallets || 0), 0);
+  const billablePallets = totalPallets - selfPallets;      // customer + inventory trucks
+  const selfCostSss  = selfPallets * buyPrice;
+  const selfCostHugo = selfPallets * hugoFeeRate;
+
+  // Per-truck profit (incl swap bonus) + totals  (self pallets excluded)
+  const swapPallets = _seTrucks.filter(t => t.isSwap && !(t.customerId && isSelfCustomerId(t.customerId))).reduce((s, t) => s + (t.pallets || 0), 0);
+  const normalPallets = billablePallets - swapPallets;
+  const baseProfit = billablePallets * perPalletProfit(date);   // = pallets × £51 (pre-10/1) / £48 (from 10/1)
   const swapBonus = swapPallets * swapPrem;                           // swap pallets × £30
   const totalProfit = baseProfit + swapBonus;
 
   // Cost & customer payment
-  const totalSssCost = totalPallets * buyPrice;        // SSS-side cost: pallets × £245
+  const totalSssCost = totalPallets * buyPrice;        // SSS-side cost: ALL pallets (incl 自营) × £200
   // FIX (2026-06-08 v2): £25 Emma transfer fee is OFF-POOL — it is billed
   // weekly (see customerWeeklyBreakdown) and customer transfers it separately
   // to Michael. Do NOT add it to the customer pool deduction.
@@ -5446,22 +5583,24 @@ function updateSmartEntryPreview() {
     (!_previewTrxToggle || _previewTrxToggle.checked);
   // Pool deduction = pallet cost only (no Emma transfer fee)
   const customerLedgerCharge = _seTrucks.reduce((s, t) => {
-    if (!t.customerId) return s;
+    if (!t.customerId || isSelfCustomerId(t.customerId)) return s;   // 自营: no pool
     const unit = t.isSwap ? (sellPrice + swapPrem) : sellPrice;
     return s + (t.pallets || 0) * unit;
   }, 0);
   // Off-pool weekly bill add-on (just for preview display)
   const emmaTransferOffPoolTotal = _seTrucks.reduce((s, t) => {
-    if (!t.customerId) return s;
+    if (!t.customerId || isSelfCustomerId(t.customerId)) return s;
     const ttEligible = (t.isSwap || (t.type || '').toUpperCase() === 'TT');
     return s + ((_previewTransferModeOn && ttEligible) ? (t.pallets || 0) * EMMA_TRANSFER_RATE : 0);
   }, 0);
 
   // Hugo / V cash flows (only meaningful when Michael picks up)
-  const hugoCommission = totalPallets * hugoFeeRate;              // what you owe Hugo (date-aware)
-  const hugoCashFromClient = totalPallets * clientHugoRate;        // what customer hands you for Hugo (£10 fixed)
-  const vCommission = totalPallets * vFeeRate;
-  const myFeeKept = totalPallets * (myFee - hugoDeltaRate);        // 31 pre-10/1, 28 from 10/1
+  // Hugo owed = ALL pallets (自营 included — Hugo gets paid on every pallet Michael lifts);
+  // client cash / V / fee = billable pallets only.
+  const hugoCommission = totalPallets * hugoFeeRate;              // what you owe Hugo (date-aware), incl 自营
+  const hugoCashFromClient = billablePallets * clientHugoRate;     // what customer hands you for Hugo (£10 fixed)
+  const vCommission = billablePallets * vFeeRate;
+  const myFeeKept = billablePallets * (myFee - hugoDeltaRate);     // 31 pre-10/1, 28 from 10/1
   const cashFromCustomer = myFeeKept + hugoCashFromClient + vCommission;   // always £40/托 from customer
 
   // === Owner-aware accounting (NEW mode) ===
@@ -5494,6 +5633,7 @@ function updateSmartEntryPreview() {
   for (const t of trucksWithCustomer) {
     const c = state.customers.find(x => x.id === t.customerId);
     if (!c) continue;
+    if (isSelfCustomer(c)) continue;   // 2026-10-20 自营: own section below
     if (!byCust[c.id]) {
       const balBefore = customerBalance(c);
       byCust[c.id] = { name: c.name, pallets: 0, amount: 0, trucks: 0, balBefore, swapPallets: 0, emmaTransferFee: 0 };
@@ -5559,7 +5699,7 @@ function updateSmartEntryPreview() {
     const transferTag = _ueIsTransferDay ? ' <span style="color:#f9a8d4;font-size:11px;">(Emma 转售试行: 代取应付归你)</span>' : '';
     hugoSection = sec('💰', '合伙账 — Hugo 提成 (你欠 Hugo)' + transferTag, `
       本次应付:${totalPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">+${fmt(hugoCommission)}</b>${hugoFeeRate >= HUGO_RATE_NEW ? ' <span style="font-size:10.5px;color:var(--text-dim);">(10/1 起 £10/托)</span>' : ''}<br>
-      <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCashFromClient)} 现金 (£${clientHugoRate}/托) → 你转给 Hugo ${fmt(hugoCommission)}${hugoCashFromClient - hugoCommission > 0 ? ` (差价 ${fmt(hugoCashFromClient - hugoCommission)} 你留)` : ''} (cash, 不进系统)</span>
+      <span style="color:var(--text-dim);">客户已付你 ${fmt(hugoCashFromClient)} 现金 (${billablePallets} 托 × £${clientHugoRate}) → 你转给 Hugo ${fmt(hugoCommission)}${selfPallets > 0 ? ` (其中自营 ${selfPallets} 托 ${fmt(selfCostHugo)} 你自己掏)` : (hugoCashFromClient - hugoCommission > 0 ? ` (差价 ${fmt(hugoCashFromClient - hugoCommission)} 你留)` : '')} (cash, 不进系统)</span>
       ${owedAfter != null ? `<br>Hugo 累计应付 <b>${fmt(hugoOwedBefore.owed)}</b> → 取货后 <b style="color:var(--amber);">${fmt(owedAfter)}</b>` : ''}
     `, 'var(--amber)');
   } else {
@@ -5592,6 +5732,15 @@ function updateSmartEntryPreview() {
   if (!custInner) custInner = '<span style="color:var(--text-dim);">(没有客户分配)</span>';
   const custSection = sec('👥', '客户账本(自动开 INV)', custInner, 'var(--violet)');
 
+  // === 2026-10-20 自营 section ===
+  const selfSection = selfPallets > 0 ? sec('🏪', `自营 — ${SELF_CUSTOMER_NAME}（只记成本）`, `
+      <div><b>${selfTrucks.length}</b> 车 / <b>${selfPallets}</b> 托 自己卖</div>
+      <div>SSS 进货 ${selfPallets} × £${buyPrice} = <b style="color:var(--cyan);">${fmt(selfCostSss)}</b> <span style="color:var(--text-dim);font-size:10.5px;">(扣你的 SSS 份额 · 已含在上面 SSS 卡里)</span></div>
+      <div>Hugo 提成 ${selfPallets} × £${hugoFeeRate} = <b style="color:var(--amber);">${fmt(selfCostHugo)}</b> <span style="color:var(--text-dim);font-size:10.5px;">(已含在 Hugo 应付里 · 没客户替你付, 这 ${fmt(selfCostHugo)} 是你自己掏)</span></div>
+      <div style="margin-top:4px;">本次自营成本合计 <b style="color:var(--amber);font-size:13px;">${fmt(selfCostSss + selfCostHugo)}</b> · 均 £${selfCostPerPallet(date)}/托</div>
+      <div style="color:var(--text-dim);font-size:10.5px;margin-top:4px;">✗ 不进客户资金池 · ✗ 不开 INV · ✗ 不算利润/营收 · ✓ 进「${SELF_CUSTOMER_NAME}」自营成本账</div>
+    `, 'var(--amber)') : '';
+
   // P1 audit fix (2026-05-22): use perPalletProfit() instead of hard-coded £51 — if
   // sellPrice / myFee / buyPrice are changed in settings, this formula now reflects it.
   const perP = perPalletProfit(date);            // sellPrice + myFee − buyPrice − Hugo delta (date-aware)
@@ -5600,7 +5749,7 @@ function updateSmartEntryPreview() {
   const _hugoDeltaTxt = hugoDeltaRate > 0 ? ` - £${hugoDeltaRate} Hugo涨价` : '';
   const profitFormula = swapPallets > 0
     ? `普通:${normalPallets} × £${perP} = ${fmt(normalPallets * perP)}<br>Swap:${swapPallets} × £${swapTotalPerPallet}(£${perP} + £${swapBonusPerPallet} 加成)= ${fmt(swapPallets * swapTotalPerPallet)}<br>合计 = <b>${fmt(totalProfit)}</b>`
-    : `${totalPallets} × £${perP}(£${sellPrice} + £${myFee} - £${buyPrice}${_hugoDeltaTxt})= <b>${fmt(totalProfit)}</b>`;
+    : `${billablePallets} × £${perP}(£${sellPrice} + £${myFee} - £${buyPrice}${_hugoDeltaTxt})= <b>${fmt(totalProfit)}</b>${selfPallets > 0 ? ` <span style="color:var(--text-dim);font-size:10.5px;">(自营 ${selfPallets} 托不算利润)</span>` : ''}`;
 
   // === Profit card (owner-aware) ===
   // Only Michael picks up → Michael earns perPalletProfit() per 托 (sellPrice + myFee − buyPrice).
@@ -5621,7 +5770,7 @@ function updateSmartEntryPreview() {
       <div>本次:${profitFormula}</div>
       <div style="margin-top:8px;color:var(--green);">
         ✓ "累计净利润" KPI · "本周利润" KPI · "上月利润" KPI · 客户"累计利润" · 月度走势图 — <b>全部立刻 +${fmt(totalProfit)}</b>
-      </div>
+      </div>${selfPallets > 0 && billablePallets === 0 ? `<div style="margin-top:6px;color:var(--text-dim);font-size:11px;">本次全部自营 → 利润 KPI 不变 (自营只记成本)</div>` : ''}
     `, 'var(--green)');
   } else {
     profitSection = sec('💵', '你的实际利润', `
@@ -5631,12 +5780,16 @@ function updateSmartEntryPreview() {
 
   // === Cash card (owner-aware) ===
   let cashSection;
-  if (isMichaelPick) {
-    cashSection = sec('💵', `现金交易(不进系统,${totalPallets} 托共 £${cashFromCustomer.toLocaleString('en-GB')} — 提醒别忘了)`, `
+  if (isMichaelPick && billablePallets === 0) {
+    cashSection = sec('💵', '现金交易', `
+      <span style="color:var(--text-dim);">全部 ${selfPallets} 托都是自营 · 没有客户现金 · Hugo ${fmt(hugoCommission)} 你自己掏 (记在 Hugo 应付里)</span>
+    `, 'var(--text-dim)');
+  } else if (isMichaelPick) {
+    cashSection = sec('💵', `现金交易(不进系统,${billablePallets} 托共 £${cashFromCustomer.toLocaleString('en-GB')} — 提醒别忘了)`, `
       <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
-        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${myFee - hugoDeltaRate} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £${perP} 利润里)</td></tr>
-        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${clientHugoRate} = <b style="color:var(--amber);">+${fmt(hugoCashFromClient)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo £${hugoFeeRate}/托 = ${fmt(hugoCommission)}${hugoCashFromClient - hugoCommission > 0 ? ` (留 ${fmt(hugoCashFromClient - hugoCommission)})` : '(过路钱)'}</td></tr>
-        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${totalPallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 你费</td><td style="padding:3px 0;text-align:right;">${billablePallets} × £${myFee - hugoDeltaRate} = <b style="color:var(--green);">+${fmt(myFeeKept)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你留(在 £${perP} 利润里)</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 Hugo 钱</td><td style="padding:3px 0;text-align:right;">${billablePallets} × £${clientHugoRate} = <b style="color:var(--amber);">+${fmt(hugoCashFromClient)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 Hugo £${hugoFeeRate}/托 = ${fmt(hugoCommission)}${selfPallets > 0 ? ` (含自营 ${selfPallets} 托 ${fmt(selfCostHugo)} 自掏)` : (hugoCashFromClient - hugoCommission > 0 ? ` (留 ${fmt(hugoCashFromClient - hugoCommission)})` : '(过路钱)')}</td></tr>
+        <tr><td style="padding:3px 0;color:var(--text-dim);">客户当面付你 V 钱</td><td style="padding:3px 0;text-align:right;">${billablePallets} × £${vFeeRate} = <b style="color:#67e8f9;">+${fmt(vCommission)}</b></td><td style="padding:3px 0 3px 12px;color:var(--text-dim);font-size:10.5px;">→ 你转给 V(过路钱)</td></tr>
         <tr style="border-top:1px dashed rgba(139,150,255,0.2);"><td style="padding:6px 0 0;font-weight:700;">总计客户现金</td><td style="padding:6px 0 0;text-align:right;font-weight:700;color:var(--text);">${fmt(cashFromCustomer)}</td><td></td></tr>
       </table>
     `, 'var(--text-dim)');
@@ -5661,7 +5814,7 @@ function updateSmartEntryPreview() {
 
   box.style.display = '';
   document.getElementById('se-preview-body').innerHTML =
-    supplySection + emmaSection + hugoSection + custSection + profitSection + cashSection + linkedSection;
+    supplySection + emmaSection + hugoSection + selfSection + custSection + profitSection + cashSection + linkedSection;
 }
 
 // === MAIN: save smart pickup ===
@@ -5784,6 +5937,16 @@ async function saveSmartPickup() {
       }
     }
   }
+  // 2026-10-20 自营 guard: self-retail pickups are always Michael's own (his SSS share,
+  // his Hugo). Refuse the combination "Emma 取货 + Michael我自己" instead of guessing.
+  if (formPickupBy === 'Emma' && validTrucks.some(t => t.customerId && isSelfCustomerId(t.customerId))) {
+    alert(`「${SELF_CUSTOMER_NAME}」是你自营的货，取货人必须是 Michael。请把取货人改成 Michael 再保存。`);
+    return;
+  }
+  if (validTrucks.some(t => t.customerId && isSelfCustomerId(t.customerId)) && date < SELF_RETAIL_START) {
+    const ok = confirm(`自营是 ${SELF_RETAIL_START} 开始的，这条日期是 ${date}。确定这车是自营吗？`);
+    if (!ok) return;
+  }
 
   // ============================================================
   // EMMA TRANSFER MODE: force Swap=true on TT trucks (2026-06-05)
@@ -5878,8 +6041,9 @@ async function saveSmartPickup() {
     const customer = state.customers.find(c => c.id === t.customerId);
     if (!customer) continue;
     const isSwap = !!t.isSwap;
-    const unitPrice = isSwap ? (sellPrice + swapPrem) : sellPrice;
-    const _isTrxTT = isEmmaTransferEntry && isEmmaTransferTTEligible(t.type, t.isSwap);
+    const _isSelfTruck = isSelfCustomer(customer);   // 2026-10-20 自营
+    const unitPrice = _isSelfTruck ? 0 : (isSwap ? (sellPrice + swapPrem) : sellPrice);
+    const _isTrxTT = !_isSelfTruck && isEmmaTransferEntry && isEmmaTransferTTEligible(t.type, t.isSwap);
     const ledgerEntry = {
       id: crypto.randomUUID(),
       date,
@@ -5887,20 +6051,23 @@ async function saveSmartPickup() {
       amount: t.pallets * unitPrice,    // ⚠ OFF-POOL: do NOT add £25 here — that fee
                                         //    is billed weekly (see weekly statement),
                                         //    customer transfers it separately to Michael
+                                        // 自营: unitPrice 0 → amount 0 (no pool)
       unitPrice,
-      isSwap,
-      swapPremium: isSwap ? swapPrem : 0,
+      isSwap: _isSelfTruck ? false : isSwap,
+      swapPremium: (!_isSelfTruck && isSwap) ? swapPrem : 0,
       palletType: isSwap ? 'TT' : t.type,
       pallets: t.pallets,
       truck: t.truckNum || '',
       note: t.note || '',
       _linkSupplyId: linkId,
       _pickupUid: truckUids[i],
+      // 自营 marker + cost snapshot (display only; live math uses buyPriceOn/hugoRateOn)
+      ...(_isSelfTruck ? { _selfRetail: true, _selfCostSss: t.pallets * buyPrice, _selfCostHugo: t.pallets * hugoRateOn(date) } : {}),
       // EMMA TRANSFER markers (mirror partnership event) — needed by weekly
       // statement (customerWeeklyBreakdown) so it can show the +£25/TT fee.
       // The £25 itself does NOT touch the customer pool; it appears in the
       // 周度账单 only as an off-pool charge customer transfers separately.
-      ...(isEmmaTransferEntry ? { _emmaTransferDay: true, _emmaDayRotation: 'Emma' } : {}),
+      ...(isEmmaTransferEntry && !_isSelfTruck ? { _emmaTransferDay: true, _emmaDayRotation: 'Emma' } : {}),
       ...(_isTrxTT ? { _emmaTransferTTPallets: t.pallets } : {})
     };
     customer.ledger.push(ledgerEntry);
@@ -5908,6 +6075,8 @@ async function saveSmartPickup() {
     // Auto-INV  — covers ONLY the pallet cost (pool side).
     // Emma £25/TT 转售费 lives on the WEEKLY STATEMENT (off-pool, customer
     // separately transfers to Michael) — NOT on this per-pickup INV.
+    // 自营: no INV (nobody to invoice).
+    if (_isSelfTruck) continue;
     try {
       if (typeof generateInvoiceForPickup === 'function') {
         generateInvoiceForPickup(customer, ledgerEntry, 'auto-smart-pickup');
@@ -5929,6 +6098,7 @@ async function saveSmartPickup() {
   //   day, Michael 代取" for: transfer fee accrual, 🤝 代取 UI badge,
   //   Emma transfer Word statement, drilldowns.
   const newPartEvents = validTrucks.map((t, i) => {
+    const _selfEv = !!(t.customerId && isSelfCustomerId(t.customerId));    // 2026-10-20 自营
     const ev = {
       id: crypto.randomUUID(),
       type: 'pickup',
@@ -5937,13 +6107,14 @@ async function saveSmartPickup() {
       palletType: t.isSwap ? 'TT' : t.type,
       amount: t.pallets * buyPrice,
       truck: t.truckNum || '',
-      note: t.note || '智能录入',
+      note: t.note || (_selfEv ? '自营 · 智能录入' : '智能录入'),
       isSwap: !!t.isSwap,
       pickedUpBy: usedPickupBy,                                              // Model B: 'Michael' on transfer days too
       createdBy: usedPickupBy === 'Emma' ? 'emma@maomail.uk' : userEmail,    // legacy fallback
       createdAt: new Date().toISOString(),
       _linkSupplyId: linkId,
-      _pickupUid: truckUids[i]                                               // per-truck 1:1 sync key
+      _pickupUid: truckUids[i],                                              // per-truck 1:1 sync key
+      ...(_selfEv ? { _selfRetail: true, customerName: SELF_CUSTOMER_NAME } : {})   // 自营 marker (SSS share + Hugo accrue as normal Michael pickup)
     };
     // Layer Emma-transfer markers (additive — existing isMichaelPickup-based
     // formulas now correctly debit Michael's SSS share + Hugo accrual)
@@ -7327,9 +7498,25 @@ function renderKpis() {
     <div class="kpi v5">
       <div class="kpi-head"><div class="kpi-label">客户预付余额</div><div class="kpi-icon">◈</div></div>
       <div class="kpi-value">${fmt(bal)}</div>
-      <div class="kpi-sub">${state.customers.length} 位客户</div>
+      <div class="kpi-sub">${state.customers.filter(c => !isSelfCustomer(c)).length} 位客户</div>
       <button class="kpi-info" title="数据来源" onclick="openDrilldown('customer-balance')">ⓘ</button>
     </div>
+    ${(() => {
+      // 2026-10-20 自营成本 card (only once there is at least one self pickup)
+      const sc = selfCustomer();
+      const st = selfTotals();
+      if (!sc || st.pallets === 0) return '';
+      const wkMon = weekStartOf(new Date().toISOString().slice(0, 10));
+      const w = selfTotals(e => weekStartOf(e.date) === wkMon);
+      const ymS = new Date().toISOString().slice(0, 7);
+      const mo = selfTotals(e => (e.date || '').startsWith(ymS));
+      return `
+        <div class="kpi v4" style="cursor:pointer;" onclick="switchView('customers'); setTimeout(() => openCustomer('${sc.id}'), 50);" title="打开自营成本账">
+          <div class="kpi-head"><div class="kpi-label">🏪 自营成本 (本月)</div><div class="kpi-icon">🏪</div></div>
+          <div class="kpi-value" style="color:var(--amber);">${fmt(mo.total)}</div>
+          <div class="kpi-sub">${mo.pallets} 托 · 本周 ${fmt(w.total)} (${w.pallets} 托) · 累计 ${fmt(st.total)}</div>
+        </div>`;
+    })()}
     <div class="kpi v6">
       <div class="kpi-head"><div class="kpi-label">累计营收</div><div class="kpi-icon">↗</div></div>
       <div class="kpi-value">${fmt(t.revenue + t.fee)}</div>
@@ -7354,7 +7541,7 @@ function renderDaily() {
     const opts = ['<option value="">请选择客户…</option>'];
     for (const c of state.customers) {
       const bal = customerBalance(c);
-      opts.push(`<option value="${c.id}">${escapeHtml(c.name)} · 余额 ${fmt(bal)}</option>`);
+      opts.push(`<option value="${c.id}">${escapeHtml(c.name)}${isSelfCustomer(c) ? ' · 🏪 自营 (只记成本)' : ' · 余额 ' + fmt(bal)}</option>`);
     }
     sel.innerHTML = opts.join('');
     if (prev && state.customers.find(c => c.id === prev)) sel.value = prev;
@@ -7365,15 +7552,16 @@ function renderDaily() {
   const body = rows.map(r => {
     const m = pickupMetrics(r);
     const swapTag = r.isSwap ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(244,114,182,0.18);color:var(--pink);">🔁 SWAP</span>' : '';
+    const selfTag = r.isSelf ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(251,191,36,0.18);color:var(--amber);">🏪 自营</span>' : '';
     return `<tr>
       <td>${r.date}${swapTag}</td>
-      <td><b>${escapeHtml(r.customerName)}</b></td>
+      <td><b>${escapeHtml(r.customerName)}</b>${selfTag}</td>
       <td><b>${r.pallets}</b></td>
       <td class="dim">${escapeHtml(r.truck || '-')}</td>
-      <td class="neg">-${fmt(r.amount)}</td>
-      <td class="dim">${fmt(m.cost)}</td>
-      <td>${fmt(m.fee)}</td>
-      <td class="pos">${fmt(m.profit)}</td>
+      <td class="${r.isSelf ? 'dim' : 'neg'}">${r.isSelf ? '—' : '-' + fmt(r.amount)}</td>
+      <td class="dim">${fmt(m.cost)}${r.isSelf ? ` <span style="font-size:10px;color:var(--amber);">+Hugo ${fmt(m.hugo)}</span>` : ''}</td>
+      <td>${r.isSelf ? '—' : fmt(m.fee)}</td>
+      <td class="${r.isSelf ? 'dim' : 'pos'}">${r.isSelf ? '不计' : fmt(m.profit)}</td>
       <td class="dim">${escapeHtml(r.note || '')}</td>
       <td><button class="btn sm danger" onclick="delPickup('${r.customerId}','${r.id}')">删</button></td>
     </tr>`;
@@ -7387,6 +7575,17 @@ function renderDaily() {
 function renderCustomers() {
   const grid = document.getElementById('customer-grid');
   grid.innerHTML = state.customers.map(c => {
+    // 2026-10-20 自营 card — show cumulative cost instead of a (meaningless) balance
+    if (isSelfCustomer(c)) {
+      const st = selfTotals();
+      return `<div class="customer-card" onclick="openCustomer('${c.id}')" style="border-color:rgba(251,191,36,0.45);background:linear-gradient(135deg,rgba(251,191,36,0.10),rgba(251,191,36,0.02));">
+        <div class="customer-avatar" style="background:rgba(251,191,36,0.22);color:var(--amber);">🏪</div>
+        <div class="customer-name">${escapeHtml(c.name)} <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(251,191,36,0.18);color:var(--amber);">自营</span></div>
+        <div class="customer-meta">${st.trucks} 车 · ${st.pallets} 托盘 · 自 ${SELF_RETAIL_START}</div>
+        <div class="customer-balance-label">累计成本 (SSS + Hugo)</div>
+        <div class="customer-balance" style="color:var(--amber);">${fmt(st.total)}</div>
+      </div>`;
+    }
     const bal = customerBalance(c);
     const cls = bal < 0 ? 'neg' : bal < 2000 ? '' : 'pos';
     const init = c.name.slice(0, 1);
@@ -7398,6 +7597,66 @@ function renderCustomers() {
       <div class="customer-balance ${cls}">${fmt(bal)}</div>
     </div>`;
   }).join('') || `<div class="dim" style="padding:40px;text-align:center;grid-column:1/-1;">还没有客户，点右上角"新建客户"</div>`;
+}
+
+// 2026-10-20 自营成本账 (self-retail cost panel) — weekly table + KPI cards
+function renderSelfCostPanel(c) {
+  const body = document.getElementById('cd-self-body');
+  const foot = document.getElementById('cd-self-foot');
+  if (!body) return;
+  const rows = selfPickups().filter(e => e.customerId === c.id);
+  const today = new Date().toISOString().slice(0, 10);
+  const todayWk = weekStartOf(today);
+  const ym = today.slice(0, 7);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+  const all = selfTotals(e => e.customerId === c.id);
+  const wk  = selfTotals(e => e.customerId === c.id && weekStartOf(e.date) === todayWk);
+  const mo  = selfTotals(e => e.customerId === c.id && (e.date || '').startsWith(ym));
+  set('cd-self-total', fmt(all.total));
+  set('cd-self-total-sub', `${all.trucks} 车 · ${all.pallets} 托 · 均 £${all.pallets ? (all.total / all.pallets).toFixed(2) : '0'}/托`);
+  set('cd-self-wk', fmt(wk.total));   set('cd-self-wk-sub', `${wk.pallets} 托 · ${weekLabelShort(todayWk)}`);
+  set('cd-self-mo', fmt(mo.total));   set('cd-self-mo-sub', `${mo.pallets} 托 · ${ym}`);
+  set('cd-self-sss', fmt(all.sss));   set('cd-self-sss-sub', `${all.pallets} 托 × £${buyPriceOn(today)}/托 (按取货日进价)`);
+  set('cd-self-hugo', fmt(all.hugo)); set('cd-self-hugo-sub', `${all.pallets} 托 × £${hugoRateOn(today)}/托 (按取货日费率)`);
+
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">还没有自营取货 · 在「智能录入」把车分配给「${escapeHtml(SELF_CUSTOMER_NAME)}」即可</td></tr>`;
+    if (foot) foot.innerHTML = '';
+    return;
+  }
+  const byWk = {};
+  for (const e of rows) {
+    const w = weekStartOf(e.date);
+    if (!byWk[w]) byWk[w] = { week: w, pallets: 0, trucks: 0, sss: 0, hugo: 0, entries: [] };
+    byWk[w].pallets += e.pallets || 0; byWk[w].trucks++; byWk[w].sss += e.costSss; byWk[w].hugo += e.costHugo; byWk[w].entries.push(e);
+  }
+  const weeks = Object.values(byWk).sort((a, b) => b.week.localeCompare(a.week));
+  body.innerHTML = weeks.map(w => {
+    const tot = w.sss + w.hugo;
+    const isCur = w.week === todayWk;
+    const detail = w.entries.sort((a, b) => (a.date || '').localeCompare(b.date || '')).map(e =>
+      `<div style="font-size:11px;line-height:1.7;"><span style="color:var(--text-dim);">${e.date.slice(5)}</span> · <span style="color:var(--cyan);">WH ${escapeHtml(e.truck || '?')}</span> · <b>${e.pallets}</b> 托 <span style="color:var(--text-dim);">(£${buyPriceOn(e.date)} + £${hugoRateOn(e.date)})</span>${e.note ? ` <span style="color:var(--text-dim);opacity:0.7;">${escapeHtml(e.note)}</span>` : ''}</div>`
+    ).join('');
+    return `<tr class="${isCur ? 'is-current' : ''}">
+      <td><div class="bd-week-tag">W${isoWeekNum(w.week)}${isCur ? ' <span class="badge" style="background:rgba(0,229,255,0.15);color:var(--cyan);">本周</span>' : ''}</div></td>
+      <td><div class="bd-date">${weekLabelShort(w.week)}</div></td>
+      <td>${detail}</td>
+      <td style="text-align:right;font-weight:700;">${w.pallets}</td>
+      <td style="text-align:right;color:var(--cyan);">${fmt(w.sss)}</td>
+      <td style="text-align:right;color:var(--amber);">${fmt(w.hugo)}</td>
+      <td style="text-align:right;font-weight:800;">${fmt(tot)}</td>
+      <td style="text-align:right;color:var(--text-dim);">£${w.pallets ? (tot / w.pallets).toFixed(2) : '0'}</td>
+    </tr>`;
+  }).join('');
+  if (foot) foot.innerHTML = `<tr style="border-top:2px solid rgba(251,191,36,0.35);font-weight:800;">
+      <td colspan="2">合计</td><td class="dim" style="font-weight:500;">${all.trucks} 车 · ${weeks.length} 周</td>
+      <td style="text-align:right;">${all.pallets}</td>
+      <td style="text-align:right;color:var(--cyan);">${fmt(all.sss)}</td>
+      <td style="text-align:right;color:var(--amber);">${fmt(all.hugo)}</td>
+      <td style="text-align:right;color:var(--amber);font-size:14px;">${fmt(all.total)}</td>
+      <td style="text-align:right;color:var(--text-dim);">£${all.pallets ? (all.total / all.pallets).toFixed(2) : '0'}</td>
+    </tr>`;
 }
 
 function renderCustomerDetail() {
@@ -7423,6 +7682,19 @@ function renderCustomerDetail() {
   document.getElementById('cd-meta').textContent = metaParts.join(' · ');
   fillCustomerProfile(c);
 
+  // 2026-10-20 自营 mode: toggle the self cost panel + hide client-only blocks
+  const _isSelf = isSelfCustomer(c);
+  const _detailEl = document.getElementById('customer-detail');
+  if (_detailEl) _detailEl.classList.toggle('self-mode', _isSelf);
+  const _selfPanel = document.getElementById('cd-self-panel');
+  if (_selfPanel) _selfPanel.classList.toggle('hide', !_isSelf);
+  if (_isSelf) {
+    renderSelfCostPanel(c);
+    // force ledger form into pickup mode (deposit/refund/adjust make no sense for 自营)
+    const lgType = document.getElementById('lg-type');
+    if (lgType && lgType.value !== 'pickup') { lgType.value = 'pickup'; if (typeof updateLedgerForm === 'function') updateLedgerForm(); }
+  }
+
   const bal = customerBalance(c);
   // 2026-07-03: "still can buy N pallets" uses today's sell price
   const sellPrice = sellPriceOn(new Date().toISOString().slice(0,10));
@@ -7432,7 +7704,13 @@ function renderCustomerDetail() {
   // 余额还能买多少托盘
   const canBuyEl = document.getElementById('cd-canbuy');
   const cbSub = document.getElementById('cd-canbuy-sub');
-  if (canBuyEl) {
+  if (canBuyEl && _isSelf) {
+    // 自营: no pool → repurpose the two balance cards
+    document.getElementById('cd-balance').textContent = '—';
+    document.getElementById('cd-deposit').textContent = '£0';
+    canBuyEl.textContent = '自营';
+    if (cbSub) cbSub.textContent = '不用预付 · 直接从 SSS 份额扣';
+  } else if (canBuyEl) {
     if (bal < 0) {
       canBuyEl.textContent = '透支';
       if (cbSub) cbSub.textContent = `客户已透支 ${fmt(-bal)} · 请催款`;
@@ -7458,11 +7736,13 @@ function renderCustomerDetail() {
     }
   }
 
-  document.getElementById('cd-profit').textContent = fmt(customerProfit(c));
+  document.getElementById('cd-profit').textContent = _isSelf ? '不计' : fmt(customerProfit(c));
   // 累计利润 sub: show last deposit date
   const profSub = document.getElementById('cd-profit-sub');
   if (profSub) {
-    if (lastDeposit) {
+    if (_isSelf) {
+      profSub.textContent = '自营只记成本 · 见上方成本账';
+    } else if (lastDeposit) {
       profSub.textContent = `上次预付 ${lastDeposit.date} (${fmt(lastDeposit.amount)})`;
     } else {
       profSub.textContent = '该客户贡献';
@@ -7497,9 +7777,9 @@ function renderCustomerDetail() {
   const wkRangeEl = document.getElementById('cd-wk-range');
   if (wkRangeEl) wkRangeEl.textContent = weekLabelShort(todayWk);
   const wkProfitEl = document.getElementById('cd-wk-profit');
-  if (wkProfitEl) wkProfitEl.textContent = fmt(thisWkProfit);
+  if (wkProfitEl) wkProfitEl.textContent = _isSelf ? '不计' : fmt(thisWkProfit);
   const wkSubEl = document.getElementById('cd-wk-sub');
-  if (wkSubEl) wkSubEl.innerHTML = `${thisWkPallets} 托盘 <span class="kpi-trend ${cwTrend}">${cwTrendTxt}</span>`;
+  if (wkSubEl) wkSubEl.innerHTML = _isSelf ? `${thisWkPallets} 托盘 · 自营` : `${thisWkPallets} 托盘 <span class="kpi-trend ${cwTrend}">${cwTrendTxt}</span>`;
 
   // Refresh quick quote if user has a value entered
   updateQuickQuote();
@@ -7615,13 +7895,17 @@ function renderCustomerDetail() {
       : (linkedRec
         ? ` <span class="badge" title="已生成收据 ${escapeHtml(linkedRec.number)}" style="font-size:9px;padding:2px 6px;background:rgba(34,211,165,0.18);color:var(--green);cursor:pointer;" onclick="printReceipt('${linkedRec.id}')">🧾 ${escapeHtml(linkedRec.number)}</span>`
         : '');
+    // 2026-10-20 自营 row: show cost (SSS + Hugo) instead of a £0 pool deduction
+    const _selfRow = _isSelf && e.type === 'pickup';
+    const _selfCost = _selfRow ? (e.pallets || 0) * selfCostPerPallet(e.date) : 0;
+    const _selfTag = _selfRow ? ' <span class="badge" style="font-size:9px;padding:2px 6px;background:rgba(251,191,36,0.18);color:var(--amber);">🏪 自营</span>' : '';
     return { html: `<tr>
       <td>${e.date}</td>
-      <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}${docTag}</td>
+      <td><span class="badge-type ${cls}">${label}</span>${typeBadge}${swapTag}${docTag}${_selfTag}</td>
       <td>${e.pallets || '-'}${anomalyTag}</td>
       <td class="dim">${escapeHtml(e.truck || '-')}</td>
-      <td class="${amtCls}">${sign}${fmt(e.amount)}</td>
-      <td class="${runCls}"><b>${fmt(running)}</b></td>
+      <td class="${_selfRow ? '' : amtCls}" ${_selfRow ? 'style="color:var(--amber);"' : ''}>${_selfRow ? `成本 ${fmt(_selfCost)} <span style="font-size:10px;color:var(--text-dim);">(£${buyPriceOn(e.date)}+£${hugoRateOn(e.date)})</span>` : sign + fmt(e.amount)}</td>
+      <td class="${runCls}"><b>${_selfRow ? '—' : fmt(running)}</b></td>
       <td><div class="ledger-note-cell" contenteditable="true" data-placeholder="点击添加备注…" data-entry-id="${e.id}" onfocus="onNoteFocus(this)" onblur="onNoteBlur(this, '${e.id}')" onkeydown="if (event.key==='Enter' && !event.shiftKey) { event.preventDefault(); this.blur(); }">${escapeHtml(e.note || '')}</div></td>
       <td style="white-space:nowrap;">
         ${e.type === 'pickup' ? `<button class="btn sm ghost" title="重复这一笔(填到下面新增表单,日期=今天)" onclick="repeatLedgerEntry('${e.id}')">↻</button> ` : ''}
@@ -7704,7 +7988,7 @@ function renderCharts() {
 
   const ctx2 = document.getElementById('chart-balance');
   if (charts.bal) charts.bal.destroy();
-  const custData = state.customers.map(c => ({ name: c.name, bal: customerBalance(c) }));
+  const custData = state.customers.filter(c => !isSelfCustomer(c)).map(c => ({ name: c.name, bal: customerBalance(c) }));
   charts.bal = new Chart(ctx2, {
     type: 'doughnut',
     data: {
@@ -8296,6 +8580,7 @@ function _smartAlertsCompute() {
 
   // ────────── 2. 🚨 Customer balance low (Michael's threshold: £2,000) ──────────
   for (const c of (state.customers || [])) {
+    if (isSelfCustomer(c)) continue;   // 2026-10-20 自营: no pool, no balance alerts
     const bal = customerBalance(c);
     if (bal < 0) {
       alerts.push({
@@ -8480,6 +8765,7 @@ function _smartAlertsCompute() {
 
   // ────────── 7. 👥 Customer inactive (threshold: 4 days) ──────────
   for (const c of (state.customers || [])) {
+    if (isSelfCustomer(c)) continue;   // 2026-10-20 自营
     if (!c.ledger || !c.ledger.length) continue;
     const pickupDates = c.ledger.filter(e => e.type === 'pickup').map(e => e.date).filter(Boolean).sort();
     if (!pickupDates.length) continue;
@@ -8878,6 +9164,19 @@ function updateLedgerPreview() {
   const pallets = parseInt(document.getElementById('lg-pallets').value) || 0;
   const bal = customerBalance(c);
   let delta = 0, label = '';
+  // 2026-10-20 自营 preview: cost only
+  if (isSelfCustomer(c)) {
+    if (t !== 'pickup' || !pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
+    const _d = (document.getElementById('lg-date') && document.getElementById('lg-date').value) || new Date().toISOString().slice(0,10);
+    const sss = pallets * buyPriceOn(_d), hugo = pallets * hugoRateOn(_d);
+    box.classList.add('show'); box.classList.remove('danger');
+    box.innerHTML = `
+      <div class="pv-row"><span class="pv-k">🏪 自营取货 ${pallets} 托</span><span class="pv-v" style="color:var(--amber);">成本 ${fmt(sss + hugo)}</span></div>
+      <div class="pv-row"><span class="pv-k">SSS 进货 ${pallets} × £${buyPriceOn(_d)}</span><span class="pv-v neg">−${fmt(sss)} <span style="font-size:10px;color:var(--text-dim);">(扣你 SSS 份额)</span></span></div>
+      <div class="pv-row"><span class="pv-k">Hugo 提成 ${pallets} × £${hugoRateOn(_d)}</span><span class="pv-v neg">−${fmt(hugo)} <span style="font-size:10px;color:var(--text-dim);">(记入 Hugo 应付)</span></span></div>
+      <div class="pv-row"><span class="pv-k">客户余额 / INV / 利润</span><span class="pv-v" style="color:var(--text-dim);">不涉及</span></div>`;
+    return;
+  }
   if (t === 'pickup') {
     if (!pallets) { box.classList.remove('show', 'danger'); box.innerHTML = ''; return; }
     const swapEl = document.getElementById('lg-swap');
@@ -8927,15 +9226,18 @@ async function addLedger() {
   const truck = (document.getElementById('lg-truck').value || '').trim();
   const note = document.getElementById('lg-note').value.trim();
   if (!date) { alert('请填写日期'); return; }
+  // 2026-10-20 自营: only pickups make sense on the self customer
+  const _lgSelf = isSelfCustomer(c);
+  if (_lgSelf && type !== 'pickup') { alert(`「${SELF_CUSTOMER_NAME}」是自营成本账，只能录取货。`); return; }
 
   let entry = null;
   let isPickup = false;
   if (type === 'pickup') {
     if (!pallets || pallets <= 0) { alert('取货请填托盘数 (>0)'); return; }
     const swapEl = document.getElementById('lg-swap');
-    const isSwap = !!(swapEl && swapEl.checked);
-    // 2026-07-03: date-aware sell price for the customer ledger row
-    const unitPrice = effectiveUnitPrice(isSwap, date);
+    const isSwap = _lgSelf ? false : !!(swapEl && swapEl.checked);
+    // 2026-07-03: date-aware sell price for the customer ledger row (自营: 0 — no pool)
+    const unitPrice = _lgSelf ? 0 : effectiveUnitPrice(isSwap, date);
     const palletType = (document.getElementById('lg-type-select') ? document.getElementById('lg-type-select').value : 'TT') || 'TT';
     const linkId = crypto.randomUUID();
     const pickupUid = crypto.randomUUID();  // 1:1 per-truck sync key (2026-05-27 fix)
@@ -8947,6 +9249,7 @@ async function addLedger() {
       swapPremium: isSwap ? swapTtPremium() : 0,  // snapshot of premium at time of save
       palletType: isSwap ? 'TT' : palletType,
       pallets, truck, note,
+      ...(_lgSelf ? { _selfRetail: true, _selfCostSss: pallets * buyPriceOn(date), _selfCostHugo: pallets * hugoRateOn(date) } : {}),
       _linkSupplyId: linkId,         // FIX (P0 audit): link to partnership event + dailySupply truck
       _pickupUid: pickupUid          // per-truck unique ID for 1:1 cross-table sync
     };
@@ -9015,13 +9318,14 @@ async function addLedger() {
       palletType: entry.isSwap ? 'TT' : (entry.palletType || 'TT'),
       amount: entry.pallets * buyPrice,
       truck: entry.truck || '',
-      note: entry.note || '客户账本录入',
+      note: entry.note || (_lgSelf ? '自营 · 客户账本录入' : '客户账本录入'),
       isSwap: !!entry.isSwap,
       pickedUpBy: 'Michael',                  // authoritative field
       createdBy: userEmail,                   // legacy fallback
       createdAt: new Date().toISOString(),
       _linkSupplyId: entry._linkSupplyId,
-      _pickupUid: entry._pickupUid            // per-truck 1:1 sync key
+      _pickupUid: entry._pickupUid,           // per-truck 1:1 sync key
+      ...(_lgSelf ? { _selfRetail: true, customerName: SELF_CUSTOMER_NAME } : {})
     };
 
     // Cross-table write — partnership first, rollback personal if it fails
@@ -9066,7 +9370,7 @@ async function addLedger() {
     if (type === 'deposit' && entry.type === 'deposit') {
       const rec = generateReceiptForDeposit(c, entry, 'auto-deposit');
       if (rec) autoDocMsg = ' · 已生成收据 ' + rec.number;
-    } else if (type === 'pickup' && entry.type === 'pickup') {
+    } else if (type === 'pickup' && entry.type === 'pickup' && !_lgSelf) {   // 自营: no INV
       const inv = generateInvoiceForPickup(c, entry, 'auto-pickup');
       if (inv) autoDocMsg = ' · 已生成发票 ' + inv.number;
     }
@@ -9551,7 +9855,13 @@ async function saveLedgerEdit() {
     const sellLive = sellPriceOn(newDate);
     const swapLive = swapTtPremium();
     const liveUnitPrice = newIsSwap ? (sellLive + swapLive) : sellLive;
-    if (!!e.isSwap === newIsSwap && oldUnitPrice > 0) {
+    if (e._selfRetail || isSelfCustomer(c)) {
+      // 2026-10-20 自营: never price the row (no pool); refresh cost snapshot
+      newUnitPrice = 0; newSwapPremium = 0; newIsSwap = false;
+      e._selfRetail = true;
+      e._selfCostSss = newPallets * buyPriceOn(newDate);
+      e._selfCostHugo = newPallets * hugoRateOn(newDate);
+    } else if (!!e.isSwap === newIsSwap && oldUnitPrice > 0) {
       newUnitPrice = oldUnitPrice;
       newSwapPremium = (+e.swapPremium || 0);
     } else {
@@ -11807,6 +12117,7 @@ function generateReceiptForDeposit(customer, depositEntry, sourceTag) {
 function generateInvoiceForPickup(customer, pickupEntry, sourceTag) {
   ensureInvoicesArray();
   if (!customer || !pickupEntry) return null;
+  if (isSelfCustomer(customer) || pickupEntry._selfRetail) return null;   // 2026-10-20 自营: never invoice yourself
   if (state.invoices.some(i => i.linkedPickupId === pickupEntry.id)) return null;
   const isSwap = !!pickupEntry.isSwap;
   // 2026-07-03: date-aware fallback (usually pickupEntry.unitPrice is set already)
@@ -13895,6 +14206,7 @@ function analyzeRules() {
   // 2026-07-03: insights are about "now" → today's sell price
   const _todaySellP = sellPriceOn(new Date().toISOString().slice(0,10));
   for (const c of state.customers) {
+    if (isSelfCustomer(c)) continue;   // 2026-10-20 自营
     const b = customerBalance(c);
     if (b < 0) insights.push({ type: 'bad', title: `${c.name} 透支 ${fmt(-b)}`, text: '该客户取货金额已超过预付。请尽快催款或停止出货。' });
     else if (b > 0 && b < _todaySellP * 5) insights.push({ type: 'warn', title: `${c.name} 余额偏低 (${fmt(b)})`, text: '只够买 ' + Math.floor(b / _todaySellP) + ' 个托盘，建议提前提醒客户续预付。' });
@@ -13911,7 +14223,7 @@ function analyzeRules() {
   if (margin < 15) insights.push({ type: 'warn', title: `利润率偏低 (${margin.toFixed(1)}%)`, text: '和 SSS 谈谈批发价，或考虑逐步提升卖价 £5-10。' });
   else insights.push({ type: 'good', title: `利润率健康 (${margin.toFixed(1)}%)`, text: `每托盘净赚 £${perPalletProfit()}。` });
 
-  const deposits = state.customers.map(c => ({ name: c.name, d: customerTotalDeposit(c) }));
+  const deposits = state.customers.filter(c => !isSelfCustomer(c)).map(c => ({ name: c.name, d: customerTotalDeposit(c) }));
   const totalDep = deposits.reduce((s, c) => s + c.d, 0);
   if (totalDep > 0) {
     const top = deposits.sort((a, b) => b.d - a.d)[0];
@@ -14059,6 +14371,8 @@ function aiBuildBusinessContext() {
     const daysSinceLast = lastPickup ? Math.floor((Date.now() - new Date(lastPickup.date + 'T12:00:00').getTime()) / 86400000) : null;
     return {
       name: c.name,
+      isSelfRetail: !!c.isSelf,
+      ...(c.isSelf ? { selfCostTotal: Math.round(selfTotals(e => e.customerId === c.id).total) } : {}),
       currentBalance: Math.round(bal),
       totalPalletsTaken: pallets,
       profitContributed: Math.round(customerProfit(c)),
@@ -14154,6 +14468,7 @@ function aiSystemPrompt() {
 - Hugo 提成 £${hugoRateOn(new Date().toISOString().slice(0,10))}/托 (2026-10-01 前 £7, 起 £10; 客户付的 Hugo 钱固定 £10/托): 客户当面付 Michael 现金 → Michael 转给 Hugo (只针对 Michael 取的货)
 - V 费用 £${state.params.vFee || 2}/托: 客户直接付 V(过路钱,不进 Michael P&L)
 - 托盘有两种类型:TT 和 AMAZON
+- 【自营 2026-10-16 起】Michael 自己取货自己零售, 记在虚拟客户「${SELF_CUSTOMER_NAME}」下: 只记成本 (SSS 进价 + Hugo 提成, 每托 £${selfCostPerPallet(new Date().toISOString().slice(0,10))}), 不记收入/利润, 不进客户资金池, 不开 INV; 但照常扣 Michael 的 SSS 份额、累计 Hugo 应付
 - **Michael 取货 vs Emma 取货是关键区分**:
   - Michael 取货 → 客户跟 Michael 交易 → Michael 赚 myFee + 利润、欠 Hugo 现金、消耗 Michael SSS 份额
   - Emma 取货 → 客户跟 Emma 直接交易 → Michael 一分不赚、不欠 Hugo、只消耗 Emma SSS 份额

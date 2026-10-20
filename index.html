@@ -3296,7 +3296,7 @@ function buildDrilldownData(key) {
         const r = hugoRateOn(e.date);
         return {
           date: e.date,
-          desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${r} = £${fmt0((e.pallets || 0) * r)}${e.truck ? ' <span style="color:var(--mute-2);font-size:10.5px;">· WH ' + escapeHtml(e.truck) + '</span>' : ''}`,
+          desc: `<b style="color:var(--amber);">+ 我取货应付</b> · ${e.pallets} 托 × £${r} = £${fmt0((e.pallets || 0) * r)}${e.truck ? ' <span style="color:var(--mute-2);font-size:10.5px;">· WH ' + escapeHtml(e.truck) + '</span>' : ''}${e._selfRetail ? ' <span style="font-size:9px;color:#fbbf24;">🏪 自营</span>' : ''}`,
           amount: (e.pallets || 0) * r
         };
       }),
@@ -3710,10 +3710,12 @@ function renderPickups() {
       : tp === 'AMAZON'
       ? '<span class="badge" style="background:rgba(103,232,249,0.18);color:#67e8f9;font-weight:700;border:1px solid rgba(34,211,238,0.4);">AMZ</span>'
       : '<span class="badge" style="background:rgba(148,163,196,0.15);color:var(--text-dim);">混合</span>';
+    // 2026-10-20 自营 (Michael self-retail, from 2026-10-16): same SSS debit + Hugo accrual, just tagged
+    const selfBadge = r._selfRetail ? ' <span class="badge" style="background:rgba(251,191,36,0.18);color:#fbbf24;font-weight:700;border:1px solid rgba(251,191,36,0.4);" title="Michael 自营零售 — 照常扣 SSS 份额 + Hugo">🏪 自营</span>' : '';
     return `<tr${cls}>
       <td>${r.date}</td>
       ${creatorCell(r)}
-      <td>${typeBadge}</td>
+      <td>${typeBadge}${selfBadge}</td>
       <td><b>${r.pallets}</b></td>
       <td class="dim">${escapeHtml(r.truck || '-')}</td>
       <td class="neg">-${fmt(r.amount)}</td>
@@ -4462,7 +4464,7 @@ function buildHugoStatementEmailHtml(from, to) {
           <tbody>${data.pickupRows.map(e => `
             <tr>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;white-space:nowrap;">${_pmFmtDate(e.date)}</td>
-              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#475569;">${e.truck ? 'WH ' + String(e.truck).replace(/[<>&]/g, '') : '—'}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#475569;">${e.truck ? 'WH ' + String(e.truck).replace(/[<>&]/g, '') : '—'}${e._selfRetail ? ' <span style="color:#b45309;font-size:10px;">(self)</span>' : ''}</td>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;text-align:center;">${e.pallets || 0}</td>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#475569;text-align:center;">${_pmMoney(e._rate != null ? e._rate : data.rate)}</td>
               <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0a0e1a;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">${_pmMoney(e._commission)}</td>
