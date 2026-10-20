@@ -1130,6 +1130,38 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
               <button class="btn sm ghost" onclick="event.stopPropagation();recordSssRefund('emma')" style="margin-top:8px;font-size:10.5px;width:100%;border:1px dashed rgba(244,114,182,0.30);">📥 录入 SSS 退款给 Emma</button>
             </div>
           </div>
+          <!-- 2026-10-20: 3-way split — Michael's share = East + 自营 (additive view, Michael card above stays the total) -->
+          <div style="display:flex;align-items:center;gap:10px;margin:16px 0 10px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">我的份额拆分 · 三份看</div>
+            <span id="nm-sss-split-check" class="badge" style="font-size:9px;"></span>
+            <span style="font-size:10.5px;color:var(--mute-2);margin-left:auto;">East 份额 + 自营份额 = 我的 SSS 份额 · 付款时选"这笔钱是谁的"决定进哪份</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+            <div style="padding:12px 14px;background:rgba(0,229,255,0.04);border:1px solid rgba(0,229,255,0.22);border-radius:10px;">
+              <div style="font-size:10.5px;font-weight:700;color:var(--cyan);letter-spacing:0.5px;text-transform:uppercase;">🏢 East 份额</div>
+              <div id="nm-sss-east-value" style="font-size:22px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums;margin-top:4px;">£0</div>
+              <div id="nm-sss-east-sub" style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">够拉 0 托</div>
+              <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.7;padding-top:6px;border-top:1px dashed rgba(0,229,255,0.18);">
+                <div style="display:flex;justify-content:space-between;"><span>期初 + East 的付款 − Emma 过手</span><span id="nm-sss-east-in" style="color:var(--green);">£0</span></div>
+                <div style="display:flex;justify-content:space-between;"><span>帮 East 拉货</span><span id="nm-sss-east-used" style="color:var(--rose);">£0</span></div>
+              </div>
+            </div>
+            <div style="padding:12px 14px;background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.25);border-radius:10px;">
+              <div style="font-size:10.5px;font-weight:700;color:var(--amber);letter-spacing:0.5px;text-transform:uppercase;">🏪 自营份额 (我自己的钱)</div>
+              <div id="nm-sss-self-value" style="font-size:22px;font-weight:800;color:var(--amber);font-variant-numeric:tabular-nums;margin-top:4px;">£0</div>
+              <div id="nm-sss-self-sub" style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">够拉 0 托</div>
+              <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.7;padding-top:6px;border-top:1px dashed rgba(251,191,36,0.18);">
+                <div style="display:flex;justify-content:space-between;"><span>我自己付的款</span><span id="nm-sss-self-in" style="color:var(--green);">£0</span></div>
+                <div style="display:flex;justify-content:space-between;"><span>自营拉货</span><span id="nm-sss-self-used" style="color:var(--rose);">£0</span></div>
+              </div>
+            </div>
+            <div style="padding:12px 14px;background:rgba(244,114,182,0.04);border:1px solid rgba(244,114,182,0.22);border-radius:10px;">
+              <div style="font-size:10.5px;font-weight:700;color:var(--pink);letter-spacing:0.5px;text-transform:uppercase;">👩 Emma 份额</div>
+              <div id="nm-sss-emma2-value" style="font-size:22px;font-weight:800;color:var(--pink);font-variant-numeric:tabular-nums;margin-top:4px;">£0</div>
+              <div id="nm-sss-emma2-sub" style="font-size:10.5px;color:var(--mute-2);margin-top:2px;">同上 · 不变</div>
+              <div id="nm-sss-split-note" style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.7;padding-top:6px;border-top:1px dashed rgba(244,114,182,0.18);"></div>
+            </div>
+          </div>
         </div>
 
         <!-- 1c. Emma 转售试行卡 (2026-06-08 ~ 2026-07-08) — 只在试行期 / 有累计时显示 -->
@@ -1310,6 +1342,12 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
               <div class="form-row"><label>托盘数(预付几托)</label><input type="number" id="os-pallets" min="0" placeholder="200" oninput="onOutSupplierPalletsChange()"></div>
               <div class="form-row" style="grid-column:1/-1;"><label>金额 £ <span class="page-sub" style="font-size:10px;color:var(--green);">自动 = 托 × £245 · 可改</span></label><input type="number" id="os-amount" min="0" step="0.01" placeholder="自动" oninput="onOutSupplierAmountChange()"></div>
               <div class="form-row" style="grid-column:1/-1;"><label>备注</label><input type="text" id="os-note" placeholder="HSBC 转账 / TT / …"></div>
+              <div class="form-row" style="grid-column:1/-1;"><label>这笔钱是谁的 <span class="page-sub" style="font-size:10px;">(进哪一份 SSS 份额)</span></label>
+                <select id="os-funded" onchange="updateOutSupplierPreview()">
+                  <option value="east">🏢 East 的预付款 → East 份额 (默认)</option>
+                  <option value="self">🏪 我自己的钱 → 自营份额</option>
+                </select>
+              </div>
             </div>
             <div id="os-preview" style="margin-top:10px;font-size:11px;color:var(--mute-2);line-height:1.7;"></div>
             <div class="row mt-4"><button class="btn primary" onclick="addOutSupplier()" style="background:linear-gradient(135deg,#8b5cf6,#5b21b6);">＋ 录入 + 开 PINV</button></div>
@@ -1523,7 +1561,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <div class="form-row" style="margin:0;min-width:140px;"><label>从</label><input type="date" id="sss-from" onchange="renderSssRecon()"></div>
           <div class="form-row" style="margin:0;min-width:140px;"><label>到</label><input type="date" id="sss-to" onchange="renderSssRecon()"></div>
           <div class="form-row" style="margin:0;min-width:130px;"><label>取货人</label>
-            <select id="sss-who" onchange="renderSssRecon()"><option value="">全部</option><option value="Michael">Michael</option><option value="Emma">Emma</option><option value="self">🏪 Michael 自营</option></select>
+            <select id="sss-who" onchange="renderSssRecon()"><option value="">全部</option><option value="Michael">Michael (全部)</option><option value="east">🏢 East 份额 (帮 East 拉 + East 的付款)</option><option value="self">🏪 自营份额 (自营拉 + 我自己的付款)</option><option value="Emma">Emma</option></select>
           </div>
           <div class="form-row" style="margin:0;min-width:120px;"><label>库房</label><input type="text" id="sss-wh" placeholder="2 / 25 / 19…" oninput="renderSssRecon()"></div>
           <div class="form-row" style="margin:0;min-width:130px;"><label>类型</label>
@@ -2531,6 +2569,35 @@ function michaelSssShare() {
   // Michael's in = his portion of opening + (out-supplier − Emma's contribution flowing through)
   const inAmt = michaelOpening + outSupplier - inEmma;
   return { opening: michaelOpening, in: inAmt, used: michaelUsed, refunded: refundedToMichael, remaining: inAmt - michaelUsed - refundedToMichael };
+}
+
+// === 2026-10-20: 3-WAY SSS SHARE — Michael's share split into East / 自营 ===
+// PURELY ADDITIVE: michaelSssShare() / emmaSssShare() / sssBalance() are untouched.
+//   East 份额  = michaelOpening + Σ out-supplier[fundedBy≠'self'] − Σ in-emma − Σ East pickups × buy − refunds(to michael, not self)
+//   自营 份额  = Σ out-supplier[fundedBy='self'] − Σ 自营 pickups (_selfRetail) × buy − refunds(to michael, fundedBy self)
+//   INVARIANT: east.remaining + self.remaining === michaelSssShare().remaining (to the penny)
+// `fundedBy` missing on an out-supplier event ⇒ 'east' (every payment before 2026-10-16 was for East).
+function sssPaymentFundedBy(e) { return (e && e.fundedBy === 'self') ? 'self' : 'east'; }
+function michaelSssShareSplit() {
+  const m = michaelSssShare();
+  if (!isNewMode()) return { east: { ...m }, self: { opening: 0, in: 0, used: 0, refunded: 0, remaining: 0, pallets: 0 }, total: m, consistent: true };
+  let payEast = 0, paySelf = 0, inEmma = 0, usedEast = 0, usedSelf = 0, refEast = 0, refSelf = 0, palEast = 0, palSelf = 0, nPayEast = 0, nPaySelf = 0;
+  for (const e of _newModeEvents()) {
+    if (e.type === 'out-supplier') { if (sssPaymentFundedBy(e) === 'self') { paySelf += (e.amount || 0); nPaySelf++; } else { payEast += (e.amount || 0); nPayEast++; } }
+    else if (e.type === 'in-emma') inEmma += (e.amount || 0);
+    else if (e.type === 'pickup' && isMichaelPickup(e)) {
+      const c = (e.pallets || 0) * buyPriceOn(e.date);
+      if (e._selfRetail) { usedSelf += c; palSelf += (e.pallets || 0); } else { usedEast += c; palEast += (e.pallets || 0); }
+    }
+    else if (e.type === 'sss-refund' && e.to === 'michael') { if (sssPaymentFundedBy(e) === 'self') refSelf += (e.amount || 0); else refEast += (e.amount || 0); }
+  }
+  const east = { opening: m.opening, in: m.opening + payEast - inEmma, paid: payEast, paidN: nPayEast, used: usedEast, pallets: palEast, refunded: refEast };
+  east.remaining = east.in - east.used - east.refunded;
+  const self = { opening: 0, in: paySelf, paid: paySelf, paidN: nPaySelf, used: usedSelf, pallets: palSelf, refunded: refSelf };
+  self.remaining = self.in - self.used - self.refunded;
+  const consistent = Math.abs((east.remaining + self.remaining) - m.remaining) < 0.005;
+  if (!consistent) console.error('[sss-split] INVARIANT BROKEN', { east: east.remaining, self: self.remaining, michael: m.remaining });
+  return { east, self, total: m, consistent };
 }
 
 // 3. Emma balance at Michael = her total SSS pool position
@@ -5818,9 +5885,19 @@ function updateOutSupplierPreview() {
   const emmaNote = inNewMode
     ? `<div style="color:var(--text-dim);font-size:11px;">Emma 的 SSS 份额不变(${fmt(eShareBefore)})· 这笔只进你的份额</div>`
     : '';
+  // 2026-10-20: which of Michael's two sub-shares this payment lands in
+  let splitNote = '';
+  if (inNewMode && typeof michaelSssShareSplit === 'function') {
+    const _fEl = document.getElementById('os-funded');
+    const toSelf = !!(_fEl && _fEl.value === 'self');
+    const sp = michaelSssShareSplit();
+    const cur = toSelf ? sp.self.remaining : sp.east.remaining;
+    splitNote = `<div style="color:${toSelf ? 'var(--amber)' : 'var(--cyan)'};font-size:11px;">${toSelf ? '🏪 自营份额' : '🏢 East 份额'} ${fmt(cur)} → <b>${fmt(cur + amt)}</b> · ${toSelf ? 'East 份额' : '自营份额'}不变</div>`;
+  }
   box.innerHTML = `
     <div>💰 资金池 ${fmt(poolBefore)} → <b style="color:${poolAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(poolAfter)}</b></div>
     <div>🏭 ${inNewMode ? '你的 SSS 份额' : 'SSS 余额'} ${fmt(mShareBefore)} → <b style="color:var(--green);">${fmt(mShareAfter)}</b>(够拉 ${Math.floor(mShareAfter / buy)} 托)</div>
+    ${splitNote}
     ${emmaNote}
     <div>📋 自动开 PINV-SSS${palls > 0 ? '(' + palls + ' 托 × £' + buy + ')' : ''}</div>
     ${warn}
@@ -5834,6 +5911,7 @@ function addOutSupplier() {
   const note = (document.getElementById('os-note').value || '').trim();
   if (!date) { alert('请填日期'); return; }
   if (!amount || amount <= 0) { alert('金额必须 > 0'); return; }
+  const _fEl = document.getElementById('os-funded');
   const ev = {
     id: crypto.randomUUID(),
     type: 'out-supplier',
@@ -5841,6 +5919,7 @@ function addOutSupplier() {
     amount,
     pallets: palls || null,
     note,
+    fundedBy: (_fEl && _fEl.value === 'self') ? 'self' : 'east',   // 2026-10-20 3-way SSS share
     createdBy: currentEmail(),
     createdAt: new Date().toISOString()
   };
@@ -8358,6 +8437,7 @@ async function runAI() {
     const hugoOwed = hugoOwedNew();
     lines.push(`资金池(我手上的现金) ${fmt(cash)}.`);
     lines.push(`我的 SSS 份额 ${fmt(mShare.remaining)} (够拉 ${Math.max(0, Math.floor(mShare.remaining / buy))} 托) · Emma 份额 ${fmt(eShare.remaining)}.`);
+    try { const sp = michaelSssShareSplit(); lines.push(`我的份额拆分: East 份额 ${fmt(sp.east.remaining)} · 自营份额 ${fmt(sp.self.remaining)} (自 2026-10-16 自营, 付 SSS 时标"我自己的钱"才进自营份额).`); } catch (e) {}
     lines.push(`欠 Hugo 现金 ${fmt(hugoOwed)}.`);
     lines.push(`累计托盘 ${tp} 托.`);
     if (agg.length >= 1) {
@@ -8484,6 +8564,7 @@ function sssReconFullSequence() {
       bal += amt;
       rows.push({ kind: 'pay', id: e.id, e, date: e.date, amount: amt, bal, who: '', wh: '', pallets: 0, unit: 0, cost: 0,
         desc: (e.note || '') || ('付款给 SSS' + (e.pallets ? ` · ${e.pallets} 托` : '')), method: e.method || '',
+        fundedBy: sssPaymentFundedBy(e),   // 2026-10-20 3-way split
         ref: e.sssRef || '', checked: !!e.sssChecked });
     } else if (e.type === 'pickup') {
       const unit = buyPriceOn(e.date) || 0;
@@ -8547,8 +8628,10 @@ function sssReconFiltered() {
   const closingBal = inRange.length ? inRange[inRange.length - 1].bal : openingBal;
   // Narrow
   let rows = inRange.filter(r => {
-    if (f.who === 'self' && !(r.kind === 'pickup' && r.self)) return false;
+    if (f.who === 'self' && !((r.kind === 'pickup' && r.self) || (r.kind === 'pay' && r.fundedBy === 'self'))) return false;
+    if (f.who === 'east' && !((r.kind === 'pickup' && r.who === 'Michael' && !r.self) || (r.kind === 'pay' && r.fundedBy !== 'self'))) return false;
     if ((f.who === 'Michael' || f.who === 'Emma') && r.kind === 'pickup' && r.who !== f.who) return false;
+    if (f.who === 'Emma' && r.kind === 'pay') return false;
     if ((f.who === 'Michael' || f.who === 'Emma') && r.kind === 'refund' && r.who !== f.who) return false;
     if (f.wh && !(r.kind === 'pickup' && r.wh.toLowerCase().includes(f.wh))) return false;
     if (f.kind === 'pay' && r.kind !== 'pay') return false;
@@ -8582,6 +8665,7 @@ function renderSssRecon() {
   const d = sssReconFiltered();
   const { f, seq, rows, openingBal, openingDate, closingBal, tot } = d;
   const mShare = michaelSssShare(), eShare = emmaSssShare();
+  const split = michaelSssShareSplit();
   const liveBal = sssBalance();
   const consistent = Math.abs(seq.closing - liveBal) < 0.01;
   const rangeTxt = (f.from || f.to) ? `${f.from || seq.switchDate} → ${f.to || '今天'}` : `全部 (自 ${seq.switchDate} 切换起)`;
@@ -8592,7 +8676,7 @@ function renderSssRecon() {
     <div class="kpi v1">
       <div class="kpi-head"><div class="kpi-label">当前 SSS 余额</div><div class="kpi-icon">⚖</div></div>
       <div class="kpi-value" style="${liveBal < 0 ? 'color:var(--rose);' : ''}">${fmt(liveBal)}</div>
-      <div class="kpi-sub">Michael ${fmt(mShare.remaining)} · Emma ${fmt(eShare.remaining)} · ${consistent ? '<span style="color:var(--green);">✓ 与仪表盘一致</span>' : '<span style="color:var(--rose);">⚠ 与仪表盘不一致 ' + fmt(seq.closing) + '</span>'}</div>
+      <div class="kpi-sub">🏢 East ${fmt(split.east.remaining)} · 🏪 自营 ${fmt(split.self.remaining)} · 👩 Emma ${fmt(eShare.remaining)} · ${consistent ? '<span style="color:var(--green);">✓ 与仪表盘一致</span>' : '<span style="color:var(--rose);">⚠ 与仪表盘不一致 ' + fmt(seq.closing) + '</span>'}</div>
     </div>
     <div class="kpi v4">
       <div class="kpi-head"><div class="kpi-label">期间付款 → SSS</div><div class="kpi-icon">↗</div></div>
@@ -8646,8 +8730,11 @@ function renderSssRecon() {
     const chkCell = editable
       ? `<input type="checkbox" ${r.checked ? 'checked' : ''} onchange="sssReconToggleCheck('${r.id}', this.checked)" title="已和 SSS 对账单核对" style="width:16px;height:16px;cursor:pointer;accent-color:#22d3a5;">`
       : `<span style="color:${r.checked ? 'var(--green)' : 'var(--text-dim)'};">${r.checked ? '✓' : '☐'}</span>`;
+    const fundedSel = (r.kind === 'pay')
+      ? ` <select onchange="sssReconSetFunded('${r.id}', this.value)" title="这笔钱是谁的 → 进哪一份 SSS 份额" style="margin-left:6px;padding:2px 6px;font-size:10.5px;border-radius:6px;border:1px solid ${r.fundedBy === 'self' ? 'rgba(251,191,36,0.45)' : 'rgba(0,229,255,0.35)'};background:${r.fundedBy === 'self' ? 'rgba(251,191,36,0.12)' : 'rgba(0,229,255,0.08)'};color:${r.fundedBy === 'self' ? '#fbbf24' : 'var(--cyan)'};cursor:pointer;"><option value="east" ${r.fundedBy !== 'self' ? 'selected' : ''}>🏢 East 的钱</option><option value="self" ${r.fundedBy === 'self' ? 'selected' : ''}>🏪 我自己的钱</option></select>`
+      : '';
     const descTxt = r.kind === 'pay'
-      ? `${escapeHtml(r.desc)}${r.method ? ` <span class="dim" style="font-size:10.5px;">· ${escapeHtml(r.method)}</span>` : ''}`
+      ? `${escapeHtml(r.desc)}${r.method ? ` <span class="dim" style="font-size:10.5px;">· ${escapeHtml(r.method)}</span>` : ''}${fundedSel}`
       : r.kind === 'pickup'
       ? `${r.palletType && !r.grouped ? `<span class="dim" style="font-size:10.5px;">${escapeHtml(r.palletType === 'AMAZON' ? 'AMZ' : r.palletType)}</span> ` : ''}${escapeHtml(r.desc || '')}`
       : escapeHtml(r.desc);
@@ -8686,6 +8773,14 @@ function sssReconSetRef(id, value) {
   e.sssRef = v; e.updatedAt = new Date().toISOString();
   save(); flash(v ? `SSS 单号已记录: ${v}` : 'SSS 单号已清除');
 }
+function sssReconSetFunded(id, value) {
+  const e = (state.events || []).find(x => x.id === id); if (!e || e.type !== 'out-supplier') return;
+  const v = value === 'self' ? 'self' : 'east';
+  if (sssPaymentFundedBy(e) === v) return;
+  e.fundedBy = v; e.updatedAt = new Date().toISOString();
+  save(); renderAll();
+  flash(`这笔付款已归入 ${v === 'self' ? '🏪 自营份额' : '🏢 East 份额'}`);
+}
 function sssReconToggleCheck(id, on) {
   const e = (state.events || []).find(x => x.id === id); if (!e) return;
   e.sssChecked = !!on; e.sssCheckedAt = on ? new Date().toISOString() : null;
@@ -8696,7 +8791,7 @@ function sssReconExportCsv() {
   const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const lines = [['Date', 'Type', 'Description', 'Picked up by', 'Warehouse', 'Pallets', 'Unit £', 'Paid £', 'Pickup £', 'Balance £', 'SSS Ref', 'Checked']];
   lines.push([d.openingDate, 'Opening', 'Opening balance', '', '', '', '', '', '', d.openingBal.toFixed(2), '', '']);
-  for (const r of d.rows) lines.push([r.date, r.kind === 'pay' ? 'Payment' : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup (self)' : 'Pickup'), r.desc, r.kind === 'pickup' ? r.who : (r.kind === 'refund' ? 'to ' + r.who : ''), r.wh, r.kind === 'pickup' ? r.pallets : '', r.kind === 'pickup' ? r.unit : '', r.kind === 'pay' ? r.amount.toFixed(2) : '', r.kind === 'pickup' ? r.cost.toFixed(2) : (r.kind === 'refund' ? r.amount.toFixed(2) : ''), r.bal.toFixed(2), r.ref, r.checked ? 'Y' : '']);
+  for (const r of d.rows) lines.push([r.date, r.kind === 'pay' ? ('Payment' + (r.fundedBy === 'self' ? ' (own funds)' : ' (East funds)')) : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup (self)' : 'Pickup'), r.desc, r.kind === 'pickup' ? r.who : (r.kind === 'refund' ? 'to ' + r.who : ''), r.wh, r.kind === 'pickup' ? r.pallets : '', r.kind === 'pickup' ? r.unit : '', r.kind === 'pay' ? r.amount.toFixed(2) : '', r.kind === 'pickup' ? r.cost.toFixed(2) : (r.kind === 'refund' ? r.amount.toFixed(2) : ''), r.bal.toFixed(2), r.ref, r.checked ? 'Y' : '']);
   const csv = '﻿' + lines.map(l => l.map(esc).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -8714,7 +8809,7 @@ function sssReconPrint() {
   const units = [...new Set(rows.filter(r => r.kind === 'pickup' && r.unit).map(r => r.unit))].sort((a, b) => a - b);
   const trs = rows.map(r => `<tr class="${r.kind}">
       <td>${fmtD(r.date)}</td>
-      <td>${r.kind === 'pay' ? 'Payment' : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup · self' : 'Pickup')}</td>
+      <td>${r.kind === 'pay' ? ('Payment' + (r.fundedBy === 'self' ? ' · own' : ' · East')) : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup · self' : 'Pickup')}</td>
       <td>${E(r.kind === 'pay' ? (r.desc + (r.method ? ' · ' + r.method : '')) : (r.kind === 'pickup' ? ((r.palletType && !r.grouped ? (r.palletType === 'AMAZON' ? 'AMZ' : r.palletType) + ' ' : '') + (r.desc || '')) : r.desc))}</td>
       <td>${r.kind === 'pickup' ? E(r.who) : (r.kind === 'refund' ? 'to ' + E(r.who) : '')}</td>
       <td>${r.kind === 'pickup' ? (r.wh ? 'WH ' + E(r.wh) : '—') : ''}</td>
@@ -9072,6 +9167,35 @@ function renderNewModeKpis() {
       eWarn.style.display = 'none';
     }
   }
+
+  // 2c. 2026-10-20: 3-way split (East / 自营 / Emma) — additive display
+  try {
+    const sp = michaelSssShareSplit();
+    const colorFor = v => v < 0 ? 'var(--rose)' : (v < WARN_THRESH ? 'var(--amber)' : null);
+    const eastEl = document.getElementById('nm-sss-east-value');
+    if (eastEl) { eastEl.textContent = fmt(sp.east.remaining); eastEl.style.color = colorFor(sp.east.remaining) || 'var(--cyan)'; }
+    set('nm-sss-east-sub', sp.east.remaining >= 0 ? `够帮 East 拉 ${Math.floor(sp.east.remaining / buyPrice)} 托 · 已拉 ${sp.east.pallets} 托` : `透支 ${fmt(Math.abs(sp.east.remaining))} · 已拉 ${sp.east.pallets} 托`);
+    set('nm-sss-east-in', fmt(sp.east.in));
+    set('nm-sss-east-used', '−£' + fmt0(sp.east.used + sp.east.refunded));
+    const selfEl = document.getElementById('nm-sss-self-value');
+    if (selfEl) { selfEl.textContent = fmt(sp.self.remaining); selfEl.style.color = colorFor(sp.self.remaining) || 'var(--amber)'; }
+    set('nm-sss-self-sub', sp.self.paidN === 0 && sp.self.pallets === 0
+      ? '还没有自营付款/取货'
+      : (sp.self.remaining >= 0 ? `够拉 ${Math.floor(sp.self.remaining / buyPrice)} 托 · 已拉 ${sp.self.pallets} 托` : `透支 ${fmt(Math.abs(sp.self.remaining))} — 自营用了 East 的钱 · 已拉 ${sp.self.pallets} 托`));
+    set('nm-sss-self-in', fmt(sp.self.in) + (sp.self.paidN ? ` (${sp.self.paidN} 笔)` : ''));
+    set('nm-sss-self-used', '−£' + fmt0(sp.self.used + sp.self.refunded));
+    set('nm-sss-emma2-value', fmt(eShare.remaining));
+    set('nm-sss-emma2-sub', eShare.remaining >= 0 ? `她够拉 ${Math.floor(eShare.remaining / buyPrice)} 托` : `透支 ${fmt(Math.abs(eShare.remaining))}`);
+    const noteEl = document.getElementById('nm-sss-split-note');
+    if (noteEl) noteEl.innerHTML = `<div style="display:flex;justify-content:space-between;"><span>三份合计</span><span style="color:var(--text);font-weight:700;">${fmt(sp.east.remaining + sp.self.remaining + eShare.remaining)}</span></div><div style="display:flex;justify-content:space-between;"><span>SSS 总池</span><span>${fmt(sss)}</span></div>`;
+    const chk = document.getElementById('nm-sss-split-check');
+    if (chk) {
+      const ok = sp.consistent && Math.abs((sp.east.remaining + sp.self.remaining + eShare.remaining) - sss) < 0.005;
+      chk.textContent = ok ? '✓ 三份合计 = 总池' : '⚠ 合计不等于总池';
+      chk.style.background = ok ? 'rgba(34,211,165,0.18)' : 'rgba(244,63,94,0.18)';
+      chk.style.color = ok ? 'var(--green)' : 'var(--rose)';
+    }
+  } catch (e) { console.warn('[sss-split] render skipped:', e); }
 
   // 3. Emma balance
   const emma = emmaBalanceNew();

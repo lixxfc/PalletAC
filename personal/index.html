@@ -3075,6 +3075,15 @@ select option { background: var(--bg-2); color: var(--text); }
         </div>
         <div class="form-row"><label>备注 <span class="page-sub" style="font-size:10px;">(可选)</span></label><input type="text" id="ue-sss-note" placeholder="例:5/20 预付 100 托"></div>
       </div>
+      <!-- 2026-10-20: which SSS share this payment tops up (3-way split: East / 自营 / Emma) -->
+      <div class="form-grid mt-4" style="grid-template-columns: 1fr; gap: 14px;">
+        <div class="form-row"><label>这笔钱是谁的 <span class="page-sub" style="font-size:10px;">(决定进哪一份 SSS 份额)</span></label>
+          <select id="ue-sss-funded" onchange="updateUnifiedPreview()">
+            <option value="east">🏢 East 的预付款 → East 份额 (默认 · 以前全是这个)</option>
+            <option value="self">🏪 我自己的钱 → 自营份额</option>
+          </select>
+        </div>
+      </div>
       <div style="margin-top:14px;padding:11px 14px;background:rgba(196,181,253,0.08);border:1px solid rgba(196,181,253,0.22);border-radius:9px;font-size:11.5px;color:#c4b5fd;line-height:1.6;">
         💡 <b>提示:</b> 写入合伙账 out-supplier 事件 + 自动开 <b>PINV-SSS 付款凭证</b>(给银行/会计看)。SSS 余额自动 +。
       </div>
@@ -4791,7 +4800,15 @@ function updateUnifiedPreview() {
     html = `
       <div>✓ 写入合伙账 <code style="background:rgba(196,181,253,0.10);padding:1px 5px;border-radius:3px;color:#c4b5fd;">out-supplier £${_emMoney(amt).replace('£','')}</code> 事件</div>
       <div>✓ 自动开 <code style="background:rgba(196,181,253,0.10);padding:1px 5px;border-radius:3px;color:#c4b5fd;">PINV-SSS</code> 付款凭证${palls > 0 ? '(' + palls + ' 托)' : ''}</div>
-      <div>✓ SSS 那边余额 + £${_emMoney(amt).replace('£','')} · 资金池 − £${_emMoney(amt).replace('£','')}</div>`;
+      <div>✓ SSS 那边余额 + £${_emMoney(amt).replace('£','')} · 资金池 − £${_emMoney(amt).replace('£','')}</div>
+      ${(() => {
+        // 2026-10-20: which SSS sub-share this payment tops up
+        const fEl = document.getElementById('ue-sss-funded');
+        const toSelf = !!(fEl && fEl.value === 'self');
+        const sh = (typeof _seGetSssShares === 'function') ? _seGetSssShares() : null;
+        const cur = sh ? (toSelf ? sh.self.remaining : sh.east.remaining) : null;
+        return `<div style="color:${toSelf ? 'var(--amber)' : 'var(--cyan)'};">✓ 进 <b>${toSelf ? '🏪 自营份额' : '🏢 East 份额'}</b>${cur != null ? `: ${_emMoney(cur)} → <b>${_emMoney(cur + amt)}</b>` : ''} · ${toSelf ? 'East' : '自营'}份额不变</div>`;
+      })()}`;
   } else if (t === 'out-hugo') {
     const amt = parseFloat(document.getElementById('ue-hugo-amount').value) || 0;
     if (amt <= 0) { wrap.style.display = 'none'; return; }
@@ -4949,6 +4966,8 @@ async function saveUnifiedOutSupplier() {
   const pallets = palletsRaw ? parseInt(palletsRaw) : null;
   const method = document.getElementById('ue-sss-method').value;
   const note = (document.getElementById('ue-sss-note').value || '').trim();
+  const fundedEl = document.getElementById('ue-sss-funded');
+  const fundedBy = (fundedEl && fundedEl.value === 'self') ? 'self' : 'east';   // 2026-10-20 3-way SSS share
   if (!date) { alert('请选择日期'); return; }
   if (!(amount > 0)) { alert('金额必须 > 0'); return; }
   const ev = {
@@ -4959,6 +4978,7 @@ async function saveUnifiedOutSupplier() {
     pallets,
     method,
     note,
+    fundedBy,
     createdBy: (currentUser && currentUser.email) || 'harreds.ceo@gmail.com',
     createdAt: new Date().toISOString()
   };
@@ -5495,22 +5515,28 @@ function _seGetSssShares() {
   // in smart entry was outdated by the refund amount (e.g. £9,315 instead of £6,315).
   let outSupplier = 0, inEmma = 0, michaelUsed = 0, emmaUsed = 0;
   let michaelRefund = 0, emmaRefund = 0;
+  // 2026-10-20: 3-way split of Michael's share (East / 自营) — mirrors partnership michaelSssShareSplit()
+  let payEast = 0, paySelf = 0, usedEast = 0, usedSelf = 0, refEast = 0, refSelf = 0;
   for (const e of _seNewModeEvents()) {
-    if (e.type === 'out-supplier') outSupplier += (e.amount || 0);
+    if (e.type === 'out-supplier') { outSupplier += (e.amount || 0); if (e.fundedBy === 'self') paySelf += (e.amount || 0); else payEast += (e.amount || 0); }
     else if (e.type === 'in-emma') inEmma += (e.amount || 0);
     else if (e.type === 'pickup') {
-      const cost = (e.pallets || 0) * buyPrice;
-      if (_seIsMichaelPickup(e)) michaelUsed += cost;
+      // 2026-10-20 FIX: per-event date-aware buy price (£245 pre-7/1, £200 after) — was flat params.buyPrice
+      const cost = (e.pallets || 0) * (buyPriceOn(e.date) || buyPrice);
+      if (_seIsMichaelPickup(e)) { michaelUsed += cost; if (e._selfRetail) usedSelf += cost; else usedEast += cost; }
       else emmaUsed += cost;
     }
     else if (e.type === 'sss-refund' && e.to === 'emma')    emmaRefund    += (e.amount || 0);
-    else if (e.type === 'sss-refund' && e.to === 'michael') michaelRefund += (e.amount || 0);
+    else if (e.type === 'sss-refund' && e.to === 'michael') { michaelRefund += (e.amount || 0); if (e.fundedBy === 'self') refSelf += (e.amount || 0); else refEast += (e.amount || 0); }
   }
   const michaelIn = michaelOpening + outSupplier - inEmma;
   const emmaIn = emmaOpening + inEmma;
+  const eastIn = michaelOpening + payEast - inEmma;
   return {
     michael: { opening: michaelOpening, in: michaelIn, used: michaelUsed, refunded: michaelRefund, remaining: michaelIn - michaelUsed - michaelRefund },
-    emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    refunded: emmaRefund,    remaining: emmaIn - emmaUsed - emmaRefund }
+    emma:    { opening: emmaOpening,    in: emmaIn,    used: emmaUsed,    refunded: emmaRefund,    remaining: emmaIn - emmaUsed - emmaRefund },
+    east:    { opening: michaelOpening, in: eastIn,    used: usedEast,    refunded: refEast,       remaining: eastIn - usedEast - refEast },
+    self:    { opening: 0,              in: paySelf,   used: usedSelf,    refunded: refSelf,       remaining: paySelf - usedSelf - refSelf }
   };
 }
 // Returns { accrued, paid, owed, rate, opening } or null. Only Michael's pickups accrue.
@@ -5679,11 +5705,20 @@ function updateSmartEntryPreview() {
   // === SSS Share card (owner-aware) ===
   const sssCardTitle = isMichaelPick ? '合伙账 — 你的 SSS 份额' : '合伙账 — Emma 的 SSS 份额';
   const sssOwnerLabel = isMichaelPick ? '你' : 'Emma';
+  // 2026-10-20: 3-way split — show which of Michael's sub-shares (East / 自营) this pickup hits
+  let splitLines = '';
+  if (isMichaelPick && shares && shares.east && shares.self) {
+    const eastCost = billablePallets * buyPrice, selfCost = selfPallets * buyPrice;
+    const eA = shares.east.remaining - eastCost, sA = shares.self.remaining - selfCost;
+    if (eastCost > 0) splitLines += `<div style="font-size:11.5px;">🏢 East 份额 <b>${fmt(shares.east.remaining)}</b> → <b style="color:${eA < 0 ? 'var(--rose)' : 'var(--cyan)'};">${fmt(eA)}</b> <span style="color:var(--text-dim);">(帮 East 拉 ${billablePallets} 托)</span></div>`;
+    if (selfCost > 0) splitLines += `<div style="font-size:11.5px;">🏪 自营份额 <b>${fmt(shares.self.remaining)}</b> → <b style="color:${sA < 0 ? 'var(--rose)' : 'var(--amber)'};">${fmt(sA)}</b> <span style="color:var(--text-dim);">(自营 ${selfPallets} 托${sA < 0 ? ' · 透支 = 用了 East 的钱' : ''})</span></div>`;
+  }
   const emmaSection = sec('🤝', sssCardTitle, `
     取货成本:${totalPallets} × £${buyPrice} = <b style="color:var(--rose);">-${fmt(totalSssCost)}</b><br>
     ${ownerShareBefore != null
       ? `${sssOwnerLabel}当前 SSS 份额 <b>${fmt(ownerShareBefore)}</b> → 取货后 <b style="color:${ownerShareAfter < 0 ? 'var(--rose)' : 'var(--green)'};">${fmt(ownerShareAfter)}</b>${ownerCanLiftAfter != null ? ` (够拉 ${ownerCanLiftAfter} 托)` : ''}`
       : '<span style="color:var(--text-dim);">(合伙账缓存还没加载,关掉重新打开录入框)</span>'}
+    ${splitLines}
   `, 'var(--cyan)');
 
   // === Hugo card (owner-aware) ===
@@ -14463,7 +14498,7 @@ function aiSystemPrompt() {
 【业务模型(2026-05-20 起,新模式)】
 - Michael 自己付钱给 SSS 进货 (£${buyPriceOn(new Date().toISOString().slice(0,10))}/托) → 卖给客户 (£${sellPriceOn(new Date().toISOString().slice(0,10))}/托) + 中介费 myFee (£${state.params.myFee}/托) → 净利 £${perPalletProfit()}/托
 - 资金流向: 客户预付 + Emma 转账 → Michael → SSS。Michael 是唯一付 SSS 的人。
-- SSS 池被分成两份: Michael 份额 + Emma 份额。每次取货只消耗取货人那一边的份额。
+- SSS 池分成三份: East 份额 (East 的预付款 − 帮 East 拉的货) + Michael 自营份额 (Michael 自己付 SSS 的钱 − 自营取货, 2026-10-16 起) + Emma 份额。付 SSS 时要标"这笔钱是谁的"。East + 自营 = Michael 份额合计。
 - 客户先预付款给 Michael(进客户余额),Michael 取货时按 sellPrice 扣客户账本
 - Hugo 提成 £${hugoRateOn(new Date().toISOString().slice(0,10))}/托 (2026-10-01 前 £7, 起 £10; 客户付的 Hugo 钱固定 £10/托): 客户当面付 Michael 现金 → Michael 转给 Hugo (只针对 Michael 取的货)
 - V 费用 £${state.params.vFee || 2}/托: 客户直接付 V(过路钱,不进 Michael P&L)
