@@ -1729,7 +1729,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         <div class="card-title">业务参数</div>
         <div class="form-grid mt-4">
           <div class="form-row"><label>买价 £/托盘</label><input type="number" id="s-buy"></div>
-          <div class="form-row"><label>Hugo 提成 £/托盘</label><input type="number" id="s-commission" step="0.1"></div>
+          <div class="form-row"><label>Hugo 提成 £/托盘 <span class="page-sub" style="font-size:10px;color:var(--amber);">仅显示 · 实际按日期: 10/1 前 £7, 起 £10 (改这里不影响算账)</span></label><input type="number" id="s-commission" step="0.1"></div>
         </div>
 
         <div style="margin-top:18px;padding:14px 16px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:10px;">
@@ -2359,9 +2359,12 @@ function sellPriceOn(date) {
 // Legacy state.params.hugoCommission (7) is the DEFAULT for pre-cutover.
 // Any per-event Hugo accrual MUST use hugoRateOn(date).
 const HUGO_RATE_CUTOVER = '2026-10-01';
+const HUGO_RATE_LEGACY  = 7;    // £7/托 from day 1 (2026-04-22) until 2026-09-30 — fixed history
 const HUGO_RATE_NEW     = 10;
 function hugoRateOn(date) {
-  const legacy = (state && state.params && state.params.hugoCommission != null) ? state.params.hugoCommission : 7;
+  // 2026-10-20 review fix: the pre-cutover rate is HISTORICAL FACT (£7), not the editable
+  // settings field — otherwise changing the setting to 10 would silently re-price history.
+  const legacy = HUGO_RATE_LEGACY;
   if (!date || date < HUGO_RATE_CUTOVER) return legacy;
   return HUGO_RATE_NEW;
 }
@@ -2803,6 +2806,10 @@ function subscribeRealtime() {
         // Only apply remote changes; skip our own echo (cheap heuristic: always merge)
         const remote = JSON.stringify(payload.new.data);
         const local = state ? JSON.stringify(state) : '';
+        // 2026-10-20 review fix: while we have an unsaved local edit queued (saveTimer
+        // pending), do NOT let the echo of our previous save overwrite it — this made
+        // rapid SSS 对账 tick / ref edits lose the 2nd change. Our own save will land shortly.
+        if (remote !== local && saveTimer) { console.log('[realtime] skipped echo — local save pending'); return; }
         if (remote !== local) {
           state = normalizeState(payload.new.data);
           renderAll();
@@ -2823,6 +2830,7 @@ function save() {
   saveTimer = setTimeout(saveUserDataNow, 600);
 }
 async function saveUserDataNow() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }   // 2026-10-20: clear pending flag (realtime echo guard relies on it)
   if (!currentUser || !state) return;
   try {
     const { error } = await db
@@ -7810,6 +7818,8 @@ async function reassignPickupOwner(id) {
   if (!ev || ev.type !== 'pickup') { flash('找不到取货记录'); return; }
   const wasMichael = isMichaelPickup(ev);
   const newOwner = wasMichael ? 'Emma' : 'Michael';
+  // 2026-10-20 自营 guard: a self-retail pickup is Michael's by definition (his SSS share, his Hugo)
+  if (ev._selfRetail && newOwner === 'Emma') { alert('这是 Michael 自营的取货（🏪 自营），不能改成 Emma。如果真是 Emma 的货，先在个人 App 把它从「Michael我自己」删掉再重录。'); return; }
   const msg = `把这条取货从 ${wasMichael ? 'Michael' : 'Emma'} 改成 ${newOwner}?\n\n` +
     `${ev.pallets} 托 · ${ev.palletType || ''} · ${fmt(ev.amount || 0)}\n\n` +
     `会同时更新:\n` +
@@ -8022,10 +8032,13 @@ async function _editPickupInPersonal(ev, oldSnap) {
         const entryOldUnit        = +(entry.unitPrice || 0);
         const entryOldSwapPremium = +(entry.swapPremium || 0);
         const entryOldIsSwap      = !!entry.isSwap;
+        // 2026-10-20 自营 (self-retail) rows are NEVER priced: amount stays 0 (no customer pool)
+        const _isSelfRow = !!(entry._selfRetail || ev._selfRetail || c.isSelf);
         const useOldPrice = (entryOldIsSwap === !!ev.isSwap) && entryOldUnit > 0;
-        const finalUnitPrice    = useOldPrice ? entryOldUnit        : liveUnitPrice;
-        const finalSwapPremium  = useOldPrice ? entryOldSwapPremium : (ev.isSwap ? swapPrem : 0);
+        const finalUnitPrice    = _isSelfRow ? 0 : (useOldPrice ? entryOldUnit        : liveUnitPrice);
+        const finalSwapPremium  = _isSelfRow ? 0 : (useOldPrice ? entryOldSwapPremium : (ev.isSwap ? swapPrem : 0));
         const finalAmount       = ev.pallets * finalUnitPrice;
+        if (_isSelfRow) { entry._selfRetail = true; entry._selfCostSss = ev.pallets * buyPriceOn(ev.date); entry._selfCostHugo = ev.pallets * hugoRateOn(ev.date); }
         entry.date        = ev.date;
         entry.pallets     = ev.pallets;
         entry.truck       = ev.truck;
