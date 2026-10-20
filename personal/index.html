@@ -3807,6 +3807,10 @@ async function loadUserData() {
         if (typeof ensureSelfCustomer === 'function' && ensureSelfCustomer()) await saveUserDataNow();
       } catch (e) { console.warn('[ensureSelfCustomer] failed:', e); }
       try {
+        // 2026-10-20: remove £0 invoices the old backfill created for 自营 pickups (before the guard shipped)
+        if (typeof cleanupSelfRetailInvoices === 'function' && cleanupSelfRetailInvoices() > 0) await saveUserDataNow();
+      } catch (e) { console.warn('[cleanupSelfRetailInvoices] failed:', e); }
+      try {
         if (typeof migrateEmmaTransferOffPool === 'function') {
           await migrateEmmaTransferOffPool();
         }
@@ -3893,6 +3897,19 @@ function ensureSelfCustomer() {
     note: '自营虚拟客户 · 只记成本 (SSS + Hugo), 不记收入'
   });
   return true;
+}
+// One-off cleanup (idempotent): invoices linked to 自营 pickups are meaningless (£0, nobody to bill).
+// The pre-fix load-time backfill created some on 2026-10-20; remove any such invoice. Returns count removed.
+function cleanupSelfRetailInvoices() {
+  if (!state || !Array.isArray(state.invoices)) return 0;
+  const selfIds = new Set();
+  for (const c of (state.customers || [])) if (c.isSelf) { selfIds.add('C:' + c.id); for (const e of (c.ledger || [])) selfIds.add('P:' + e.id); }
+  if (!selfIds.size) return 0;
+  const before = state.invoices.length;
+  state.invoices = state.invoices.filter(i => !(selfIds.has('C:' + i.customerId) || selfIds.has('P:' + i.linkedPickupId)));
+  const removed = before - state.invoices.length;
+  if (removed) console.log('[cleanupSelfRetailInvoices] removed', removed, '自营 £0 invoice(s)');
+  return removed;
 }
 // Flatten self pickups (all customers flagged isSelf) with cost fields
 function selfPickups() {
