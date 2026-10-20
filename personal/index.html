@@ -1698,10 +1698,15 @@ select option { background: var(--bg-2); color: var(--text); }
 #customer-detail.self-mode .cust-tab-pane[data-tab-pane="ledger"] { display: block !important; margin-top: 24px !important; }
 #customer-detail.self-mode .cust-tab-pane[data-tab-pane="ledger"] > .card-title:first-child::before { content: "📋 自营取货流水 · "; }
 /* self cost table: fixed column widths so the detail column doesn't swallow the row */
+/* proportional columns so numbers stay near the detail text on wide screens */
 #cd-self-panel table { table-layout: fixed; }
-#cd-self-panel th:nth-child(1) { width: 72px; }  #cd-self-panel th:nth-child(2) { width: 110px; }
-#cd-self-panel th:nth-child(4), #cd-self-panel th:nth-child(5), #cd-self-panel th:nth-child(6) { width: 90px; }
-#cd-self-panel th:nth-child(7) { width: 110px; } #cd-self-panel th:nth-child(8) { width: 84px; }
+#cd-self-panel th:nth-child(1) { width: 7%; }   #cd-self-panel th:nth-child(2) { width: 12%; }
+#cd-self-panel th:nth-child(3) { width: 35%; }
+#cd-self-panel th:nth-child(4) { width: 8%; }   #cd-self-panel th:nth-child(5) { width: 10%; }
+#cd-self-panel th:nth-child(6) { width: 9%; }   #cd-self-panel th:nth-child(7) { width: 11%; }
+#cd-self-panel th:nth-child(8) { width: 8%; }
+#cd-self-panel td, #cd-self-panel th { white-space: nowrap; }
+#cd-self-panel td:nth-child(3) { white-space: normal; }
 #cd-self-panel td { vertical-align: middle; }
 #cd-self-panel .kpi .kpi-value { font-size: 20px !important; }
 </style>
