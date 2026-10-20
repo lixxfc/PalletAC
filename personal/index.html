@@ -1694,6 +1694,16 @@ select option { background: var(--bg-2); color: var(--text); }
 #customer-detail.self-mode #lg-type option[value="refund"],
 #customer-detail.self-mode #lg-type option[value="adjust"] { display: none !important; }
 #customer-detail.self-mode .kpi .kpi-info { display: none; }
+#customer-detail.self-mode .cust-tabs { display: none !important; }
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="ledger"] { display: block !important; margin-top: 24px !important; }
+#customer-detail.self-mode .cust-tab-pane[data-tab-pane="ledger"] > .card-title:first-child::before { content: "📋 自营取货流水 · "; }
+/* self cost table: fixed column widths so the detail column doesn't swallow the row */
+#cd-self-panel table { table-layout: fixed; }
+#cd-self-panel th:nth-child(1) { width: 72px; }  #cd-self-panel th:nth-child(2) { width: 110px; }
+#cd-self-panel th:nth-child(4), #cd-self-panel th:nth-child(5), #cd-self-panel th:nth-child(6) { width: 90px; }
+#cd-self-panel th:nth-child(7) { width: 110px; } #cd-self-panel th:nth-child(8) { width: 84px; }
+#cd-self-panel td { vertical-align: middle; }
+#cd-self-panel .kpi .kpi-value { font-size: 20px !important; }
 </style>
 </head>
 <body>
@@ -2304,7 +2314,7 @@ select option { background: var(--bg-2); color: var(--text); }
               <div class="card-title mt-4" style="font-size:12px;">按周明细 <span class="badge">周一 → 周日</span></div>
               <div class="table-wrap mt-2">
                 <table>
-                  <thead><tr><th style="width:80px;">周次</th><th style="width:130px;">日期</th><th>取货明细 (日期 · 库房 · 托)</th><th style="text-align:right;">托盘</th><th style="text-align:right;">SSS</th><th style="text-align:right;">Hugo</th><th style="text-align:right;">本周成本</th><th style="text-align:right;">均/托</th></tr></thead>
+                  <thead><tr><th>周次</th><th>日期</th><th>取货明细 (日期 · 库房 · 托)</th><th style="text-align:right;">托盘</th><th style="text-align:right;">SSS</th><th style="text-align:right;">Hugo</th><th style="text-align:right;">本周成本</th><th style="text-align:right;">均/托</th></tr></thead>
                   <tbody id="cd-self-body"></tbody>
                   <tfoot id="cd-self-foot"></tfoot>
                 </table>
