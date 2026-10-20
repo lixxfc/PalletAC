@@ -999,6 +999,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
       <div class="nav-item" data-view="transfer"><span class="nav-icon">↗</span>转账记录</div>
       <div class="nav-item" data-view="pickup"><span class="nav-icon">▦</span>取货记录</div>
       <div class="nav-item" data-view="monthly"><span class="nav-icon">≡</span>月度汇总</div>
+      <div class="nav-item" data-view="sss"><span class="nav-icon">⚖</span>SSS 对账</div>
       <div class="nav-item hide" id="nav-pt-invoices" data-view="ptinvoices"><span class="nav-icon">⎙</span>发票 / 凭证</div>
       <div class="nav-item" data-view="log"><span class="nav-icon">⟲</span>操作日志</div>
       <div class="nav-item" data-view="ai"><span class="nav-icon">✦</span>AI 建议</div>
@@ -1495,6 +1496,60 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
           <table>
             <thead><tr><th>月份</th><th>转账</th><th>托盘</th><th>花费</th><th>净变动</th><th>环比</th></tr></thead>
             <tbody id="monthly-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SSS Reconciliation (2026-10-20) ===== -->
+    <section class="view" data-view="sss">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">SSS 对账 <span class="badge" style="background:rgba(0,229,255,0.12);color:var(--cyan);">Statement</span></h1>
+          <div class="page-sub">你付给 SSS 的每一笔钱 vs 每天取货（按取货日进价 × 托盘）· 逐笔滚动余额 · 和 SSS 发来的对账单逐行核对</div>
+        </div>
+        <div class="row" style="gap:8px;">
+          <button class="btn ghost sm" onclick="sssReconExportCsv()" title="导出 CSV (Excel 打开)">⇩ CSV</button>
+          <button class="btn sm" style="background:linear-gradient(135deg,var(--violet),var(--cyan));font-weight:700;" onclick="sssReconPrint()">🖨 导出 A4 PDF</button>
+        </div>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="kpi-grid" id="sss-recon-kpis" style="margin-bottom:18px;"></div>
+
+      <!-- Filters -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="row" style="gap:10px;align-items:flex-end;">
+          <div class="form-row" style="margin:0;min-width:140px;"><label>从</label><input type="date" id="sss-from" onchange="renderSssRecon()"></div>
+          <div class="form-row" style="margin:0;min-width:140px;"><label>到</label><input type="date" id="sss-to" onchange="renderSssRecon()"></div>
+          <div class="form-row" style="margin:0;min-width:130px;"><label>取货人</label>
+            <select id="sss-who" onchange="renderSssRecon()"><option value="">全部</option><option value="Michael">Michael</option><option value="Emma">Emma</option><option value="self">🏪 Michael 自营</option></select>
+          </div>
+          <div class="form-row" style="margin:0;min-width:120px;"><label>库房</label><input type="text" id="sss-wh" placeholder="2 / 25 / 19…" oninput="renderSssRecon()"></div>
+          <div class="form-row" style="margin:0;min-width:130px;"><label>类型</label>
+            <select id="sss-kind" onchange="renderSssRecon()"><option value="">全部</option><option value="pay">只看付款</option><option value="pickup">只看取货</option><option value="unchecked">未核对</option></select>
+          </div>
+          <div class="row" style="gap:6px;">
+            <button class="btn ghost sm" onclick="sssReconPreset('month')">本月</button>
+            <button class="btn ghost sm" onclick="sssReconPreset('last-month')">上月</button>
+            <button class="btn ghost sm" onclick="sssReconPreset('week')">本周</button>
+            <button class="btn ghost sm" onclick="sssReconPreset('all')">全部</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-dim);cursor:pointer;margin-left:auto;"><input type="checkbox" id="sss-groupday" onchange="renderSssRecon()"> 按天合并取货</label>
+        </div>
+        <div id="sss-recon-range-sub" style="margin-top:10px;font-size:11.5px;color:var(--text-dim);line-height:1.7;"></div>
+      </div>
+
+      <!-- Ledger -->
+      <div class="card">
+        <div class="card-title">对账流水 <span class="badge" id="sss-recon-count">0 条</span> <span style="font-size:10.5px;color:var(--text-dim);font-weight:500;margin-left:8px;">余额 = 期初 + 付款 − 取货 − 退款 · 按全部记录连续滚动（筛选不影响余额）</span></div>
+        <div class="table-wrap mt-4">
+          <table id="sss-recon-table">
+            <thead><tr>
+              <th style="width:92px;">日期</th><th style="width:70px;">类型</th><th>说明</th><th style="width:70px;">取货人</th><th style="width:70px;">库房</th><th style="text-align:right;width:56px;">托盘</th><th style="text-align:right;width:60px;">单价</th><th style="text-align:right;width:92px;">付款 +</th><th style="text-align:right;width:92px;">取货 −</th><th style="text-align:right;width:100px;">余额</th><th style="width:120px;">SSS 单号</th><th style="width:44px;text-align:center;">核对</th>
+            </tr></thead>
+            <tbody id="sss-recon-body"></tbody>
+            <tfoot id="sss-recon-foot"></tfoot>
           </table>
         </div>
       </div>
@@ -2016,6 +2071,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
     <div class="mobile-nav-item" data-view="transfer"><div class="mni-icon">↗</div><div>转账</div></div>
     <div class="mobile-nav-item" data-view="pickup"><div class="mni-icon">▦</div><div>取货</div></div>
     <div class="mobile-nav-item" data-view="monthly"><div class="mni-icon">≡</div><div>月度</div></div>
+    <div class="mobile-nav-item" data-view="sss"><div class="mni-icon">⚖</div><div>SSS</div></div>
     <div class="mobile-nav-item" data-view="log"><div class="mni-icon">⟲</div><div>日志</div></div>
     <div class="mobile-nav-item" data-view="ai"><div class="mni-icon">✦</div><div>AI</div></div>
     <a class="mobile-nav-item nav-external hide" id="mnav-personal" href="./personal/" style="text-decoration:none;"><div class="mni-icon">★</div><div>客户账</div></a>
@@ -8404,11 +8460,346 @@ function flash(msg) {
   setTimeout(() => el.remove(), 1800);
 }
 
+// =====================================================
+// ⚖ SSS RECONCILIATION PAGE (2026-10-20)
+// One place to compare "what I paid SSS" vs "what I lifted from SSS" line by
+// line, with a running balance identical to sssBalance() on the dashboard.
+//   balance = sssOpeningCredit + Σ out-supplier − Σ pickups × buyPriceOn(date) − Σ sss-refund
+// Per-row SSS reference number (`sssRef`) + checked flag (`sssChecked`) are
+// stored ON the event so ticking off SSS's statement survives reloads.
+// =====================================================
+const _SSS_RECON_TYPES = { 'out-supplier': 0, 'pickup': 1, 'sss-refund': 2 };
+function sssReconFullSequence() {
+  const sw = newModeStartDate() || '';
+  const evs = _newModeEvents().filter(e => e.type in _SSS_RECON_TYPES);
+  evs.sort((a, b) =>
+    (a.date || '').localeCompare(b.date || '') ||
+    (_SSS_RECON_TYPES[a.type] - _SSS_RECON_TYPES[b.type]) ||
+    (a.createdAt || '').localeCompare(b.createdAt || ''));
+  let bal = +(state.params.sssOpeningCredit || 0);
+  const rows = [];
+  for (const e of evs) {
+    if (e.type === 'out-supplier') {
+      const amt = +(e.amount || 0);
+      bal += amt;
+      rows.push({ kind: 'pay', id: e.id, e, date: e.date, amount: amt, bal, who: '', wh: '', pallets: 0, unit: 0, cost: 0,
+        desc: (e.note || '') || ('付款给 SSS' + (e.pallets ? ` · ${e.pallets} 托` : '')), method: e.method || '',
+        ref: e.sssRef || '', checked: !!e.sssChecked });
+    } else if (e.type === 'pickup') {
+      const unit = buyPriceOn(e.date) || 0;
+      const pallets = +(e.pallets || 0);
+      const cost = pallets * unit;
+      bal -= cost;
+      const self = !!e._selfRetail;
+      const who = isMichaelPickup(e) ? 'Michael' : 'Emma';
+      rows.push({ kind: 'pickup', id: e.id, e, date: e.date, amount: 0, bal, who, self, transferDay: !!e._emmaTransferDay,
+        wh: String(e.truck || ''), pallets, unit, cost, palletType: e.palletType || '',
+        desc: (e.note && e.note !== '智能录入' && e.note !== '自营 · 智能录入') ? e.note : '',
+        ref: e.sssRef || '', checked: !!e.sssChecked });
+    } else if (e.type === 'sss-refund') {
+      const amt = +(e.amount || 0);
+      bal -= amt;
+      rows.push({ kind: 'refund', id: e.id, e, date: e.date, amount: amt, bal, who: e.to === 'emma' ? 'Emma' : 'Michael', wh: '', pallets: 0, unit: 0, cost: 0,
+        desc: (e.note || '') || `SSS 退款给 ${e.to === 'emma' ? 'Emma' : 'Michael'}`, ref: e.sssRef || '', checked: !!e.sssChecked });
+    }
+  }
+  return { opening: +(state.params.sssOpeningCredit || 0), switchDate: sw, rows, closing: bal };
+}
+function _sssReconFilters() {
+  const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const chk = document.getElementById('sss-groupday');
+  return { from: g('sss-from'), to: g('sss-to'), who: g('sss-who'), wh: (g('sss-wh') || '').trim().toLowerCase(), kind: g('sss-kind'), groupDay: !!(chk && chk.checked) };
+}
+function sssReconPreset(p) {
+  const today = new Date(); const y = today.getFullYear(), m = today.getMonth();
+  const iso = d => d.toISOString().slice(0, 10);
+  let from = '', to = '';
+  if (p === 'month') { from = iso(new Date(y, m, 1)); to = iso(today); }
+  else if (p === 'last-month') { from = iso(new Date(y, m - 1, 1)); to = iso(new Date(y, m, 0)); }
+  else if (p === 'week') { const d = new Date(today); const day = d.getDay(); d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day)); from = iso(d); to = iso(today); }
+  else { from = ''; to = ''; }
+  document.getElementById('sss-from').value = from;
+  document.getElementById('sss-to').value = to;
+  renderSssRecon();
+}
+// Apply filters to the full sequence. Returns { rows, openingBal, openingDate, closingBal, period totals }
+function sssReconFiltered() {
+  const seq = sssReconFullSequence();
+  const f = _sssReconFilters();
+  let openingBal = seq.opening, openingDate = seq.switchDate;
+  const inRange = [];
+  for (const r of seq.rows) {
+    if (f.from && r.date < f.from) { openingBal = r.bal; openingDate = r.date; continue; }
+    if (f.to && r.date > f.to) continue;
+    inRange.push(r);
+  }
+  // Period totals are computed on the FULL in-range set (before who/wh/kind narrowing)
+  const tot = { pay: 0, payN: 0, refund: 0, refundN: 0, pallets: 0, trucks: 0, cost: 0,
+    m: { pallets: 0, trucks: 0, cost: 0 }, e: { pallets: 0, trucks: 0, cost: 0 }, self: { pallets: 0, trucks: 0, cost: 0 }, unchecked: 0 };
+  for (const r of inRange) {
+    if (r.kind === 'pay') { tot.pay += r.amount; tot.payN++; }
+    else if (r.kind === 'refund') { tot.refund += r.amount; tot.refundN++; }
+    else { tot.pallets += r.pallets; tot.trucks++; tot.cost += r.cost;
+      const b = r.who === 'Emma' ? tot.e : tot.m; b.pallets += r.pallets; b.trucks++; b.cost += r.cost;
+      if (r.self) { tot.self.pallets += r.pallets; tot.self.trucks++; tot.self.cost += r.cost; } }
+    if (!r.checked) tot.unchecked++;
+  }
+  const closingBal = inRange.length ? inRange[inRange.length - 1].bal : openingBal;
+  // Narrow
+  let rows = inRange.filter(r => {
+    if (f.who === 'self' && !(r.kind === 'pickup' && r.self)) return false;
+    if ((f.who === 'Michael' || f.who === 'Emma') && r.kind === 'pickup' && r.who !== f.who) return false;
+    if ((f.who === 'Michael' || f.who === 'Emma') && r.kind === 'refund' && r.who !== f.who) return false;
+    if (f.wh && !(r.kind === 'pickup' && r.wh.toLowerCase().includes(f.wh))) return false;
+    if (f.kind === 'pay' && r.kind !== 'pay') return false;
+    if (f.kind === 'pickup' && r.kind !== 'pickup') return false;
+    if (f.kind === 'unchecked' && r.checked) return false;
+    return true;
+  });
+  // Optional: merge same-day pickups by the same person
+  if (f.groupDay) {
+    const out = []; const idx = {};
+    for (const r of rows) {
+      if (r.kind !== 'pickup') { out.push(r); continue; }
+      const k = r.date + '|' + r.who + '|' + (r.self ? 'S' : '');
+      if (!idx[k]) { idx[k] = { ...r, ids: [], whs: [], units: new Set(), refs: [], grouped: true, trucks: 0, allChecked: true, pallets: 0, cost: 0 }; out.push(idx[k]); }
+      const g = idx[k];
+      g.ids.push(r.id); g.pallets += r.pallets; g.cost += r.cost;
+      g.trucks++; g.whs.push(r.wh || '?'); g.units.add(r.unit); if (r.ref) g.refs.push(r.ref); g.allChecked = g.allChecked && r.checked; g.bal = r.bal;
+    }
+    for (const g of out) if (g.grouped) { g.wh = g.whs.join(' + '); g.unit = g.units.size === 1 ? [...g.units][0] : 0; g.ref = g.refs.join(', '); g.checked = g.allChecked; g.desc = `${g.trucks} 车合并`; }
+    rows = out;
+  }
+  return { f, seq, rows, openingBal, openingDate, closingBal, tot };
+}
+function renderSssRecon() {
+  const body = document.getElementById('sss-recon-body');
+  if (!body || !state) return;
+  if (!isNewMode()) {
+    body.innerHTML = '<tr><td colspan="12" class="dim" style="text-align:center;padding:30px;">SSS 对账只在新模式下有意义（切换后）。</td></tr>';
+    return;
+  }
+  const d = sssReconFiltered();
+  const { f, seq, rows, openingBal, openingDate, closingBal, tot } = d;
+  const mShare = michaelSssShare(), eShare = emmaSssShare();
+  const liveBal = sssBalance();
+  const consistent = Math.abs(seq.closing - liveBal) < 0.01;
+  const rangeTxt = (f.from || f.to) ? `${f.from || seq.switchDate} → ${f.to || '今天'}` : `全部 (自 ${seq.switchDate} 切换起)`;
+
+  // KPI cards
+  const kp = document.getElementById('sss-recon-kpis');
+  if (kp) kp.innerHTML = `
+    <div class="kpi v1">
+      <div class="kpi-head"><div class="kpi-label">当前 SSS 余额</div><div class="kpi-icon">⚖</div></div>
+      <div class="kpi-value" style="${liveBal < 0 ? 'color:var(--rose);' : ''}">${fmt(liveBal)}</div>
+      <div class="kpi-sub">Michael ${fmt(mShare.remaining)} · Emma ${fmt(eShare.remaining)} · ${consistent ? '<span style="color:var(--green);">✓ 与仪表盘一致</span>' : '<span style="color:var(--rose);">⚠ 与仪表盘不一致 ' + fmt(seq.closing) + '</span>'}</div>
+    </div>
+    <div class="kpi v4">
+      <div class="kpi-head"><div class="kpi-label">期间付款 → SSS</div><div class="kpi-icon">↗</div></div>
+      <div class="kpi-value" style="color:var(--green);">${fmt(tot.pay)}</div>
+      <div class="kpi-sub">${tot.payN} 笔${tot.refund > 0 ? ` · 退款 −${fmt(tot.refund)} (${tot.refundN} 笔)` : ''}</div>
+    </div>
+    <div class="kpi v6">
+      <div class="kpi-head"><div class="kpi-label">期间取货</div><div class="kpi-icon">▦</div></div>
+      <div class="kpi-value" style="color:var(--rose);">${fmt(tot.cost)}</div>
+      <div class="kpi-sub">${tot.trucks} 车 · ${tot.pallets} 托 · M ${tot.m.pallets} / E ${tot.e.pallets}${tot.self.pallets ? ` · 🏪 自营 ${tot.self.pallets}` : ''}</div>
+    </div>
+    <div class="kpi v2">
+      <div class="kpi-head"><div class="kpi-label">期初 → 期末</div><div class="kpi-icon">→</div></div>
+      <div class="kpi-value" style="font-size:20px;">${fmt(openingBal)} → <span style="${closingBal < 0 ? 'color:var(--rose);' : 'color:var(--cyan);'}">${fmt(closingBal)}</span></div>
+      <div class="kpi-sub">净变动 ${closingBal - openingBal >= 0 ? '+' : ''}${fmt(closingBal - openingBal)} · ${rangeTxt}</div>
+    </div>
+    <div class="kpi v5">
+      <div class="kpi-head"><div class="kpi-label">未核对</div><div class="kpi-icon">☐</div></div>
+      <div class="kpi-value" style="${tot.unchecked ? 'color:var(--amber);' : 'color:var(--green);'}">${tot.unchecked}</div>
+      <div class="kpi-sub">${tot.unchecked ? '条还没和 SSS 单号对上 · 右侧 ☐ 打勾' : '期间全部核对完毕 ✓'}</div>
+    </div>`;
+
+  const sub = document.getElementById('sss-recon-range-sub');
+  if (sub) {
+    const u = new Set();
+    for (const r of seq.rows) if (r.kind === 'pickup' && (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to)) u.add(r.unit);
+    const unitTxt = [...u].sort((a, b) => a - b).map(x => '£' + x).join(' / ') || '—';
+    sub.innerHTML = `区间 <b>${rangeTxt}</b> · 期初余额 <b>${fmt(openingBal)}</b>${openingDate && f.from ? ` (截至 ${openingDate})` : ' (切换日期初 sssOpeningCredit)'} + 付款 <b style="color:var(--green);">${fmt(tot.pay)}</b> − 取货 <b style="color:var(--rose);">${fmt(tot.cost)}</b>${tot.refund ? ` − 退款 <b>${fmt(tot.refund)}</b>` : ''} = 期末 <b>${fmt(closingBal)}</b> · 进价按取货日：${unitTxt} / 托`;
+  }
+
+  // Rows
+  const cnt = document.getElementById('sss-recon-count');
+  if (cnt) cnt.textContent = rows.length + ' 条';
+  const kindBadge = r => r.kind === 'pay'
+    ? '<span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);font-weight:700;">付款</span>'
+    : r.kind === 'refund'
+    ? '<span class="badge" style="background:rgba(251,113,133,0.18);color:var(--rose);font-weight:700;">退款</span>'
+    : `<span class="badge" style="background:${r.self ? 'rgba(251,191,36,0.18)' : 'rgba(103,232,249,0.14)'};color:${r.self ? '#fbbf24' : '#67e8f9'};font-weight:700;">${r.self ? '🏪 自营' : '取货'}</span>`;
+  const whoCell = r => r.kind === 'pickup'
+    ? `<span style="font-weight:700;color:${r.who === 'Emma' ? '#f9a8d4' : 'var(--cyan)'};">${r.who}</span>${r.transferDay ? ' <span style="font-size:9px;color:#f9a8d4;" title="Emma 日 Michael 代取">🤝</span>' : ''}`
+    : (r.kind === 'refund' ? `<span class="dim">→ ${r.who}</span>` : '');
+  const head = `<tr style="background:rgba(0,229,255,0.05);">
+      <td class="dim">${openingDate || '—'}</td><td><span class="badge" style="background:rgba(139,150,255,0.14);color:var(--text-dim);">期初</span></td>
+      <td class="dim" colspan="7">${f.from ? '区间期初余额（之前所有记录滚动而来）' : 'SSS 预付期初余额（切换日 sssOpeningCredit）'}</td>
+      <td style="text-align:right;font-weight:800;">${fmt(openingBal)}</td><td></td><td></td></tr>`;
+  const trs = rows.map(r => {
+    const editable = !r.grouped;
+    const refCell = editable
+      ? `<input type="text" value="${escapeHtml(r.ref || '')}" placeholder="SSS0…" onchange="sssReconSetRef('${r.id}', this.value)" style="width:100%;padding:4px 6px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.18);border-radius:6px;color:var(--text);font-size:11px;">`
+      : `<span class="dim" style="font-size:11px;">${escapeHtml(r.ref || '')}</span>`;
+    const chkCell = editable
+      ? `<input type="checkbox" ${r.checked ? 'checked' : ''} onchange="sssReconToggleCheck('${r.id}', this.checked)" title="已和 SSS 对账单核对" style="width:16px;height:16px;cursor:pointer;accent-color:#22d3a5;">`
+      : `<span style="color:${r.checked ? 'var(--green)' : 'var(--text-dim)'};">${r.checked ? '✓' : '☐'}</span>`;
+    const descTxt = r.kind === 'pay'
+      ? `${escapeHtml(r.desc)}${r.method ? ` <span class="dim" style="font-size:10.5px;">· ${escapeHtml(r.method)}</span>` : ''}`
+      : r.kind === 'pickup'
+      ? `${r.palletType && !r.grouped ? `<span class="dim" style="font-size:10.5px;">${escapeHtml(r.palletType === 'AMAZON' ? 'AMZ' : r.palletType)}</span> ` : ''}${escapeHtml(r.desc || '')}`
+      : escapeHtml(r.desc);
+    return `<tr style="${r.checked ? 'opacity:0.72;' : ''}">
+      <td>${r.date}</td>
+      <td>${kindBadge(r)}</td>
+      <td>${descTxt}</td>
+      <td>${whoCell(r)}</td>
+      <td class="dim">${r.kind === 'pickup' ? (r.wh ? 'WH ' + escapeHtml(r.wh) : '—') : ''}</td>
+      <td style="text-align:right;">${r.kind === 'pickup' ? `<b>${r.pallets}</b>` : ''}</td>
+      <td style="text-align:right;" class="dim">${r.kind === 'pickup' ? (r.unit ? '£' + r.unit : '混') : ''}</td>
+      <td style="text-align:right;" class="${r.kind === 'pay' ? 'pos' : ''}">${r.kind === 'pay' ? '+' + fmt(r.amount) : ''}</td>
+      <td style="text-align:right;" class="${r.kind === 'pickup' || r.kind === 'refund' ? 'neg' : ''}">${r.kind === 'pickup' ? '−' + fmt(r.cost) : (r.kind === 'refund' ? '−' + fmt(r.amount) : '')}</td>
+      <td style="text-align:right;font-weight:700;${r.bal < 0 ? 'color:var(--rose);' : ''}">${fmt(r.bal)}</td>
+      <td>${refCell}</td>
+      <td style="text-align:center;">${chkCell}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = head + (trs || `<tr><td colspan="12" class="dim" style="text-align:center;padding:30px;">该筛选条件下没有记录</td></tr>`);
+  const foot = document.getElementById('sss-recon-foot');
+  if (foot) {
+    const fp = rows.filter(r => r.kind === 'pickup'), fpay = rows.filter(r => r.kind === 'pay'), fr = rows.filter(r => r.kind === 'refund');
+    const sumP = fp.reduce((s, r) => s + r.pallets, 0), sumC = fp.reduce((s, r) => s + r.cost, 0) + fr.reduce((s, r) => s + r.amount, 0), sumPay = fpay.reduce((s, r) => s + r.amount, 0);
+    foot.innerHTML = `<tr style="border-top:2px solid rgba(0,229,255,0.35);font-weight:800;background:rgba(0,229,255,0.04);">
+      <td colspan="5">显示行小计 <span class="dim" style="font-weight:500;font-size:11px;">(${fpay.length} 笔付款 · ${fp.length} ${f.groupDay ? '天' : '车'}取货${fr.length ? ' · ' + fr.length + ' 笔退款' : ''})</span></td>
+      <td style="text-align:right;">${sumP}</td><td></td>
+      <td style="text-align:right;color:var(--green);">+${fmt(sumPay)}</td>
+      <td style="text-align:right;color:var(--rose);">−${fmt(sumC)}</td>
+      <td style="text-align:right;">期末 ${fmt(closingBal)}</td><td colspan="2"></td></tr>`;
+  }
+}
+function sssReconSetRef(id, value) {
+  const e = (state.events || []).find(x => x.id === id); if (!e) return;
+  const v = (value || '').trim();
+  if ((e.sssRef || '') === v) return;
+  e.sssRef = v; e.updatedAt = new Date().toISOString();
+  save(); flash(v ? `SSS 单号已记录: ${v}` : 'SSS 单号已清除');
+}
+function sssReconToggleCheck(id, on) {
+  const e = (state.events || []).find(x => x.id === id); if (!e) return;
+  e.sssChecked = !!on; e.sssCheckedAt = on ? new Date().toISOString() : null;
+  save(); renderSssRecon();
+}
+function sssReconExportCsv() {
+  const d = sssReconFiltered();
+  const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [['Date', 'Type', 'Description', 'Picked up by', 'Warehouse', 'Pallets', 'Unit £', 'Paid £', 'Pickup £', 'Balance £', 'SSS Ref', 'Checked']];
+  lines.push([d.openingDate, 'Opening', 'Opening balance', '', '', '', '', '', '', d.openingBal.toFixed(2), '', '']);
+  for (const r of d.rows) lines.push([r.date, r.kind === 'pay' ? 'Payment' : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup (self)' : 'Pickup'), r.desc, r.kind === 'pickup' ? r.who : (r.kind === 'refund' ? 'to ' + r.who : ''), r.wh, r.kind === 'pickup' ? r.pallets : '', r.kind === 'pickup' ? r.unit : '', r.kind === 'pay' ? r.amount.toFixed(2) : '', r.kind === 'pickup' ? r.cost.toFixed(2) : (r.kind === 'refund' ? r.amount.toFixed(2) : ''), r.bal.toFixed(2), r.ref, r.checked ? 'Y' : '']);
+  const csv = '﻿' + lines.map(l => l.map(esc).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `SSS-Reconciliation-${(d.f.from || d.seq.switchDate)}_${(d.f.to || new Date().toISOString().slice(0, 10))}.csv`;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+// A4 landscape PDF (print window) — English, for sending to / comparing with SSS
+function sssReconPrint() {
+  const d = sssReconFiltered();
+  const { f, seq, rows, openingBal, openingDate, closingBal, tot } = d;
+  const co = state.company || {}, sss = state.sss || {};
+  const from = f.from || seq.switchDate, to = f.to || new Date().toISOString().slice(0, 10);
+  const E = _pmEsc, M = _pmMoney;
+  const fmtD = s => { if (!s) return ''; const [y, m, dd] = s.split('-'); return `${dd}/${m}/${y}`; };
+  const units = [...new Set(rows.filter(r => r.kind === 'pickup' && r.unit).map(r => r.unit))].sort((a, b) => a - b);
+  const trs = rows.map(r => `<tr class="${r.kind}">
+      <td>${fmtD(r.date)}</td>
+      <td>${r.kind === 'pay' ? 'Payment' : r.kind === 'refund' ? 'Refund' : (r.self ? 'Pickup · self' : 'Pickup')}</td>
+      <td>${E(r.kind === 'pay' ? (r.desc + (r.method ? ' · ' + r.method : '')) : (r.kind === 'pickup' ? ((r.palletType && !r.grouped ? (r.palletType === 'AMAZON' ? 'AMZ' : r.palletType) + ' ' : '') + (r.desc || '')) : r.desc))}</td>
+      <td>${r.kind === 'pickup' ? E(r.who) : (r.kind === 'refund' ? 'to ' + E(r.who) : '')}</td>
+      <td>${r.kind === 'pickup' ? (r.wh ? 'WH ' + E(r.wh) : '—') : ''}</td>
+      <td class="n">${r.kind === 'pickup' ? r.pallets : ''}</td>
+      <td class="n">${r.kind === 'pickup' ? (r.unit ? M(r.unit) : 'mixed') : ''}</td>
+      <td class="n pos">${r.kind === 'pay' ? M(r.amount) : ''}</td>
+      <td class="n neg">${r.kind === 'pickup' ? M(r.cost) : (r.kind === 'refund' ? M(r.amount) : '')}</td>
+      <td class="n bal ${r.bal < 0 ? 'negbal' : ''}">${M(r.bal)}</td>
+      <td>${E(r.ref || '')}</td>
+      <td class="c">${r.checked ? '✓' : ''}</td>
+    </tr>`).join('');
+  const sumPallets = rows.filter(r => r.kind === 'pickup').reduce((s, r) => s + r.pallets, 0);
+  const sumPaid = rows.filter(r => r.kind === 'pay').reduce((s, r) => s + r.amount, 0);
+  const sumPick = rows.filter(r => r.kind === 'pickup').reduce((s, r) => s + r.cost, 0) + rows.filter(r => r.kind === 'refund').reduce((s, r) => s + r.amount, 0);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>SSS Reconciliation ${from} to ${to}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm 12mm 14mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #0f172a; font-size: 10.5px; }
+  .hdr { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f3d6e; padding-bottom: 10px; margin-bottom: 12px; }
+  .hdr h1 { margin: 0; font-size: 20px; color: #0f3d6e; letter-spacing: 0.5px; }
+  .hdr .sub { color: #475569; font-size: 11px; margin-top: 3px; }
+  .parties { display: flex; gap: 40px; font-size: 10.5px; line-height: 1.55; }
+  .parties b { color: #0f3d6e; display: block; font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; }
+  .sum { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0 12px; }
+  .sum div { border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; background: #f8fafc; }
+  .sum .l { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+  .sum .v { font-size: 15px; font-weight: 800; color: #0f3d6e; margin-top: 2px; }
+  .sum .s { font-size: 9px; color: #64748b; margin-top: 1px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th { background: #0f3d6e; color: #fff; text-align: left; padding: 5px 6px; font-size: 9px; letter-spacing: 0.6px; text-transform: uppercase; }
+  td { padding: 4px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr.pay td { background: #f0fdf4; }
+  tr.refund td { background: #fff1f2; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.c, th.c { text-align: center; }
+  td.pos { color: #15803d; font-weight: 700; } td.neg { color: #b91c1c; } td.bal { font-weight: 800; } td.negbal { color: #b91c1c; }
+  tr.open td { background: #e0f2fe; font-weight: 700; }
+  tfoot td { background: #0f3d6e; color: #fff; font-weight: 800; border: 0; }
+  .note { margin-top: 10px; font-size: 9.5px; color: #475569; line-height: 1.6; }
+  .tools { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 99; }
+  .tools button { padding: 8px 14px; background: #0f3d6e; color: #fff; border: 0; border-radius: 999px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .tools button.alt { background: #fff; color: #0f3d6e; border: 1px solid #cbd5e1; }
+  thead { display: table-header-group; } tr { page-break-inside: avoid; }
+  @media print { .tools { display: none; } }
+</style></head><body>
+  <div class="hdr">
+    <div>
+      <h1>SSS Account Reconciliation</h1>
+      <div class="sub">Period ${fmtD(from)} – ${fmtD(to)} · Prepared ${fmtD(new Date().toISOString().slice(0, 10))} · Balance = opening + payments − pickups (pallets × unit price on pickup date) − refunds</div>
+    </div>
+    <div class="parties">
+      <div><b>From</b>${E(co.name || 'Michael')}${co.address ? '<br>' + E(co.address) : ''}${co.postcode ? '<br>' + E(co.postcode) : ''}</div>
+      <div><b>Supplier</b>${E(sss.name || 'SSS')}${sss.address ? '<br>' + E(sss.address) : ''}${sss.contact ? '<br>' + E(sss.contact) : ''}</div>
+    </div>
+  </div>
+  <div class="sum">
+    <div><div class="l">Opening balance</div><div class="v">${M(openingBal)}</div><div class="s">as at ${fmtD(openingDate || from)}</div></div>
+    <div><div class="l">Payments to SSS</div><div class="v" style="color:#15803d;">${M(tot.pay)}</div><div class="s">${tot.payN} payment${tot.payN === 1 ? '' : 's'}${tot.refund ? ` · refunds −${M(tot.refund)}` : ''}</div></div>
+    <div><div class="l">Pickups</div><div class="v" style="color:#b91c1c;">${M(tot.cost)}</div><div class="s">${tot.trucks} loads · ${tot.pallets} pallets · Michael ${tot.m.pallets} / Emma ${tot.e.pallets}</div></div>
+    <div><div class="l">Unit price</div><div class="v">${units.map(u => M(u)).join(' / ') || '—'}</div><div class="s">per pallet, by pickup date</div></div>
+    <div><div class="l">Closing balance</div><div class="v" style="${closingBal < 0 ? 'color:#b91c1c;' : ''}">${M(closingBal)}</div><div class="s">${closingBal < 0 ? 'owed to SSS' : 'credit held at SSS'}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>By</th><th>Warehouse</th><th class="n">Pallets</th><th class="n">Unit</th><th class="n">Paid</th><th class="n">Pickup</th><th class="n">Balance</th><th>SSS Ref</th><th class="c">✓</th></tr></thead>
+    <tbody>
+      <tr class="open"><td>${fmtD(openingDate || from)}</td><td>Opening</td><td colspan="7">Opening balance brought forward</td><td class="n">${M(openingBal)}</td><td></td><td></td></tr>
+      ${trs}
+    </tbody>
+    <tfoot><tr><td colspan="5">TOTAL (rows shown)</td><td class="n">${sumPallets}</td><td></td><td class="n">${M(sumPaid)}</td><td class="n">${M(sumPick)}</td><td class="n">${M(closingBal)}</td><td colspan="2"></td></tr></tfoot>
+  </table>
+  <div class="note">Running balance is computed over the complete ledger since ${fmtD(seq.switchDate)}; filters only hide rows and never change the balance column. "By" = who physically collected from SSS (Michael / Emma). "self" = Michael's own retail pickups. Please report any line that does not match your records, quoting the date, warehouse and pallet count.</div>
+<div class="tools"><button onclick="window.print()">Download / Print PDF</button><button class="alt" onclick="window.close()">Close</button></div>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('请允许弹出窗口'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === name));
   document.querySelectorAll('.nav-item:not(.nav-external), .mobile-nav-item:not(.nav-external)').forEach(n => n.classList.toggle('active', n.dataset.view === name));
   if (name === 'ai') renderInsights();
   if (name === 'ptinvoices' && typeof renderPtInvoices === 'function') renderPtInvoices();
+  if (name === 'sss' && typeof renderSssRecon === 'function') renderSssRecon();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -8835,6 +9226,7 @@ function renderAll() {
   renderCharts();
   if (typeof renderMonthlyHistory === 'function') renderMonthlyHistory();
   if (typeof renderPtInvoices === 'function') renderPtInvoices();
+  if (typeof renderSssRecon === 'function') renderSssRecon();
   // Show/hide 发票 nav item — only visible after switching to new mode
   const navInv = document.getElementById('nav-pt-invoices');
   if (navInv) navInv.classList.toggle('hide', !isNewMode());
