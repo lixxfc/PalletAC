@@ -2295,6 +2295,9 @@ select option { background: var(--bg-2); color: var(--text); }
             <div class="kpi v2"><div class="kpi-head"><div class="kpi-label">累计利润</div><div class="kpi-icon">✦</div></div><div class="kpi-value" id="cd-profit">£0</div><div class="kpi-sub" id="cd-profit-sub">该客户贡献</div><button class="kpi-info" title="数据来源" onclick="openDrilldown('cust-profit')">ⓘ</button></div>
           </div>
 
+          <!-- ===== 2026-10-29 旧欠款 (frozen debt) card — normal customers only ===== -->
+          <div id="cd-debt-card" class="hide" style="margin-bottom:20px;"></div>
+
           <!-- ===== 2026-10-20 SELF-RETAIL (自营) panel — only shown for the "Michael我自己" customer ===== -->
           <div id="cd-self-panel" class="hide" style="margin-bottom:20px;">
             <div style="padding:14px 18px;border:1px solid rgba(251,191,36,0.35);border-radius:12px;background:linear-gradient(135deg,rgba(251,191,36,0.08),rgba(251,191,36,0.02));">
@@ -4285,7 +4288,110 @@ function customerBalance(c) {
     else if (_KNOWN_LEDGER_DEBIT_TYPES.has(e.type)) bal -= amt;
     else { console.warn('[customerBalance] unknown ledger type ' + e.type + ' — skipped'); }
   }
+  // 2026-10-29 旧欠款冻结: a frozen (carried-forward) debt is taken OUT of the running
+  // balance, so new pickups start from 0 and the old debt is tracked separately
+  // (customerFrozenDebt). Repayments against it do NOT touch this balance.
+  if (c.debtFreeze && isFinite(+c.debtFreeze.amount)) bal += +c.debtFreeze.amount;
   return bal;
+}
+// ─── 2026-10-29 旧欠款 (frozen debt carried forward) ───
+// c.debtFreeze   = { amount, asOf, createdAt, note }   amount = debt frozen (positive)
+// c.debtPayments = [{ id, date, amount, note, createdAt }]  real cash received against it
+function customerFrozenDebt(c) {
+  if (!c || !c.debtFreeze) return null;
+  const amount = +c.debtFreeze.amount || 0;
+  const repaid = (c.debtPayments || []).reduce((s, p) => s + (+(p.amount || 0) || 0), 0);
+  return { amount, asOf: c.debtFreeze.asOf, note: c.debtFreeze.note || '', repaid, remaining: amount - repaid };
+}
+function customerLedgerBalanceRaw(c) {   // balance WITHOUT the freeze adjustment (what the ledger alone says)
+  let bal = 0;
+  for (const e of (c.ledger || [])) { const a = +(e.amount || 0); if (!isFinite(a)) continue; if (e.type === 'deposit') bal += a; else if (_KNOWN_LEDGER_DEBIT_TYPES.has(e.type)) bal -= a; }
+  return bal;
+}
+function freezeCustomerDebt() {
+  const c = state.customers.find(x => x.id === currentCustomer); if (!c || isSelfCustomer(c)) return;
+  if (c.debtFreeze) { alert('已经有一笔冻结的旧欠款了，先解除再冻结。'); return; }
+  const raw = customerLedgerBalanceRaw(c);
+  if (raw >= 0) { alert('这个客户现在没有欠款（余额 ' + fmt(raw) + '），不需要冻结。'); return; }
+  const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const asOf = prompt(`把 ${c.name} 当前欠款 ${fmt(-raw)} 冻结为"旧欠款"。\n截至哪一天？(YYYY-MM-DD)`, y);
+  if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return;
+  if (!confirm(`确认冻结：\n\n旧欠款 ${fmt(-raw)}（截至 ${asOf}）单独记账，不再计入余额；\n从现在起余额从 £0 开始，新取货照常扣。\n客户还旧款时在"旧欠款"卡里录入，不进余额。`)) return;
+  c.debtFreeze = { amount: -raw, asOf, createdAt: new Date().toISOString(), note: '' };
+  if (!Array.isArray(c.debtPayments)) c.debtPayments = [];
+  save(); renderAll(); flash(`📌 已冻结旧欠款 ${fmt(-raw)}（截至 ${asOf}）`);
+}
+function unfreezeCustomerDebt() {
+  const c = state.customers.find(x => x.id === currentCustomer); if (!c || !c.debtFreeze) return;
+  const fd = customerFrozenDebt(c);
+  if (fd.repaid > 0) { alert('这笔旧欠款已经有还款记录（' + fmt(fd.repaid) + '），不能直接解除。先删掉还款记录。'); return; }
+  if (!confirm(`解除冻结？旧欠款 ${fmt(fd.amount)} 会重新回到余额里（余额变成 ${fmt(customerBalance(c) - fd.amount)}）。`)) return;
+  delete c.debtFreeze; save(); renderAll(); flash('已解除旧欠款冻结');
+}
+function addDebtPayment() {
+  const c = state.customers.find(x => x.id === currentCustomer); if (!c || !c.debtFreeze) return;
+  const date = (document.getElementById('dp-date') || {}).value;
+  const amount = parseFloat((document.getElementById('dp-amount') || {}).value);
+  const note = ((document.getElementById('dp-note') || {}).value || '').trim();
+  if (!date) { alert('请填日期'); return; }
+  if (!(amount > 0)) { alert('金额必须 > 0'); return; }
+  const fd = customerFrozenDebt(c);
+  if (amount > fd.remaining + 0.005 && !confirm(`还款 ${fmt(amount)} 超过剩余旧欠款 ${fmt(fd.remaining)}。多出的部分不会进余额。确定？\n（如果多出的是新预付，请分两笔：旧欠款部分在这里录，预付部分走"预付"。）`)) return;
+  if (!Array.isArray(c.debtPayments)) c.debtPayments = [];
+  c.debtPayments.push({ id: crypto.randomUUID(), date, amount, note, createdAt: new Date().toISOString() });
+  document.getElementById('dp-amount').value = ''; document.getElementById('dp-note').value = '';
+  save(); renderAll(); flash(`✓ 旧欠款还款 ${fmt(amount)} 已记录 · 还欠 ${fmt(customerFrozenDebt(c).remaining)}`);
+}
+function delDebtPayment(id) {
+  const c = state.customers.find(x => x.id === currentCustomer); if (!c) return;
+  const p = (c.debtPayments || []).find(x => x.id === id); if (!p) return;
+  if (!confirm(`删除这笔旧欠款还款 ${fmt(p.amount)}（${p.date}）？`)) return;
+  c.debtPayments = c.debtPayments.filter(x => x.id !== id); save(); renderAll();
+}
+function renderDebtCard(c) {
+  const card = document.getElementById('cd-debt-card'); if (!card) return;
+  if (!c || isSelfCustomer(c)) { card.classList.add('hide'); return; }
+  const fd = customerFrozenDebt(c);
+  const raw = customerLedgerBalanceRaw(c);
+  if (!fd) {
+    // offer freeze only when the customer is in the red
+    if (raw < 0) {
+      card.classList.remove('hide');
+      card.innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border:1px dashed rgba(251,113,133,0.45);border-radius:12px;background:rgba(251,113,133,0.05);">
+        <span style="font-size:18px;">📌</span>
+        <div class="grow" style="font-size:12px;line-height:1.6;"><b>客户目前欠你 ${fmt(-raw)}</b>。如果他们说稍后付、但现在又要继续拿货，可以把这笔欠款冻结成"旧欠款"单独记：余额从 £0 重新算，新取货照常扣，等他们付款再核销。</div>
+        <button class="btn sm" style="background:linear-gradient(135deg,var(--rose),#b91c1c);color:#fff;font-weight:700;" onclick="freezeCustomerDebt()">📌 冻结为旧欠款</button>
+      </div>`;
+    } else card.classList.add('hide');
+    return;
+  }
+  card.classList.remove('hide');
+  const pays = (c.debtPayments || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const payRows = pays.length ? pays.map(p => `<tr><td>${p.date}</td><td class="pos">+${fmt(p.amount)}</td><td class="dim">${escapeHtml(p.note || '')}</td><td style="text-align:right;"><button class="btn sm danger" onclick="delDebtPayment('${p.id}')">删</button></td></tr>`).join('')
+    : `<tr><td colspan="4" class="dim" style="text-align:center;padding:14px;">还没有还款记录</td></tr>`;
+  const done = fd.remaining <= 0.005;
+  card.innerHTML = `<div style="padding:14px 18px;border:1px solid ${done ? 'rgba(34,211,165,0.4)' : 'rgba(251,113,133,0.4)'};border-radius:12px;background:${done ? 'rgba(34,211,165,0.05)' : 'rgba(251,113,133,0.05)'};">
+    <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:20px;">📌</span>
+      <div class="grow">
+        <div style="font-size:13px;font-weight:800;">旧欠款 <span class="badge" style="background:rgba(251,113,133,0.18);color:var(--rose);">截至 ${fd.asOf}</span> ${done ? '<span class="badge" style="background:rgba(34,211,165,0.18);color:var(--green);">✓ 已结清</span>' : ''}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.6;">这笔钱已从"当前余额"里拿出来单独记。余额从 ${fd.asOf} 之后的取货/预付重新算；客户还这笔钱时在下面录，<b>不进余额</b>。</div>
+      </div>
+      <div style="display:flex;gap:18px;text-align:right;">
+        <div><div style="font-size:9.5px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">冻结金额</div><div style="font-size:18px;font-weight:800;">${fmt(fd.amount)}</div></div>
+        <div><div style="font-size:9.5px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">已还</div><div style="font-size:18px;font-weight:800;color:var(--green);">${fmt(fd.repaid)}</div></div>
+        <div><div style="font-size:9.5px;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;">还欠</div><div style="font-size:22px;font-weight:800;color:${done ? 'var(--green)' : 'var(--rose)'};">${fmt(fd.remaining)}</div></div>
+      </div>
+    </div>
+    <div class="form-grid mt-4" style="grid-template-columns:150px 150px 1fr auto;gap:10px;align-items:end;">
+      <div class="form-row" style="margin:0;"><label>还款日期</label><input type="date" id="dp-date" value="${new Date().toISOString().slice(0, 10)}"></div>
+      <div class="form-row" style="margin:0;"><label>金额 £</label><input type="number" id="dp-amount" placeholder="0" min="0" step="0.01"></div>
+      <div class="form-row" style="margin:0;"><label>备注 (可选)</label><input type="text" id="dp-note" placeholder="银行转账 / 现金…"></div>
+      <button class="btn primary" onclick="addDebtPayment()" style="height:38px;">＋ 记还旧款</button>
+    </div>
+    <div class="table-wrap mt-4"><table><thead><tr><th>日期</th><th>还款</th><th>备注</th><th></th></tr></thead><tbody>${payRows}</tbody></table></div>
+    <div class="row mt-2" style="justify-content:flex-end;"><button class="btn ghost sm" onclick="unfreezeCustomerDebt()" style="font-size:10.5px;opacity:0.7;">解除冻结（仅在没有还款记录时）</button></div>
+  </div>`;
 }
 function customerTotalDeposit(c) {
   return (c.ledger || []).filter(e => e.type === 'deposit').reduce((s, e) => s + (+(e.amount || 0) || 0), 0);
@@ -7153,6 +7259,8 @@ function _mcCashPoolForecast() {
         if (e.type === 'deposit') custNet += a;
         else if (e.type === 'refund') custNet -= a;
       }
+      // 2026-10-29 旧欠款还款 = real cash in (mirrors partnership customerDepositsSinceSwitch)
+      for (const p of (c.debtPayments || [])) { if (p.date && p.date >= sw) custNet += (+(p.amount || 0) || 0); }
     }
   }
   const currentPool = cashOpening + inEmma + inCustManual + custNet - outSup - outHugo;
@@ -7666,7 +7774,7 @@ function renderCustomers() {
     return `<div class="customer-card" onclick="openCustomer('${c.id}')">
       <div class="customer-avatar">${escapeHtml(init)}</div>
       <div class="customer-name">${escapeHtml(c.name)}</div>
-      <div class="customer-meta">${c.ledger.length} 条流水 · ${customerTotalPallets(c)} 托盘</div>
+      <div class="customer-meta">${c.ledger.length} 条流水 · ${customerTotalPallets(c)} 托盘${(() => { const fd = customerFrozenDebt(c); return fd && fd.remaining > 0 ? ` · <span style="color:var(--rose);">📌 旧欠款 ${fmt(fd.remaining)}</span>` : ''; })()}</div>
       <div class="customer-balance-label">当前余额</div>
       <div class="customer-balance ${cls}">${fmt(bal)}</div>
     </div>`;
@@ -7766,6 +7874,7 @@ function renderCustomerDetail() {
   if (_detailEl) _detailEl.classList.toggle('self-mode', _isSelf);
   const _selfPanel = document.getElementById('cd-self-panel');
   if (_selfPanel) _selfPanel.classList.toggle('hide', !_isSelf);
+  renderDebtCard(c);
   if (_isSelf) {
     renderSelfCostPanel(c);
     // force ledger form into pickup mode (deposit/refund/adjust make no sense for 自营)
@@ -7813,6 +7922,7 @@ function renderCustomerDetail() {
     if (_depWrap && !document.getElementById('cd-deposit')) _depWrap.innerHTML = '累计 <span id="cd-deposit">£0</span> 预付';
     const _depEl2 = document.getElementById('cd-deposit');
     if (_depEl2) _depEl2.textContent = fmt(customerTotalDeposit(c));
+    { const _fd = customerFrozenDebt(c); if (_fd && _depWrap) _depWrap.innerHTML = `累计 <span id="cd-deposit">${fmt(customerTotalDeposit(c))}</span> 预付 · <span style="color:var(--rose);">不含旧欠款 ${fmt(_fd.remaining)}</span> <span style="color:var(--text-dim);">(截至 ${_fd.asOf})</span>`; }
     const _balEl = document.getElementById('cd-balance'); if (_balEl) _balEl.style.color = '';
     if (bal < 0) {
       canBuyEl.textContent = '透支';
@@ -8018,7 +8128,9 @@ function renderCustomerDetail() {
     </tr>`, id: e.id };
   });
   const reversed = [...rowsHtml].reverse();
-  document.getElementById('ledger-body').innerHTML = reversed.map(x => x.html).join('') || `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">暂无流水</td></tr>`;
+  // 2026-10-29: frozen old debt — explain why the running column ends below the KPI balance
+  const _fdRow = (() => { const fd = customerFrozenDebt(c); if (!fd) return ''; return `<tr style="background:rgba(251,113,133,0.06);"><td class="dim">${fd.asOf}</td><td><span class="badge" style="background:rgba(251,113,133,0.18);color:var(--rose);">📌 旧欠款</span></td><td colspan="3" class="dim">截至 ${fd.asOf} 的欠款 ${fmt(fd.amount)} 已冻结单独记（已还 ${fmt(fd.repaid)} · 还欠 ${fmt(fd.remaining)}）— 下面的"余额"列是流水原始累计，当前余额 = 流水累计 + ${fmt(fd.amount)}</td><td class="pos">+${fmt(fd.amount)}</td><td><b>${fmt(customerBalance(c))}</b></td><td colspan="2" class="dim">还款在上面"旧欠款"卡里录</td></tr>`; })();
+  document.getElementById('ledger-body').innerHTML = _fdRow + (reversed.map(x => x.html).join('') || `<tr><td colspan="8" class="dim" style="text-align:center;padding:30px;">暂无流水</td></tr>`);
   updateLedgerPreview();
 }
 

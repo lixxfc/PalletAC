@@ -2475,6 +2475,9 @@ function customerDepositsSinceSwitch() {
       // not move cash (the customer's deposit already accounted for the £25
       // surcharge; settling with Emma flows via out-emma-transfer event).
     }
+    // 2026-10-29 旧欠款还款 (c.debtPayments, personal app): customer repaying a frozen
+    // old debt is REAL cash into the pool even though it never touches their ledger balance.
+    for (const p of (c.debtPayments || [])) { if (p.date && p.date >= sw) total += (+(p.amount || 0) || 0); }
   }
   return total;
 }
