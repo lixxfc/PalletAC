@@ -2050,7 +2050,7 @@ table tr.row-deleted:hover td { background: rgba(251, 113, 133, 0.07); }
         </select>
       </div>
       <div class="form-row"><label>托盘数</label><input type="number" id="ep-pallets" min="1" step="1"></div>
-      <div class="form-row"><label>车次（可选）</label><input type="text" id="ep-truck" placeholder="T-001"></div>
+      <div class="form-row"><label>库房 / 仓库号</label><input type="text" id="ep-truck" placeholder="2 / 25"></div>
       <div class="form-row" style="grid-column:1 / -1;">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
           <input type="checkbox" id="ep-swap" style="width:18px;height:18px;cursor:pointer;">
@@ -2335,14 +2335,31 @@ const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';
 // pricing MUST use buyPriceOn(date) / sellPriceOn(date).
 const PRICE_SSS_CUTOVER    = '2026-07-01';   // SSS drops buy price
 const PRICE_CLIENT_CUTOVER = '2026-07-06';   // Michael tells client (Monday)
+// ═════════════════════════════════════════════════════════════════════
+// PRICE v3 (2026-11-01, added 2026-11-02)
+//   SSS buy price £150/托 for everyone (Michael / 自营 / Emma).
+//   East: pool deduction = "cost price told to East" (params.eastCostTold, £160),
+//         plus weekly cash = (warehouse sell price − 160)/托 shown as 我的费 + Hugo £10.
+//         Warehouse sell prices live in params.warehouses[] (personal app settings).
+//   V £2: gone from this date (customer no longer pays it, Michael no longer pays V).
+//   Everything dated before 2026-11-01 is untouched (£200 / £220 / V £2).
+// ═════════════════════════════════════════════════════════════════════
+const PRICE_V3_CUTOVER = '2026-11-01';
+const PRICE_V3_BUY     = 150;
+const EAST_COST_TOLD_DEFAULT = 160;
+function eastCostTold() { return (state && state.params && state.params.eastCostTold != null) ? +state.params.eastCostTold : EAST_COST_TOLD_DEFAULT; }
+function isPriceV3(date) { return !!date && date >= PRICE_V3_CUTOVER; }
 function buyPriceOn(date) {
   const legacy = (state && state.params && state.params.buyPrice) || 245;
   if (!date || date < PRICE_SSS_CUTOVER) return legacy;
+  if (date >= PRICE_V3_CUTOVER) return PRICE_V3_BUY;
   return 200;
 }
+// Pool deduction per pallet for a customer pickup (what the customer's prepaid balance is charged)
 function sellPriceOn(date) {
   const legacy = (state && state.params && state.params.sellPrice) || 265;
   if (!date || date < PRICE_CLIENT_CUTOVER) return legacy;
+  if (date >= PRICE_V3_CUTOVER) return eastCostTold();
   return 220;
 }
 // ═════════════════════════════════════════════════════════════════════
@@ -7928,6 +7945,7 @@ async function saveEditPickup() {
   ev.palletType = newSwap ? 'TT' : newType;   // Swap forces TT
   ev.pallets    = newPallets;
   ev.truck      = newTruck;
+  if (isPriceV3(ev.date || '') && newTruck) ev.whNo = newTruck;   // 2026-11-02 warehouse no (v3)
   ev.note       = newNote;
   ev.isSwap     = newSwap;
   ev.amount     = newPartnershipAmount;
@@ -8003,7 +8021,10 @@ async function _editPickupInPersonal(ev, oldSnap) {
     // The actual unitPrice decision uses the EXISTING entry's historical price
     // when isSwap is unchanged (decided per-entry below). See P1 NEW-A fix
     // from batch 5 re-audit (2026-06-08).
-    const sellPrice = (pdata.params && pdata.params.sellPrice) || 265;
+    // 2026-11-02 review fix: date-aware (was flat params.sellPrice 265 → mis-priced post-7/6 and all v3 rows)
+    //   <7/6: 265 · 7/6–10/31: 220 · ≥11/1: eastCostTold from the personal params (default 160)
+    const _v3Unit = (pdata.params && isFinite(+pdata.params.eastCostTold) && +pdata.params.eastCostTold > 0) ? +pdata.params.eastCostTold : EAST_COST_TOLD_DEFAULT;
+    const sellPrice = isPriceV3(ev.date) ? _v3Unit : sellPriceOn(ev.date);
     const swapPrem  = (pdata.params && pdata.params.swapPremium != null) ? pdata.params.swapPremium : 30;
     const liveUnitPrice = ev.isSwap ? (sellPrice + swapPrem) : sellPrice;
 
@@ -8037,11 +8058,24 @@ async function _editPickupInPersonal(ev, oldSnap) {
         const entryOldIsSwap      = !!entry.isSwap;
         // 2026-10-20 自营 (self-retail) rows are NEVER priced: amount stays 0 (no customer pool)
         const _isSelfRow = !!(entry._selfRetail || ev._selfRetail || c.isSelf);
-        const useOldPrice = (entryOldIsSwap === !!ev.isSwap) && entryOldUnit > 0;
+        // re-price when isSwap toggled, no snapshot, or the row crossed the 2026-11-01 boundary
+        const useOldPrice = (entryOldIsSwap === !!ev.isSwap) && entryOldUnit > 0 && (isPriceV3(entry.date || ev.date) === isPriceV3(ev.date));
         const finalUnitPrice    = _isSelfRow ? 0 : (useOldPrice ? entryOldUnit        : liveUnitPrice);
         const finalSwapPremium  = _isSelfRow ? 0 : (useOldPrice ? entryOldSwapPremium : (ev.isSwap ? swapPrem : 0));
         const finalAmount       = ev.pallets * finalUnitPrice;
         if (_isSelfRow) { entry._selfRetail = true; entry._selfCostSss = ev.pallets * buyPriceOn(ev.date); entry._selfCostHugo = ev.pallets * hugoRateOn(ev.date); }
+        // 2026-11-01 v3: keep the warehouse price snapshot; re-price from the personal price table only if the warehouse changed
+        if (isPriceV3(ev.date) && !_isSelfRow) {
+          const whNo = String(ev.whNo || ev.truck || '').trim();
+          if (whNo && (whNo !== String(entry.whNo || '') || entry.whSell == null)) {
+            const w = ((pdata.params && pdata.params.warehouses) || []).find(x => String(x.no).trim() === whNo);
+            const ws = w && isFinite(+w.eastPrice) && +w.eastPrice > 0 ? +w.eastPrice : null;
+            if (ws != null) { entry.whNo = whNo; entry.whSell = ws; entry.eastCostTold = finalUnitPrice; entry.whCash = ws - finalUnitPrice; ev.whSell = ws; }
+            else { entry.whNo = whNo; console.warn('[edit-pickup] warehouse', whNo, 'has no East price in personal params — kept old snapshot'); }
+          } else if (whNo && entry.whSell != null && +entry.eastCostTold !== finalUnitPrice) {
+            entry.eastCostTold = finalUnitPrice; entry.whCash = +entry.whSell - finalUnitPrice;   // pool price changed → refresh weekly cash
+          }
+        } else if (!isPriceV3(ev.date)) { delete entry.whSell; delete entry.whCash; delete entry.eastCostTold; }   // moved back before 11/1
         entry.date        = ev.date;
         entry.pallets     = ev.pallets;
         entry.truck       = ev.truck;
