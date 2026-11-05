@@ -5527,10 +5527,11 @@ function _seLineV3(t, date) {
   else if (needsPrice && price == null) { ok = false; reason = `仓库 ${whNo} 还没填 East 卖价（设置 → 仓库价格表）`; }
   return { whNo, whSell: price, whCash: price != null ? price - unit : null, unit, profitPerPallet: price != null ? price - PRICE_V3_BUY - hugoRateOn(date) : null, ok, reason, self };
 }
-function _seWarehouseOptions(selected) {
+function _seWarehouseOptions(selected, showPrice) {
   const list = (typeof warehouseList === 'function') ? warehouseList() : [];
   const sel = String(selected || '');
-  return '<option value="">— 选仓库 —</option>' + list.map(w => `<option value="${escapeHtmlAttr(String(w.no))}" ${String(w.no) === sel ? 'selected' : ''}>WH ${escapeHtml(String(w.no))}${warehouseEastPrice(w.no) != null ? ' · £' + warehouseEastPrice(w.no) : ' · 未定价'}</option>`).join('');
+  // price suffix only matters for East lines on/after the v3 cutover; Emma / 自营 / legacy dates just pick the warehouse
+  return '<option value="">— 选仓库 —</option>' + list.map(w => `<option value="${escapeHtmlAttr(String(w.no))}" ${String(w.no) === sel ? 'selected' : ''}>WH ${escapeHtml(String(w.no))}${showPrice ? (warehouseEastPrice(w.no) != null ? ' · £' + warehouseEastPrice(w.no) : ' · 未定价') : ''}</option>`).join('');
 }
 // 混仓: add a second line for the SAME truck (same customer/type, pallets 0) — each line keeps its own warehouse price
 function addSmartEntryWarehouseLine(idx) {
@@ -5648,7 +5649,7 @@ function renderSmartEntryTrucks() {
           const L = v3 ? _seLineV3(t, _seDateForPricing) : null;
           const bad = L && !L.ok;
           const grp = t._truckGroup ? `<div style="font-size:9.5px;color:var(--amber);margin-top:3px;">⛓ 同车混仓</div>` : '';
-          const sel = `<select onchange="updateSmartEntryTruck(${idx}, 'whNo', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.5);border:1.5px solid ${bad ? 'rgba(251,113,133,0.6)' : 'rgba(139,150,255,0.18)'};border-radius:8px;color:var(--text);font-size:12px;">${_seWarehouseOptions(t.whNo)}</select>`;
+          const sel = `<select onchange="updateSmartEntryTruck(${idx}, 'whNo', this.value)" style="width:100%;padding:9px 8px;background:rgba(5,6,15,0.5);border:1.5px solid ${bad ? 'rgba(251,113,133,0.6)' : 'rgba(139,150,255,0.18)'};border-radius:8px;color:var(--text);font-size:12px;">${_seWarehouseOptions(t.whNo, v3 && !!t.customerId && !isSelfCustomerId(t.customerId))}</select>`;
           const txt = v3 ? '' : `<input type="text" value="${escapeHtmlAttr(t.truckNum || '')}" placeholder="或手填 2 / 25" oninput="updateSmartEntryTruck(${idx}, 'truckNum', this.value)" style="width:100%;margin-top:4px;padding:6px 8px;background:rgba(5,6,15,0.5);border:1px solid rgba(139,150,255,0.14);border-radius:8px;color:var(--text);font-size:11px;">`;
           const add = `<button type="button" onclick="addSmartEntryWarehouseLine(${idx})" title="这车还有别的仓库的货？加一行，各自按仓库价算" style="margin-top:4px;font-size:10px;padding:3px 7px;border-radius:6px;border:1px dashed rgba(0,229,255,0.35);background:transparent;color:var(--cyan);cursor:pointer;">＋ 同车加仓</button>`;
           const warn = bad ? `<div style="font-size:9.5px;color:var(--rose);margin-top:3px;">⚠ ${escapeHtml(L.reason)}</div>` : (L && L.whSell != null && !L.self ? `<div style="font-size:9.5px;color:var(--text-dim);margin-top:3px;">卖 £${L.whSell} · 周现金 £${L.whCash}/托</div>` : '');
