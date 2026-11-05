@@ -4398,6 +4398,13 @@ function freezeCustomerDebt() {
   if (!Array.isArray(c.debtPayments)) c.debtPayments = [];
   save(); renderAll(); flash(`📌 已冻结旧欠款 ${fmt(-raw)}（截至 ${asOf}）`);
 }
+function editFrozenDebtDate() {
+  const c = state.customers.find(x => x.id === currentCustomer); if (!c || !c.debtFreeze) return;
+  const v = prompt('旧欠款"截至"日期（只改标签，不改金额）YYYY-MM-DD', c.debtFreeze.asOf || '');
+  if (!v) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { alert('日期格式 YYYY-MM-DD'); return; }
+  c.debtFreeze.asOf = v; save(); renderAll(); flash('旧欠款截至日期已改为 ' + v);
+}
 function unfreezeCustomerDebt() {
   const c = state.customers.find(x => x.id === currentCustomer); if (!c || !c.debtFreeze) return;
   const fd = customerFrozenDebt(c);
@@ -4467,7 +4474,7 @@ function renderDebtCard(c) {
       <button class="btn primary" onclick="addDebtPayment()" style="height:38px;">＋ 记还旧款</button>
     </div>
     <div class="table-wrap mt-4"><table><thead><tr><th>日期</th><th>还款</th><th>备注</th><th></th></tr></thead><tbody>${payRows}</tbody></table></div>
-    <div class="row mt-2" style="justify-content:flex-end;"><button class="btn ghost sm" onclick="unfreezeCustomerDebt()" style="font-size:10.5px;opacity:0.7;">解除冻结（仅在没有还款记录时）</button></div>
+    <div class="row mt-2" style="justify-content:flex-end;gap:8px;"><button class="btn ghost sm" onclick="editFrozenDebtDate()" style="font-size:10.5px;opacity:0.8;">✎ 改"截至"日期</button><button class="btn ghost sm" onclick="unfreezeCustomerDebt()" style="font-size:10.5px;opacity:0.7;">解除冻结（仅在没有还款记录时）</button></div>
   </div>`;
 }
 function customerTotalDeposit(c) {
