@@ -2336,15 +2336,15 @@ const EMMA_TRANSFER_TRIAL_END   = '2026-06-28';
 const PRICE_SSS_CUTOVER    = '2026-07-01';   // SSS drops buy price
 const PRICE_CLIENT_CUTOVER = '2026-07-06';   // Michael tells client (Monday)
 // ═════════════════════════════════════════════════════════════════════
-// PRICE v3 (2026-11-01, added 2026-11-02)
+// PRICE v3 (effective 2026-11-06; added 2026-11-02, originally 11/1)
 //   SSS buy price £150/托 for everyone (Michael / 自营 / Emma).
 //   East: pool deduction = "cost price told to East" (params.eastCostTold, £160),
 //         plus weekly cash = (warehouse sell price − 160)/托 shown as 我的费 + Hugo £10.
 //         Warehouse sell prices live in params.warehouses[] (personal app settings).
 //   V £2: gone from this date (customer no longer pays it, Michael no longer pays V).
-//   Everything dated before 2026-11-01 is untouched (£200 / £220 / V £2).
+//   Everything dated before the cutover is untouched (£200 / £220 / V £2).
 // ═════════════════════════════════════════════════════════════════════
-const PRICE_V3_CUTOVER = '2026-11-01';
+const PRICE_V3_CUTOVER = '2026-11-06';   // moved 11/1 → 11/6 (Michael, 2026-11-05): 11/1–11/5 pickups stay on the old model (SSS £200, East £220 + £30/£10, V £2)
 const PRICE_V3_BUY     = 150;
 const EAST_COST_TOLD_DEFAULT = 160;
 function eastCostTold() { return (state && state.params && state.params.eastCostTold != null) ? +state.params.eastCostTold : EAST_COST_TOLD_DEFAULT; }
